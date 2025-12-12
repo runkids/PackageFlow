@@ -100,6 +100,13 @@ brew tap runkids/tap
 brew install --cask packageflow
 ```
 
+#### 升级
+
+```bash
+brew update
+brew reinstall --cask packageflow
+```
+
 ### 手动下载
 
 从 [Releases](https://github.com/runkids/PackageFlow/releases) 页面下载最新版本。
