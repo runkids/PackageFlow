@@ -167,34 +167,52 @@ impl Default for ScriptExecutionState {
     }
 }
 
-/// Kill a process and all its children using pkill (macOS/Linux)
-/// This ensures that child processes spawned by npm/pnpm/yarn are also terminated
-fn kill_process_tree(pid: u32) -> Result<(), String> {
-    println!("[kill_process_tree] Killing process tree for PID: {}", pid);
+/// Get all descendant PIDs of a process (children, grandchildren, etc.)
+fn get_descendant_pids(pid: u32) -> Vec<u32> {
+    let mut descendants = Vec::new();
 
-    // First, try to kill the process group (negative PID sends signal to entire group)
-    // On macOS/Linux, we can use pkill -P to kill child processes
-
-    // Kill all child processes first
-    let pkill_result = path_resolver::create_command("pkill")
+    // Use pgrep -P to find direct children
+    let output = path_resolver::create_command("pgrep")
         .args(["-P", &pid.to_string()])
         .output();
 
-    match &pkill_result {
-        Ok(output) => {
-            println!(
-                "[kill_process_tree] pkill -P {} result: status={}, stderr={}",
-                pid,
-                output.status,
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        Err(e) => {
-            println!("[kill_process_tree] pkill -P {} error: {}", pid, e);
+    if let Ok(output) = output {
+        let pids_str = String::from_utf8_lossy(&output.stdout);
+        for line in pids_str.lines() {
+            if let Ok(child_pid) = line.trim().parse::<u32>() {
+                // Add this child
+                descendants.push(child_pid);
+                // Recursively get grandchildren
+                descendants.extend(get_descendant_pids(child_pid));
+            }
         }
     }
 
-    // Then kill the parent process
+    descendants
+}
+
+/// Kill a process and all its descendants (children, grandchildren, etc.)
+/// This ensures that child processes spawned by npm/pnpm/yarn/vite are also terminated
+fn kill_process_tree(pid: u32) -> Result<(), String> {
+    println!("[kill_process_tree] Killing process tree for PID: {}", pid);
+
+    // First, collect all descendant PIDs (depth-first to get deepest children first)
+    let descendants = get_descendant_pids(pid);
+    println!(
+        "[kill_process_tree] Found {} descendants: {:?}",
+        descendants.len(),
+        descendants
+    );
+
+    // Kill descendants in reverse order (deepest first) to avoid orphaning
+    for child_pid in descendants.iter().rev() {
+        println!("[kill_process_tree] Killing descendant PID: {}", child_pid);
+        let _ = path_resolver::create_command("kill")
+            .args(["-9", &child_pid.to_string()])
+            .output();
+    }
+
+    // Finally kill the parent process
     let kill_result = path_resolver::create_command("kill")
         .args(["-9", &pid.to_string()])
         .output();
@@ -353,6 +371,8 @@ pub async fn execute_script(
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let timestamp = Utc::now().to_rfc3339();
+            // BufReader::lines() strips newlines, so we add it back for proper display
+            let line_with_newline = format!("{}\n", line);
 
             // Feature 007: Buffer the output before emitting
             {
@@ -360,7 +380,7 @@ pub async fn execute_script(
                 let mut executions = state.executions.lock().unwrap();
                 if let Some(exec) = executions.get_mut(&exec_id_stdout) {
                     exec.output_buffer.push(OutputLine {
-                        content: line.clone(),
+                        content: line_with_newline.clone(),
                         stream: "stdout".to_string(),
                         timestamp: timestamp.clone(),
                     });
@@ -371,7 +391,7 @@ pub async fn execute_script(
                 "script_output",
                 ScriptOutputPayload {
                     execution_id: exec_id_stdout.clone(),
-                    output: line,
+                    output: line_with_newline,
                     stream: "stdout".to_string(),
                     timestamp,
                 },
@@ -386,6 +406,8 @@ pub async fn execute_script(
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let timestamp = Utc::now().to_rfc3339();
+            // BufReader::lines() strips newlines, so we add it back for proper display
+            let line_with_newline = format!("{}\n", line);
 
             // Feature 007: Buffer the output before emitting
             {
@@ -393,7 +415,7 @@ pub async fn execute_script(
                 let mut executions = state.executions.lock().unwrap();
                 if let Some(exec) = executions.get_mut(&exec_id_stderr) {
                     exec.output_buffer.push(OutputLine {
-                        content: line.clone(),
+                        content: line_with_newline.clone(),
                         stream: "stderr".to_string(),
                         timestamp: timestamp.clone(),
                     });
@@ -404,7 +426,7 @@ pub async fn execute_script(
                 "script_output",
                 ScriptOutputPayload {
                     execution_id: exec_id_stderr.clone(),
-                    output: line,
+                    output: line_with_newline,
                     stream: "stderr".to_string(),
                     timestamp,
                 },
@@ -654,6 +676,8 @@ pub async fn execute_command(
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let timestamp = Utc::now().to_rfc3339();
+            // BufReader::lines() strips newlines, so we add it back for proper display
+            let line_with_newline = format!("{}\n", line);
 
             // Feature 007: Buffer the output before emitting
             {
@@ -661,7 +685,7 @@ pub async fn execute_command(
                 let mut executions = state.executions.lock().unwrap();
                 if let Some(exec) = executions.get_mut(&exec_id_stdout) {
                     exec.output_buffer.push(OutputLine {
-                        content: line.clone(),
+                        content: line_with_newline.clone(),
                         stream: "stdout".to_string(),
                         timestamp: timestamp.clone(),
                     });
@@ -672,7 +696,7 @@ pub async fn execute_command(
                 "script_output",
                 ScriptOutputPayload {
                     execution_id: exec_id_stdout.clone(),
-                    output: line,
+                    output: line_with_newline,
                     stream: "stdout".to_string(),
                     timestamp,
                 },
@@ -687,6 +711,8 @@ pub async fn execute_command(
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let timestamp = Utc::now().to_rfc3339();
+            // BufReader::lines() strips newlines, so we add it back for proper display
+            let line_with_newline = format!("{}\n", line);
 
             // Feature 007: Buffer the output before emitting
             {
@@ -694,7 +720,7 @@ pub async fn execute_command(
                 let mut executions = state.executions.lock().unwrap();
                 if let Some(exec) = executions.get_mut(&exec_id_stderr) {
                     exec.output_buffer.push(OutputLine {
-                        content: line.clone(),
+                        content: line_with_newline.clone(),
                         stream: "stderr".to_string(),
                         timestamp: timestamp.clone(),
                     });
@@ -705,7 +731,7 @@ pub async fn execute_command(
                 "script_output",
                 ScriptOutputPayload {
                     execution_id: exec_id_stderr.clone(),
-                    output: line,
+                    output: line_with_newline,
                     stream: "stderr".to_string(),
                     timestamp,
                 },
