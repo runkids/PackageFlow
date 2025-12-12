@@ -21,4 +21,6 @@ export { DiffSplitView } from './DiffSplitView';
 export { DiffHunk } from './DiffHunk';
 export { DiffLine } from './DiffLine';
 export { DiffSyntaxHighlighter } from './DiffSyntaxHighlighter';
+export { VirtualizedDiffView } from './VirtualizedDiffView';
+export { VirtualizedSplitView } from './VirtualizedSplitView';
 export type { ViewMode } from './GitDiffViewer';

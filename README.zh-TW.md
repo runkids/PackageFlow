@@ -18,7 +18,8 @@
 </p>
 
 <p align="center">
-  <a href="./README.md">English</a>
+  <a href="./README.md">English</a> •
+  <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
 ---
@@ -153,25 +154,6 @@ pnpm tauri dev
 ```bash
 # 建置正式版本
 pnpm tauri build
-```
-
-### 專案結構
-
-```
-├── src/                    # React 前端
-│   ├── components/         # UI 元件
-│   │   ├── project/        # 專案管理
-│   │   ├── workflow/       # 工作流編輯器
-│   │   ├── security/       # 安全審計
-│   │   └── ui/             # 可重用 UI 元件
-│   ├── hooks/              # 自訂 React Hooks
-│   ├── lib/                # 工具函式 & Tauri API
-│   └── types/              # TypeScript 型別定義
-├── src-tauri/              # Rust 後端
-│   └── src/
-│       ├── commands/       # Tauri IPC 處理器
-│       └── models/         # 資料結構
-└── homebrew/               # Homebrew cask 配方
 ```
 
 ## 參與貢獻

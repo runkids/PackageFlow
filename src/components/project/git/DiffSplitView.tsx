@@ -3,10 +3,14 @@
  * @see specs/010-git-diff-viewer/tasks.md - T021
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { cn } from '../../../lib/utils';
 import { DiffSyntaxHighlighter } from './DiffSyntaxHighlighter';
+import { VirtualizedSplitView } from './VirtualizedSplitView';
 import type { FileDiff, DiffHunk as DiffHunkType, DiffLine } from '../../../types/git';
+
+// Threshold for switching to virtualized rendering (total lines)
+const VIRTUALIZATION_THRESHOLD = 500;
 
 interface DiffSplitViewProps {
   /** The diff data to display */
@@ -178,8 +182,16 @@ export function DiffSplitView({
   const containerRef = useRef<HTMLDivElement>(null);
   const effectiveLanguage = language || diff.language;
 
-  // Scroll focused hunk into view
+  // Calculate total lines to determine if virtualization is needed
+  const totalLines = useMemo(() => {
+    return diff.hunks.reduce((acc, hunk) => acc + hunk.lines.length, 0);
+  }, [diff.hunks]);
+
+  const useVirtualization = totalLines > VIRTUALIZATION_THRESHOLD;
+
+  // Scroll focused hunk into view (only for non-virtualized view)
   useEffect(() => {
+    if (useVirtualization) return; // Virtualized view handles its own scrolling
     if (focusedHunkIndex !== null && focusedHunkIndex !== undefined && containerRef.current) {
       const hunkElements = containerRef.current.querySelectorAll('[data-hunk-index]');
       const uniqueHunks = new Set<string>();
@@ -199,7 +211,7 @@ export function DiffSplitView({
         (targetElement as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
-  }, [focusedHunkIndex]);
+  }, [focusedHunkIndex, useVirtualization]);
 
   // Handle binary files
   if (diff.isBinary) {
@@ -224,6 +236,19 @@ export function DiffSplitView({
           </p>
         </div>
       </div>
+    );
+  }
+
+  // Use virtualized view for large diffs (e.g., lockfiles)
+  if (useVirtualization) {
+    return (
+      <VirtualizedSplitView
+        diff={diff}
+        focusedHunkIndex={focusedHunkIndex}
+        onHunkFocus={onHunkFocus}
+        showLineNumbers={showLineNumbers}
+        language={effectiveLanguage}
+      />
     );
   }
 

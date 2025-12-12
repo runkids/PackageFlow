@@ -18,7 +18,8 @@
 </p>
 
 <p align="center">
-  <a href="./README.zh-TW.md">繁體中文</a>
+  <a href="./README.zh-TW.md">繁體中文</a> •
+  <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
 ---
@@ -153,25 +154,6 @@ pnpm tauri dev
 ```bash
 # Build for production
 pnpm tauri build
-```
-
-### Project Structure
-
-```
-├── src/                    # React frontend
-│   ├── components/         # UI components
-│   │   ├── project/        # Project management
-│   │   ├── workflow/       # Workflow editor
-│   │   ├── security/       # Security audit
-│   │   └── ui/             # Reusable UI components
-│   ├── hooks/              # Custom React hooks
-│   ├── lib/                # Utilities & Tauri API
-│   └── types/              # TypeScript types
-├── src-tauri/              # Rust backend
-│   └── src/
-│       ├── commands/       # Tauri IPC handlers
-│       └── models/         # Data structures
-└── homebrew/               # Homebrew cask formula
 ```
 
 ## Contributing

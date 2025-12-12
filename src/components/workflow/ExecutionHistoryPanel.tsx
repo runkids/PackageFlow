@@ -4,13 +4,14 @@
  * Displays output in a dialog when clicking on history items
  */
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { X, CheckCircle, XCircle, MinusCircle, Trash2, Clock, Play, Terminal, Copy, Check } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { cn } from '../../lib/utils';
 import { useExecutionHistoryContext } from '../../contexts/ExecutionHistoryContext';
 import { useWorkflowExecutionContext } from '../../contexts/WorkflowExecutionContext';
 import type { ExecutionHistoryItem, WorkflowOutputLine } from '../../lib/tauri-api';
+import { VirtualizedOutputList, getOutputLineClassName } from './VirtualizedOutputList';
 
 interface ExecutionHistoryPanelProps {
   workflowId: string;
@@ -189,8 +190,16 @@ interface HistoryOutputDialogProps {
 }
 
 function HistoryOutputDialog({ item, workflowName, onClose }: HistoryOutputDialogProps) {
-  const outputRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+
+  // Render function for history output lines
+  const renderHistoryOutputLine = useCallback((line: WorkflowOutputLine) => {
+    return (
+      <div className={getOutputLineClassName(line.stream, line.content)}>
+        {line.content}
+      </div>
+    );
+  }, []);
 
   // Copy all output to clipboard
   const handleCopy = async () => {
@@ -278,22 +287,19 @@ function HistoryOutputDialog({ item, workflowName, onClose }: HistoryOutputDialo
         </div>
 
         {/* Output content */}
-        <div
-          ref={outputRef}
-          className="flex-1 overflow-auto p-4 bg-card"
-        >
-          {item.output.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <Terminal className="w-12 h-12 mb-3 opacity-30" />
-              <p>No output recorded</p>
-            </div>
-          ) : (
-            <div className="font-mono text-xs leading-relaxed space-y-0.5">
-              {item.output.map((line, index) => (
-                <HistoryOutputLine key={`${line.timestamp}-${index}`} line={line} />
-              ))}
-            </div>
-          )}
+        <div className="flex-1 overflow-hidden p-4 bg-card">
+          <VirtualizedOutputList
+            lines={item.output}
+            renderLine={renderHistoryOutputLine}
+            autoScroll={false}
+            className="h-full"
+            emptyState={
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <Terminal className="w-12 h-12 mb-3 opacity-30" />
+                <p>No output recorded</p>
+              </div>
+            }
+          />
         </div>
 
         {/* Footer with status */}
@@ -319,28 +325,6 @@ function HistoryOutputDialog({ item, workflowName, onClose }: HistoryOutputDialo
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Single output line with stream-based styling */
-function HistoryOutputLine({ line }: { line: WorkflowOutputLine }) {
-  const { content, stream } = line;
-  const isSystemMessage = stream === 'system';
-
-  return (
-    <div
-      className={cn(
-        'whitespace-pre-wrap break-all',
-        stream === 'stderr' && 'text-red-600 dark:text-red-400',
-        stream === 'stdout' && 'text-foreground',
-        isSystemMessage && 'text-blue-600 dark:text-blue-400 font-medium',
-        isSystemMessage && (content.startsWith('>') || content.startsWith('>>')) && 'mt-3 pt-2 border-t border-border',
-        isSystemMessage && content.startsWith('[OK]') && 'text-green-600 dark:text-green-400',
-        isSystemMessage && content.startsWith('[FAIL]') && 'text-red-600 dark:text-red-400'
-      )}
-    >
-      {content}
     </div>
   );
 }

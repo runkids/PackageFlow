@@ -3,9 +3,13 @@
  * @see specs/010-git-diff-viewer/tasks.md - T014
  */
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { DiffHunk } from './DiffHunk';
+import { VirtualizedDiffView } from './VirtualizedDiffView';
 import type { FileDiff } from '../../../types/git';
+
+// Threshold for switching to virtualized rendering (total lines)
+const VIRTUALIZATION_THRESHOLD = 500;
 
 interface DiffUnifiedViewProps {
   /** The diff data to display */
@@ -34,8 +38,16 @@ export function DiffUnifiedView({
   const effectiveLanguage = language || diff.language;
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Scroll focused hunk into view
+  // Calculate total lines to determine if virtualization is needed
+  const totalLines = useMemo(() => {
+    return diff.hunks.reduce((acc, hunk) => acc + hunk.lines.length, 0);
+  }, [diff.hunks]);
+
+  const useVirtualization = totalLines > VIRTUALIZATION_THRESHOLD;
+
+  // Scroll focused hunk into view (only for non-virtualized view)
   useEffect(() => {
+    if (useVirtualization) return; // Virtualized view handles its own scrolling
     if (focusedHunkIndex !== null && focusedHunkIndex !== undefined && containerRef.current) {
       const hunkElements = containerRef.current.querySelectorAll('[data-hunk-index]');
       const targetHunk = hunkElements[focusedHunkIndex];
@@ -43,7 +55,7 @@ export function DiffUnifiedView({
         targetHunk.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
-  }, [focusedHunkIndex]);
+  }, [focusedHunkIndex, useVirtualization]);
 
   // Handle binary files
   if (diff.isBinary) {
@@ -69,6 +81,20 @@ export function DiffUnifiedView({
     );
   }
 
+  // Use virtualized view for large diffs (e.g., lockfiles)
+  if (useVirtualization) {
+    return (
+      <VirtualizedDiffView
+        diff={diff}
+        focusedHunkIndex={focusedHunkIndex}
+        onHunkFocus={onHunkFocus}
+        showLineNumbers={showLineNumbers}
+        language={effectiveLanguage}
+      />
+    );
+  }
+
+  // Standard rendering for smaller diffs
   return (
     <div ref={containerRef} className="overflow-auto h-full bg-background">
       {diff.hunks.map((hunk) => (

@@ -5,7 +5,7 @@
  * Feature: UI improvement - grouped output by node with visual distinction
  */
 
-import { useRef, useEffect, useMemo, useState } from 'react';
+import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { X, Terminal, Copy, Check, Workflow, Loader2, CheckCircle2, XCircle, AlertCircle, List, Layers } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { WorkflowExecutionState, OutputLine } from '../../hooks/useWorkflowExecution';
@@ -14,6 +14,7 @@ import { ExecutionStatusIcon } from './WorkflowExecutionStatus';
 import { formatDuration } from '../../hooks/useWorkflowExecution';
 import { formatChildDuration, formatChildProgress } from '../../hooks/useChildExecution';
 import { OutputNodeGroup, groupOutputByNode } from './OutputNodeGroup';
+import { VirtualizedOutputList, getOutputLineClassName } from './VirtualizedOutputList';
 
 type ViewMode = 'grouped' | 'raw';
 
@@ -61,21 +62,35 @@ export function WorkflowOutputPanel({
     return groupedOutput[groupedOutput.length - 1].nodeId;
   }, [groupedOutput]);
 
-  // Auto-scroll to bottom when new output arrives
+  // Auto-scroll to bottom when new output arrives (only for grouped view)
   useEffect(() => {
-    if (autoScroll && outputRef.current) {
+    if (viewMode === 'grouped' && autoScroll && outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [output, autoScroll]);
+  }, [output, autoScroll, viewMode]);
 
-  // Handle scroll to detect if user scrolled up
-  const handleScroll = () => {
+  // Handle scroll to detect if user scrolled up (for grouped view)
+  const handleScroll = useCallback(() => {
     if (outputRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = outputRef.current;
       const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
       setAutoScroll(isAtBottom);
     }
-  };
+  }, []);
+
+  // Handle scroll change from virtualized list (for raw view)
+  const handleVirtualizedScrollChange = useCallback((isAtBottom: boolean) => {
+    setAutoScroll(isAtBottom);
+  }, []);
+
+  // Render function for raw output lines
+  const renderRawOutputLine = useCallback((line: OutputLine) => {
+    return (
+      <div className={getOutputLineClassName(line.stream, line.content, line.nodeType)}>
+        {line.content}
+      </div>
+    );
+  }, []);
 
   // Copy all output to clipboard
   const handleCopy = async () => {
@@ -213,16 +228,14 @@ export function WorkflowOutputPanel({
               )}
             </div>
           ) : (
-            // Raw view - traditional line-by-line output
-            <div className="font-mono text-xs leading-relaxed space-y-0.5">
-              {output.map((line) => (
-                <RawOutputLineItem key={line.id} line={line} />
-              ))}
-              {/* Cursor indicator when running */}
-              {isActive && (
-                <span className="inline-block w-2 h-4 bg-blue-400 animate-pulse" />
-              )}
-            </div>
+            // Raw view - virtualized line-by-line output
+            <VirtualizedOutputList
+              lines={output}
+              renderLine={renderRawOutputLine}
+              autoScroll={autoScroll}
+              onScrollChange={handleVirtualizedScrollChange}
+              className="h-full"
+            />
           )}
         </div>
 
@@ -283,42 +296,6 @@ export function WorkflowOutputPanel({
           </button>
         )}
       </div>
-    </div>
-  );
-}
-
-/**
- * Single output line with stream-based styling for raw view
- */
-interface RawOutputLineItemProps {
-  line: OutputLine;
-}
-
-function RawOutputLineItem({ line }: RawOutputLineItemProps) {
-  const { content, stream, nodeType } = line;
-
-  // Special styling for system messages based on node type
-  const isSystemMessage = stream === 'system';
-  const isTriggerWorkflow = nodeType === 'trigger-workflow';
-
-  return (
-    <div
-      className={cn(
-        'whitespace-pre-wrap break-all',
-        // Base stream colors
-        stream === 'stderr' && 'text-red-400',
-        stream === 'stdout' && 'text-foreground',
-        // System message styling with node type distinction
-        isSystemMessage && !isTriggerWorkflow && 'text-blue-400 font-medium',
-        isSystemMessage && isTriggerWorkflow && 'text-purple-400 font-medium',
-        // Highlight starting messages
-        isSystemMessage && (content.startsWith('>') || content.startsWith('>>')) && 'mt-3 pt-2 border-t border-border',
-        // Status message styling
-        isSystemMessage && content.startsWith('[OK]') && 'text-green-400',
-        isSystemMessage && content.startsWith('[FAIL]') && 'text-red-400'
-      )}
-    >
-      {content}
     </div>
   );
 }
