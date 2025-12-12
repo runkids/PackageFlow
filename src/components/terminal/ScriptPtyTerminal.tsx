@@ -574,19 +574,11 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
     activeSession?.terminal?.focus();
   }, [activeSession]);
 
-  // Clear all sessions
-  const handleClearAll = useCallback(() => {
-    // Kill all sessions and remove from ScriptExecutionContext
-    sessions.forEach((session) => {
-      session.pty?.kill();
-      session.webglAddon?.dispose();
-      session.terminal?.dispose();
-      // Feature 008: Remove from ScriptExecutionContext
-      onRemovePtyExecution?.(session.id);
-    });
-    setSessions(new Map());
-    setActiveSessionId(null);
-  }, [sessions, onRemovePtyExecution]);
+  // Clear current terminal output (not close tabs)
+  const handleClearOutput = useCallback(() => {
+    if (!activeSession?.terminal) return;
+    activeSession.terminal.clear();
+  }, [activeSession]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -736,11 +728,12 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
                   <Copy className="w-4 h-4 text-muted-foreground" />
                 )}
               </button>
-              {/* Clear all button */}
+              {/* Clear output button */}
               <button
-                onClick={handleClearAll}
-                className="p-1.5 rounded hover:bg-secondary"
-                title="Close all tabs"
+                onClick={handleClearOutput}
+                disabled={!activeSession}
+                className="p-1.5 rounded hover:bg-secondary disabled:opacity-50"
+                title="Clear output"
               >
                 <Trash2 className="w-4 h-4 text-muted-foreground" />
               </button>
