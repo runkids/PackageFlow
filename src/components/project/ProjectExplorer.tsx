@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon } from 'lucide-react';
+import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
 import { ipaAPI, apkAPI, worktreeAPI, type Worktree, type EditorDefinition } from '../../lib/tauri-api';
@@ -109,6 +109,9 @@ export function ProjectExplorer({
   // Dependency Graph state (008-monorepo-support)
   const [showDependencyGraph, setShowDependencyGraph] = useState(false);
   const [selectedMonorepoTool, setSelectedMonorepoTool] = useState<MonorepoToolType | null>(null);
+
+  // Editor dropdown state
+  const [isEditorDropdownOpen, setIsEditorDropdownOpen] = useState(false);
 
   // Worktree scripts hook
   const { executeScriptInWorktree, getCategorizedScripts } = useWorktreeScripts();
@@ -250,6 +253,17 @@ export function ProjectExplorer({
     }
   }, []);
 
+  // Handle open in editor from header dropdown
+  const handleOpenInEditor = useCallback(async (editorId: string) => {
+    if (!project) return;
+    try {
+      await worktreeAPI.openInEditor(project.path, editorId);
+      setIsEditorDropdownOpen(false);
+    } catch (err) {
+      console.error('Failed to open in editor:', err);
+    }
+  }, [project]);
+
   // Handle run script from Quick Switcher
   const handleQuickSwitcherRunScript = useCallback(async (worktreePath: string, scriptName: string) => {
     if (!project) return;
@@ -373,13 +387,45 @@ export function ProjectExplorer({
             )}
           </div>
           <div className="flex items-center gap-2 ml-4">
-            <button
-              onClick={onOpenInVSCode}
-              className="p-2 rounded hover:bg-accent transition-colors"
-              title="Open in VS Code"
-            >
-              <Code2 className="w-4 h-4 text-muted-foreground" />
-            </button>
+            {/* Open in Editor Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsEditorDropdownOpen(!isEditorDropdownOpen)}
+                className="flex items-center gap-1.5 p-2 rounded hover:bg-accent transition-colors"
+                title="Open in Editor"
+              >
+                <Code2 className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="w-3 h-3 text-muted-foreground" />
+              </button>
+              {isEditorDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsEditorDropdownOpen(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px] whitespace-nowrap">
+                    <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                      Open In
+                    </div>
+                    {availableEditors.map(editor => (
+                      <button
+                        key={editor.id}
+                        onClick={() => handleOpenInEditor(editor.id)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent"
+                      >
+                        <Code2 className="w-4 h-4" />
+                        {editor.name}
+                      </button>
+                    ))}
+                    {availableEditors.length === 0 && (
+                      <div className="px-3 py-1.5 text-sm text-muted-foreground">
+                        No editors available
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
 
             <button
               onClick={() => {

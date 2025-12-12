@@ -484,7 +484,7 @@ export function GitWorktreeList({
                       <Dropdown
                         trigger={
                           <button
-                            className="flex items-center gap-0.5 p-1.5 rounded hover:bg-accent"
+                            className="flex items-center gap-1.5 p-1.5 rounded hover:bg-accent"
                             title="Open in Editor"
                           >
                             <Code2 className="w-3.5 h-3.5 text-blue-400" />
