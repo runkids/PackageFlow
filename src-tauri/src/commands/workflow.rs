@@ -1,24 +1,26 @@
 // Workflow automation commands
 // Implements US4: Visual Workflow Automation
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
-use std::sync::Mutex;
-use std::process::Stdio;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_store::StoreExt;
-use uuid::Uuid;
 use chrono::Utc;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_store::StoreExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use uuid::Uuid;
 
-use crate::models::{Workflow, WorkflowNode, Execution, ExecutionStatus, Project};
-use crate::models::webhook::{WebhookConfig, WebhookTrigger, WebhookDeliveryPayload, DEFAULT_PAYLOAD_TEMPLATE};
-use crate::services::notification::{send_webhook_notification, WebhookNotificationType};
-use crate::utils::store::STORE_FILE;
-use crate::utils::path_resolver;
 use crate::commands::monorepo::get_volta_wrapped_command;
+use crate::models::webhook::{
+    WebhookConfig, WebhookDeliveryPayload, WebhookTrigger, DEFAULT_PAYLOAD_TEMPLATE,
+};
+use crate::models::{Execution, ExecutionStatus, Project, Workflow, WorkflowNode};
+use crate::services::notification::{send_webhook_notification, WebhookNotificationType};
+use crate::utils::path_resolver;
+use crate::utils::store::STORE_FILE;
 
 // Unix-specific imports for process signal handling
 #[cfg(unix)]
@@ -35,8 +37,8 @@ pub struct WorkflowOutputLine {
     pub node_id: String,
     pub node_name: String,
     pub content: String,
-    pub stream: String,     // "stdout" | "stderr" | "system"
-    pub timestamp: String,  // ISO 8601
+    pub stream: String,    // "stdout" | "stderr" | "system"
+    pub timestamp: String, // ISO 8601
 }
 
 /// Output buffer with size limit for storing workflow output history
@@ -246,11 +248,11 @@ pub struct ChildExecutionCompletedPayload {
 
 /// Save a workflow to store
 #[tauri::command]
-pub async fn save_workflow(
-    app: AppHandle,
-    workflow: Workflow,
-) -> Result<(), String> {
-    println!("[workflow] save_workflow called: id={}, name={}", workflow.id, workflow.name);
+pub async fn save_workflow(app: AppHandle, workflow: Workflow) -> Result<(), String> {
+    println!(
+        "[workflow] save_workflow called: id={}, name={}",
+        workflow.id, workflow.name
+    );
     let store = app.store(STORE_FILE).map_err(|e| {
         println!("[workflow] Failed to open store: {}", e);
         e.to_string()
@@ -268,7 +270,10 @@ pub async fn save_workflow(
         workflows.push(workflow);
     }
 
-    store.set("workflows", serde_json::to_value(&workflows).map_err(|e| e.to_string())?);
+    store.set(
+        "workflows",
+        serde_json::to_value(&workflows).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     println!("[workflow] Saved {} workflows to store", workflows.len());
@@ -283,10 +288,7 @@ pub async fn save_workflow(
 
 /// Delete a workflow from store
 #[tauri::command]
-pub async fn delete_workflow(
-    app: AppHandle,
-    workflow_id: String,
-) -> Result<(), String> {
+pub async fn delete_workflow(app: AppHandle, workflow_id: String) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     let mut workflows: Vec<Workflow> = store
@@ -296,7 +298,10 @@ pub async fn delete_workflow(
 
     workflows.retain(|w| w.id != workflow_id);
 
-    store.set("workflows", serde_json::to_value(&workflows).map_err(|e| e.to_string())?);
+    store.set(
+        "workflows",
+        serde_json::to_value(&workflows).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     // Sync incoming webhook server state
@@ -316,7 +321,10 @@ pub async fn execute_workflow(
     parent_execution_id: Option<String>,
     parent_node_id: Option<String>,
 ) -> Result<String, String> {
-    println!("[workflow] execute_workflow called with id: {}, parent: {:?}", workflow_id, parent_execution_id);
+    println!(
+        "[workflow] execute_workflow called with id: {}, parent: {:?}",
+        workflow_id, parent_execution_id
+    );
 
     // Load workflow
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
@@ -336,7 +344,11 @@ pub async fn execute_workflow(
             "Workflow not found".to_string()
         })?;
 
-    println!("[workflow] Found workflow: {} with {} nodes", workflow.name, workflow.nodes.len());
+    println!(
+        "[workflow] Found workflow: {} with {} nodes",
+        workflow.name,
+        workflow.nodes.len()
+    );
 
     // Calculate depth from parent execution (Feature 013: T009)
     let depth = if let Some(ref parent_exec_id) = parent_execution_id {
@@ -370,18 +382,24 @@ pub async fn execute_workflow(
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
 
-        projects.iter()
+        projects
+            .iter()
             .find(|p| &p.id == project_id)
             .map(|p| p.path.clone())
     } else {
         None
     };
 
-    println!("[workflow] Project path: {:?}, depth: {}", project_path, depth);
+    println!(
+        "[workflow] Project path: {:?}, depth: {}",
+        project_path, depth
+    );
 
     // Create execution with parent tracking (Feature 013)
     let execution_id = Uuid::new_v4().to_string();
-    let execution = if let (Some(ref parent_exec_id), Some(ref parent_node)) = (&parent_execution_id, &parent_node_id) {
+    let execution = if let (Some(ref parent_exec_id), Some(ref parent_node)) =
+        (&parent_execution_id, &parent_node_id)
+    {
         Execution::new_child(
             execution_id.clone(),
             workflow_id.clone(),
@@ -401,15 +419,18 @@ pub async fn execute_workflow(
     {
         let state = app.state::<WorkflowExecutionState>();
         let mut executions = state.executions.lock().unwrap();
-        executions.insert(execution_id.clone(), RunningWorkflowExecution {
-            execution,
-            workflow: workflow.clone(),
-            current_node_index: 0,
-            is_paused: false,
-            should_cancel: false,
-            current_process_id: None,
-            output_buffer: WorkflowOutputBuffer::new(),
-        });
+        executions.insert(
+            execution_id.clone(),
+            RunningWorkflowExecution {
+                execution,
+                workflow: workflow.clone(),
+                current_node_index: 0,
+                is_paused: false,
+                should_cancel: false,
+                current_process_id: None,
+                output_buffer: WorkflowOutputBuffer::new(),
+            },
+        );
     }
 
     // Feature 013: Create execution context with pre-loaded data
@@ -439,7 +460,8 @@ pub async fn execute_workflow(
             project_path,
             parent_exec_id_clone,
             parent_node_id_clone,
-        ).await;
+        )
+        .await;
     });
 
     Ok(execution_id)
@@ -463,7 +485,10 @@ async fn execute_workflow_nodes_with_context(
     let workflow_id = {
         let state = app.state::<WorkflowExecutionState>();
         let executions = state.executions.lock().unwrap();
-        executions.get(&execution_id).map(|e| e.workflow.id.clone()).unwrap_or_default()
+        executions
+            .get(&execution_id)
+            .map(|e| e.workflow.id.clone())
+            .unwrap_or_default()
     };
 
     for (index, node) in nodes.iter().enumerate() {
@@ -474,12 +499,15 @@ async fn execute_workflow_nodes_with_context(
             if let Some(exec) = executions.get(&execution_id) {
                 if exec.is_paused {
                     // Emit paused event
-                    let _ = app.emit("execution_paused", ExecutionPausedPayload {
-                        execution_id: execution_id.clone(),
-                        workflow_id: exec.workflow.id.clone(),
-                        paused_at_node_id: node.id.clone(),
-                        reason: "user_requested".to_string(),
-                    });
+                    let _ = app.emit(
+                        "execution_paused",
+                        ExecutionPausedPayload {
+                            execution_id: execution_id.clone(),
+                            workflow_id: exec.workflow.id.clone(),
+                            paused_at_node_id: node.id.clone(),
+                            reason: "user_requested".to_string(),
+                        },
+                    );
                     return;
                 }
                 if exec.should_cancel {
@@ -501,46 +529,61 @@ async fn execute_workflow_nodes_with_context(
 
         // Feature 013: Get target workflow name for trigger-workflow nodes
         let target_workflow_name = if node.is_trigger_workflow() {
-            node.get_trigger_workflow_config()
-                .and_then(|config| {
-                    ctx.workflows.iter()
-                        .find(|w| w.id == config.target_workflow_id)
-                        .map(|w| w.name.clone())
-                })
+            node.get_trigger_workflow_config().and_then(|config| {
+                ctx.workflows
+                    .iter()
+                    .find(|w| w.id == config.target_workflow_id)
+                    .map(|w| w.name.clone())
+            })
         } else {
             None
         };
 
         // Emit node started
-        let _ = app.emit("execution_node_started", NodeStartedPayload {
-            execution_id: execution_id.clone(),
-            workflow_id: workflow_id.clone(),
-            node_id: node.id.clone(),
-            node_name: node.name.clone(),
-            node_type: node.node_type.clone(),
-            target_workflow_name,
-            started_at: Utc::now().to_rfc3339(),
-        });
+        let _ = app.emit(
+            "execution_node_started",
+            NodeStartedPayload {
+                execution_id: execution_id.clone(),
+                workflow_id: workflow_id.clone(),
+                node_id: node.id.clone(),
+                node_name: node.name.clone(),
+                node_type: node.node_type.clone(),
+                target_workflow_name,
+                started_at: Utc::now().to_rfc3339(),
+            },
+        );
 
         // Feature 013: Emit child execution progress if this is a child execution
-        if let (Some(ref parent_exec_id), Some(ref parent_node)) = (&parent_execution_id, &parent_node_id) {
-            let _ = app.emit("child_execution_progress", ChildExecutionProgressPayload {
-                parent_execution_id: parent_exec_id.clone(),
-                parent_node_id: parent_node.clone(),
-                child_execution_id: execution_id.clone(),
-                current_step: index,
-                total_steps: total_nodes,
-                current_node_id: node.id.clone(),
-                current_node_name: node.name.clone(),
-                timestamp: Utc::now().to_rfc3339(),
-            });
+        if let (Some(ref parent_exec_id), Some(ref parent_node)) =
+            (&parent_execution_id, &parent_node_id)
+        {
+            let _ = app.emit(
+                "child_execution_progress",
+                ChildExecutionProgressPayload {
+                    parent_execution_id: parent_exec_id.clone(),
+                    parent_node_id: parent_node.clone(),
+                    child_execution_id: execution_id.clone(),
+                    current_step: index,
+                    total_steps: total_nodes,
+                    current_node_id: node.id.clone(),
+                    current_node_name: node.name.clone(),
+                    timestamp: Utc::now().to_rfc3339(),
+                },
+            );
         }
 
         // Execute node based on type (Feature 013: T011)
         let result = if node.is_trigger_workflow() {
             execute_trigger_workflow_node(&app, &ctx, &execution_id, node).await
         } else {
-            execute_node(&app, &execution_id, &workflow_id, node, default_cwd.as_deref()).await
+            execute_node(
+                &app,
+                &execution_id,
+                &workflow_id,
+                node,
+                default_cwd.as_deref(),
+            )
+            .await
         };
 
         // Emit node completed
@@ -549,21 +592,28 @@ async fn execute_workflow_nodes_with_context(
                 if *code == 0 {
                     ("completed".to_string(), Some(*code), None)
                 } else {
-                    ("failed".to_string(), Some(*code), Some(format!("Exit code: {}", code)))
+                    (
+                        "failed".to_string(),
+                        Some(*code),
+                        Some(format!("Exit code: {}", code)),
+                    )
                 }
             }
             Err(e) => ("failed".to_string(), None, Some(e.clone())),
         };
 
-        let _ = app.emit("execution_node_completed", NodeCompletedPayload {
-            execution_id: execution_id.clone(),
-            workflow_id: workflow_id.clone(),
-            node_id: node.id.clone(),
-            status: status_str.clone(),
-            exit_code,
-            error_message: error_msg.clone(),
-            finished_at: Utc::now().to_rfc3339(),
-        });
+        let _ = app.emit(
+            "execution_node_completed",
+            NodeCompletedPayload {
+                execution_id: execution_id.clone(),
+                workflow_id: workflow_id.clone(),
+                node_id: node.id.clone(),
+                status: status_str.clone(),
+                exit_code,
+                error_message: error_msg.clone(),
+                finished_at: Utc::now().to_rfc3339(),
+            },
+        );
 
         // If node failed, stop execution
         if status_str == "failed" {
@@ -580,37 +630,50 @@ async fn execute_workflow_nodes_with_context(
             let (workflow_id, workflow_name, webhook_config) = {
                 let state = app.state::<WorkflowExecutionState>();
                 let executions = state.executions.lock().unwrap();
-                executions.get(&execution_id).map(|e| (
-                    e.workflow.id.clone(),
-                    e.workflow.name.clone(),
-                    e.workflow.webhook.clone(),
-                )).unwrap_or_default()
+                executions
+                    .get(&execution_id)
+                    .map(|e| {
+                        (
+                            e.workflow.id.clone(),
+                            e.workflow.name.clone(),
+                            e.workflow.webhook.clone(),
+                        )
+                    })
+                    .unwrap_or_default()
             };
 
             let duration_ms = start_time.elapsed().as_millis() as u64;
 
             // Emit execution completed
             if !workflow_id.is_empty() {
-                let _ = app.emit("execution_completed", ExecutionCompletedPayload {
-                    execution_id: execution_id.clone(),
-                    workflow_id: workflow_id.clone(),
-                    status: "failed".to_string(),
-                    finished_at: Utc::now().to_rfc3339(),
-                    total_duration_ms: duration_ms,
-                });
+                let _ = app.emit(
+                    "execution_completed",
+                    ExecutionCompletedPayload {
+                        execution_id: execution_id.clone(),
+                        workflow_id: workflow_id.clone(),
+                        status: "failed".to_string(),
+                        finished_at: Utc::now().to_rfc3339(),
+                        total_duration_ms: duration_ms,
+                    },
+                );
 
                 // Feature 013: Emit child execution completed if this is a child execution
-                if let (Some(ref parent_exec_id), Some(ref parent_node)) = (&parent_execution_id, &parent_node_id) {
-                    let _ = app.emit("child_execution_completed", ChildExecutionCompletedPayload {
-                        parent_execution_id: parent_exec_id.clone(),
-                        parent_node_id: parent_node.clone(),
-                        child_execution_id: execution_id.clone(),
-                        child_workflow_id: workflow_id.clone(),
-                        status: "failed".to_string(),
-                        duration_ms,
-                        error_message: error_msg.clone(),
-                        finished_at: Utc::now().to_rfc3339(),
-                    });
+                if let (Some(ref parent_exec_id), Some(ref parent_node)) =
+                    (&parent_execution_id, &parent_node_id)
+                {
+                    let _ = app.emit(
+                        "child_execution_completed",
+                        ChildExecutionCompletedPayload {
+                            parent_execution_id: parent_exec_id.clone(),
+                            parent_node_id: parent_node.clone(),
+                            child_execution_id: execution_id.clone(),
+                            child_workflow_id: workflow_id.clone(),
+                            status: "failed".to_string(),
+                            duration_ms,
+                            error_message: error_msg.clone(),
+                            finished_at: Utc::now().to_rfc3339(),
+                        },
+                    );
                 }
 
                 // Send webhook if configured and trigger condition matches
@@ -634,7 +697,8 @@ async fn execute_workflow_nodes_with_context(
                                 "failed",
                                 duration_ms,
                                 error_msg.as_deref(),
-                            ).await;
+                            )
+                            .await;
                         });
                     }
                 }
@@ -655,7 +719,10 @@ async fn execute_workflow_nodes_with_context(
     let was_cancelled = {
         let state = app.state::<WorkflowExecutionState>();
         let executions = state.executions.lock().unwrap();
-        executions.get(&execution_id).map(|e| e.should_cancel).unwrap_or(false)
+        executions
+            .get(&execution_id)
+            .map(|e| e.should_cancel)
+            .unwrap_or(false)
     };
 
     let duration_ms = start_time.elapsed().as_millis() as u64;
@@ -676,40 +743,54 @@ async fn execute_workflow_nodes_with_context(
         // Emit node_completed for the current running node (mark as cancelled)
         if current_node_index < nodes.len() {
             let current_node = &nodes[current_node_index];
-            let _ = app.emit("execution_node_completed", NodeCompletedPayload {
-                execution_id: execution_id.clone(),
-                workflow_id: workflow_id.clone(),
-                node_id: current_node.id.clone(),
-                status: "cancelled".to_string(),
-                exit_code: None,
-                error_message: Some("Execution cancelled by user".to_string()),
-                finished_at: Utc::now().to_rfc3339(),
-            });
+            let _ = app.emit(
+                "execution_node_completed",
+                NodeCompletedPayload {
+                    execution_id: execution_id.clone(),
+                    workflow_id: workflow_id.clone(),
+                    node_id: current_node.id.clone(),
+                    status: "cancelled".to_string(),
+                    exit_code: None,
+                    error_message: Some("Execution cancelled by user".to_string()),
+                    finished_at: Utc::now().to_rfc3339(),
+                },
+            );
         }
 
         if !workflow_id.is_empty() {
             let wf_id = workflow_id.clone();
-            println!("[workflow] Emitting execution_completed (cancelled) for {}", execution_id);
-            let _ = app.emit("execution_completed", ExecutionCompletedPayload {
-                execution_id: execution_id.clone(),
-                workflow_id: wf_id.clone(),
-                status: "cancelled".to_string(),
-                finished_at: Utc::now().to_rfc3339(),
-                total_duration_ms: duration_ms,
-            });
+            println!(
+                "[workflow] Emitting execution_completed (cancelled) for {}",
+                execution_id
+            );
+            let _ = app.emit(
+                "execution_completed",
+                ExecutionCompletedPayload {
+                    execution_id: execution_id.clone(),
+                    workflow_id: wf_id.clone(),
+                    status: "cancelled".to_string(),
+                    finished_at: Utc::now().to_rfc3339(),
+                    total_duration_ms: duration_ms,
+                },
+            );
 
             // Feature 013: Emit child execution completed if this is a child execution
-            if let (Some(ref parent_exec_id), Some(ref parent_node)) = (&parent_execution_id, &parent_node_id) {
-                let _ = app.emit("child_execution_completed", ChildExecutionCompletedPayload {
-                    parent_execution_id: parent_exec_id.clone(),
-                    parent_node_id: parent_node.clone(),
-                    child_execution_id: execution_id.clone(),
-                    child_workflow_id: wf_id.clone(),
-                    status: "cancelled".to_string(),
-                    duration_ms,
-                    error_message: None,
-                    finished_at: Utc::now().to_rfc3339(),
-                });
+            if let (Some(ref parent_exec_id), Some(ref parent_node)) =
+                (&parent_execution_id, &parent_node_id)
+            {
+                let _ = app.emit(
+                    "child_execution_completed",
+                    ChildExecutionCompletedPayload {
+                        parent_execution_id: parent_exec_id.clone(),
+                        parent_node_id: parent_node.clone(),
+                        child_execution_id: execution_id.clone(),
+                        child_workflow_id: wf_id.clone(),
+                        status: "cancelled".to_string(),
+                        duration_ms,
+                        error_message: None,
+                        finished_at: Utc::now().to_rfc3339(),
+                    },
+                );
             }
         }
 
@@ -739,27 +820,38 @@ async fn execute_workflow_nodes_with_context(
     };
 
     if let Some(wf_id) = workflow_id {
-        println!("[workflow] Emitting execution_completed for {}", execution_id);
-        let _ = app.emit("execution_completed", ExecutionCompletedPayload {
-            execution_id: execution_id.clone(),
-            workflow_id: wf_id.clone(),
-            status: "completed".to_string(),
-            finished_at: Utc::now().to_rfc3339(),
-            total_duration_ms: duration_ms,
-        });
+        println!(
+            "[workflow] Emitting execution_completed for {}",
+            execution_id
+        );
+        let _ = app.emit(
+            "execution_completed",
+            ExecutionCompletedPayload {
+                execution_id: execution_id.clone(),
+                workflow_id: wf_id.clone(),
+                status: "completed".to_string(),
+                finished_at: Utc::now().to_rfc3339(),
+                total_duration_ms: duration_ms,
+            },
+        );
 
         // Feature 013: Emit child execution completed if this is a child execution
-        if let (Some(ref parent_exec_id), Some(ref parent_node)) = (&parent_execution_id, &parent_node_id) {
-            let _ = app.emit("child_execution_completed", ChildExecutionCompletedPayload {
-                parent_execution_id: parent_exec_id.clone(),
-                parent_node_id: parent_node.clone(),
-                child_execution_id: execution_id.clone(),
-                child_workflow_id: wf_id.clone(),
-                status: "completed".to_string(),
-                duration_ms,
-                error_message: None,
-                finished_at: Utc::now().to_rfc3339(),
-            });
+        if let (Some(ref parent_exec_id), Some(ref parent_node)) =
+            (&parent_execution_id, &parent_node_id)
+        {
+            let _ = app.emit(
+                "child_execution_completed",
+                ChildExecutionCompletedPayload {
+                    parent_execution_id: parent_exec_id.clone(),
+                    parent_node_id: parent_node.clone(),
+                    child_execution_id: execution_id.clone(),
+                    child_workflow_id: wf_id.clone(),
+                    status: "completed".to_string(),
+                    duration_ms,
+                    error_message: None,
+                    finished_at: Utc::now().to_rfc3339(),
+                },
+            );
         }
 
         // Send webhook if configured and trigger condition matches
@@ -782,7 +874,8 @@ async fn execute_workflow_nodes_with_context(
                         "completed",
                         duration_ms,
                         None,
-                    ).await;
+                    )
+                    .await;
                 });
             }
         }
@@ -804,13 +897,15 @@ async fn execute_trigger_workflow_node(
     execution_id: &str,
     node: &WorkflowNode,
 ) -> Result<i32, String> {
-    let config = node.get_trigger_workflow_config()
+    let config = node
+        .get_trigger_workflow_config()
         .ok_or_else(|| "Invalid trigger-workflow node config".to_string())?;
 
     let target_workflow_id = &config.target_workflow_id;
 
     // Get target workflow from pre-loaded context
-    let target_workflow = ctx.workflows
+    let target_workflow = ctx
+        .workflows
         .iter()
         .find(|w| w.id == *target_workflow_id)
         .ok_or_else(|| format!("Target workflow not found: {}", target_workflow_id))?;
@@ -826,39 +921,45 @@ async fn execute_trigger_workflow_node(
     let child_start_time = std::time::Instant::now();
 
     // Execute the child workflow using sync function with context
-    let child_execution_id = execute_child_workflow_sync(
-        app,
-        ctx,
-        target_workflow_id,
-        execution_id,
-        &node.id,
-    )?;
+    let child_execution_id =
+        execute_child_workflow_sync(app, ctx, target_workflow_id, execution_id, &node.id)?;
 
     // Emit child execution started event
-    let _ = app.emit("child_execution_started", ChildExecutionStartedPayload {
-        parent_execution_id: execution_id.to_string(),
-        parent_node_id: node.id.clone(),
-        child_execution_id: child_execution_id.clone(),
-        child_workflow_id: target_workflow_id.clone(),
-        child_workflow_name: target_workflow_name.clone(),
-        started_at: Utc::now().to_rfc3339(),
-    });
+    let _ = app.emit(
+        "child_execution_started",
+        ChildExecutionStartedPayload {
+            parent_execution_id: execution_id.to_string(),
+            parent_node_id: node.id.clone(),
+            child_execution_id: child_execution_id.clone(),
+            child_workflow_id: target_workflow_id.clone(),
+            child_workflow_name: target_workflow_name.clone(),
+            started_at: Utc::now().to_rfc3339(),
+        },
+    );
 
     // If waitForCompletion is false, return immediately
     if !config.wait_for_completion {
-        println!("[workflow] Fire-and-forget mode: child workflow {} started", child_execution_id);
+        println!(
+            "[workflow] Fire-and-forget mode: child workflow {} started",
+            child_execution_id
+        );
         return Ok(0);
     }
 
     // Wait for child execution to complete
-    println!("[workflow] Waiting for child workflow {} to complete...", child_execution_id);
+    println!(
+        "[workflow] Waiting for child workflow {} to complete...",
+        child_execution_id
+    );
 
     loop {
         // Check if child execution is still running
         let child_status = {
             let state = app.state::<WorkflowExecutionState>();
             let executions = state.executions.lock().unwrap();
-            executions.get(&child_execution_id).map(|e| e.execution.status.clone())
+            executions
+                .get(&child_execution_id)
+                .map(|e| e.execution.status.clone())
         };
 
         match child_status {
@@ -867,7 +968,10 @@ async fn execute_trigger_workflow_node(
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
             Some(crate::models::execution::ExecutionStatus::Completed) => {
-                println!("[workflow] Child workflow {} completed successfully", child_execution_id);
+                println!(
+                    "[workflow] Child workflow {} completed successfully",
+                    child_execution_id
+                );
                 return Ok(0);
             }
             Some(crate::models::execution::ExecutionStatus::Failed) => {
@@ -886,8 +990,14 @@ async fn execute_trigger_workflow_node(
                 ));
             }
             Some(crate::models::execution::ExecutionStatus::Cancelled) => {
-                println!("[workflow] Child workflow {} was cancelled", child_execution_id);
-                return Err(format!("Child workflow '{}' was cancelled", target_workflow_name));
+                println!(
+                    "[workflow] Child workflow {} was cancelled",
+                    child_execution_id
+                );
+                return Err(format!(
+                    "Child workflow '{}' was cancelled",
+                    target_workflow_name
+                ));
             }
             Some(crate::models::execution::ExecutionStatus::Paused) => {
                 // Still considered running for our purposes
@@ -896,7 +1006,10 @@ async fn execute_trigger_workflow_node(
             None => {
                 // Child execution has been removed from state - it must have completed
                 // Check the final status from events or assume completed
-                println!("[workflow] Child workflow {} finished (removed from state)", child_execution_id);
+                println!(
+                    "[workflow] Child workflow {} finished (removed from state)",
+                    child_execution_id
+                );
                 return Ok(0);
             }
         }
@@ -923,9 +1036,13 @@ fn execute_child_workflow_sync(
     parent_execution_id: &str,
     parent_node_id: &str,
 ) -> Result<String, String> {
-    println!("[workflow] execute_child_workflow_sync called with id: {}, parent: {}", workflow_id, parent_execution_id);
+    println!(
+        "[workflow] execute_child_workflow_sync called with id: {}, parent: {}",
+        workflow_id, parent_execution_id
+    );
 
-    let workflow = ctx.workflows
+    let workflow = ctx
+        .workflows
         .iter()
         .find(|w| w.id == workflow_id)
         .cloned()
@@ -954,9 +1071,15 @@ fn execute_child_workflow_sync(
     // Feature 013 T043: Runtime cycle detection
     // Check if this workflow is already in the execution chain
     if ctx.execution_chain.contains(&workflow_id.to_string()) {
-        let chain_names: Vec<String> = ctx.execution_chain
+        let chain_names: Vec<String> = ctx
+            .execution_chain
             .iter()
-            .filter_map(|id| ctx.workflows.iter().find(|w| &w.id == id).map(|w| w.name.clone()))
+            .filter_map(|id| {
+                ctx.workflows
+                    .iter()
+                    .find(|w| &w.id == id)
+                    .map(|w| w.name.clone())
+            })
             .collect();
         let workflow_name = workflow.name.clone();
         return Err(format!(
@@ -969,7 +1092,8 @@ fn execute_child_workflow_sync(
 
     // Get project path if workflow is associated with a project
     let project_path: Option<String> = if let Some(ref project_id) = workflow.project_id {
-        ctx.projects.iter()
+        ctx.projects
+            .iter()
             .find(|p| &p.id == project_id)
             .map(|p| p.path.clone())
     } else {
@@ -994,15 +1118,18 @@ fn execute_child_workflow_sync(
     {
         let state = app.state::<WorkflowExecutionState>();
         let mut executions = state.executions.lock().unwrap();
-        executions.insert(execution_id.clone(), RunningWorkflowExecution {
-            execution,
-            workflow: workflow.clone(),
-            current_node_index: 0,
-            is_paused: false,
-            should_cancel: false,
-            current_process_id: None,
-            output_buffer: WorkflowOutputBuffer::new(),
-        });
+        executions.insert(
+            execution_id.clone(),
+            RunningWorkflowExecution {
+                execution,
+                workflow: workflow.clone(),
+                current_node_index: 0,
+                is_paused: false,
+                should_cancel: false,
+                current_process_id: None,
+                output_buffer: WorkflowOutputBuffer::new(),
+            },
+        );
     }
 
     // Clone for async task
@@ -1024,7 +1151,8 @@ fn execute_child_workflow_sync(
             project_path,
             Some(parent_exec_id),
             Some(parent_node),
-        ).await;
+        )
+        .await;
     });
 
     Ok(execution_id)
@@ -1042,10 +1170,14 @@ async fn execute_node(
 ) -> Result<i32, String> {
     // Only script nodes can be executed with this function
     if !node.is_script() {
-        return Err(format!("Node type '{}' not supported for direct execution", node.node_type));
+        return Err(format!(
+            "Node type '{}' not supported for direct execution",
+            node.node_type
+        ));
     }
 
-    let config = node.get_script_config()
+    let config = node
+        .get_script_config()
         .ok_or_else(|| "Invalid script node config".to_string())?;
 
     // Parse command
@@ -1071,11 +1203,17 @@ async fn execute_node(
         let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         get_volta_wrapped_command(project_path, cmd_name, args_vec)
     } else {
-        (path_resolver::get_tool_path(cmd_name), args.iter().map(|s| s.to_string()).collect())
+        (
+            path_resolver::get_tool_path(cmd_name),
+            args.iter().map(|s| s.to_string()).collect(),
+        )
     };
 
     // Spawn and handle output
-    println!("[workflow] Spawning command: {} {:?} in cwd: {:?}", final_cmd, final_args, cwd);
+    println!(
+        "[workflow] Spawning command: {} {:?} in cwd: {:?}",
+        final_cmd, final_args, cwd
+    );
 
     // Use path_resolver to create command with proper PATH for macOS GUI apps
     let mut command = path_resolver::create_command(&final_cmd);
@@ -1137,14 +1275,17 @@ async fn execute_node(
         while let Ok(Some(line)) = stdout_reader.next_line().await {
             println!("[workflow] stdout: {}", line);
             let timestamp = Utc::now().to_rfc3339();
-            let _ = app_stdout.emit("execution_output", ExecutionOutputPayload {
-                execution_id: exec_id_stdout.clone(),
-                workflow_id: wf_id_stdout.clone(),
-                node_id: node_id_stdout.clone(),
-                output: line.clone(),
-                stream: "stdout".to_string(),
-                timestamp: timestamp.clone(),
-            });
+            let _ = app_stdout.emit(
+                "execution_output",
+                ExecutionOutputPayload {
+                    execution_id: exec_id_stdout.clone(),
+                    workflow_id: wf_id_stdout.clone(),
+                    node_id: node_id_stdout.clone(),
+                    output: line.clone(),
+                    stream: "stdout".to_string(),
+                    timestamp: timestamp.clone(),
+                },
+            );
             // Store in output buffer
             {
                 let state = app_stdout.state::<WorkflowExecutionState>();
@@ -1165,14 +1306,17 @@ async fn execute_node(
     let stderr_task = tokio::spawn(async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
             let timestamp = Utc::now().to_rfc3339();
-            let _ = app_stderr.emit("execution_output", ExecutionOutputPayload {
-                execution_id: exec_id_stderr.clone(),
-                workflow_id: wf_id_stderr.clone(),
-                node_id: node_id_stderr.clone(),
-                output: line.clone(),
-                stream: "stderr".to_string(),
-                timestamp: timestamp.clone(),
-            });
+            let _ = app_stderr.emit(
+                "execution_output",
+                ExecutionOutputPayload {
+                    execution_id: exec_id_stderr.clone(),
+                    workflow_id: wf_id_stderr.clone(),
+                    node_id: node_id_stderr.clone(),
+                    output: line.clone(),
+                    stream: "stderr".to_string(),
+                    timestamp: timestamp.clone(),
+                },
+            );
             // Store in output buffer
             {
                 let state = app_stderr.state::<WorkflowExecutionState>();
@@ -1199,7 +1343,10 @@ async fn execute_node(
         let should_cancel = {
             let state = app_cancel_check.state::<WorkflowExecutionState>();
             let executions = state.executions.lock().unwrap();
-            executions.get(&exec_id_cancel).map(|e| e.should_cancel).unwrap_or(false)
+            executions
+                .get(&exec_id_cancel)
+                .map(|e| e.should_cancel)
+                .unwrap_or(false)
         };
 
         if should_cancel {
@@ -1270,21 +1417,25 @@ async fn execute_trash_command(
     println!("[workflow] Intercepting rm command, using trash instead");
 
     // Filter out flags (like -r, -f, -rf, etc.) and get file paths
-    let files: Vec<&str> = args.iter()
+    let files: Vec<&str> = args
+        .iter()
         .filter(|arg| !arg.starts_with('-'))
         .copied()
         .collect();
 
     if files.is_empty() {
         let msg = "rm: missing operand (no files specified)".to_string();
-        let _ = app.emit("execution_output", ExecutionOutputPayload {
-            execution_id: execution_id.to_string(),
-            workflow_id: workflow_id.to_string(),
-            node_id: node.id.clone(),
-            output: msg.clone(),
-            stream: "stderr".to_string(),
-            timestamp: Utc::now().to_rfc3339(),
-        });
+        let _ = app.emit(
+            "execution_output",
+            ExecutionOutputPayload {
+                execution_id: execution_id.to_string(),
+                workflow_id: workflow_id.to_string(),
+                node_id: node.id.clone(),
+                output: msg.clone(),
+                stream: "stderr".to_string(),
+                timestamp: Utc::now().to_rfc3339(),
+            },
+        );
         return Err(msg);
     }
 
@@ -1313,14 +1464,17 @@ async fn execute_trash_command(
         // Check if path exists
         if !path.exists() {
             let msg = format!("rm: {}: No such file or directory", file);
-            let _ = app.emit("execution_output", ExecutionOutputPayload {
-                execution_id: execution_id.to_string(),
-                workflow_id: workflow_id.to_string(),
-                node_id: node.id.clone(),
-                output: msg,
-                stream: "stderr".to_string(),
-                timestamp: Utc::now().to_rfc3339(),
-            });
+            let _ = app.emit(
+                "execution_output",
+                ExecutionOutputPayload {
+                    execution_id: execution_id.to_string(),
+                    workflow_id: workflow_id.to_string(),
+                    node_id: node.id.clone(),
+                    output: msg,
+                    stream: "stderr".to_string(),
+                    timestamp: Utc::now().to_rfc3339(),
+                },
+            );
             error_count += 1;
             continue;
         }
@@ -1330,26 +1484,32 @@ async fn execute_trash_command(
             Ok(_) => {
                 let msg = format!("🗑️ Moved to Trash: {}", path.display());
                 println!("[workflow] {}", msg);
-                let _ = app.emit("execution_output", ExecutionOutputPayload {
-                    execution_id: execution_id.to_string(),
-                    workflow_id: workflow_id.to_string(),
-                    node_id: node.id.clone(),
-                    output: msg,
-                    stream: "stdout".to_string(),
-                    timestamp: Utc::now().to_rfc3339(),
-                });
+                let _ = app.emit(
+                    "execution_output",
+                    ExecutionOutputPayload {
+                        execution_id: execution_id.to_string(),
+                        workflow_id: workflow_id.to_string(),
+                        node_id: node.id.clone(),
+                        output: msg,
+                        stream: "stdout".to_string(),
+                        timestamp: Utc::now().to_rfc3339(),
+                    },
+                );
                 success_count += 1;
             }
             Err(e) => {
                 let msg = format!("rm: {}: {}", file, e);
-                let _ = app.emit("execution_output", ExecutionOutputPayload {
-                    execution_id: execution_id.to_string(),
-                    workflow_id: workflow_id.to_string(),
-                    node_id: node.id.clone(),
-                    output: msg,
-                    stream: "stderr".to_string(),
-                    timestamp: Utc::now().to_rfc3339(),
-                });
+                let _ = app.emit(
+                    "execution_output",
+                    ExecutionOutputPayload {
+                        execution_id: execution_id.to_string(),
+                        workflow_id: workflow_id.to_string(),
+                        node_id: node.id.clone(),
+                        output: msg,
+                        stream: "stderr".to_string(),
+                        timestamp: Utc::now().to_rfc3339(),
+                    },
+                );
                 error_count += 1;
             }
         }
@@ -1360,14 +1520,17 @@ async fn execute_trash_command(
         "Trash operation complete: {} moved to trash, {} errors",
         success_count, error_count
     );
-    let _ = app.emit("execution_output", ExecutionOutputPayload {
-        execution_id: execution_id.to_string(),
-        workflow_id: workflow_id.to_string(),
-        node_id: node.id.clone(),
-        output: summary,
-        stream: "stdout".to_string(),
-        timestamp: Utc::now().to_rfc3339(),
-    });
+    let _ = app.emit(
+        "execution_output",
+        ExecutionOutputPayload {
+            execution_id: execution_id.to_string(),
+            workflow_id: workflow_id.to_string(),
+            node_id: node.id.clone(),
+            output: summary,
+            stream: "stdout".to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+        },
+    );
 
     // Return exit code: 0 if all success, 1 if any errors
     if error_count > 0 {
@@ -1383,8 +1546,7 @@ async fn execute_trash_command(
 pub async fn cancel_execution(
     app: AppHandle,
     execution_id: String,
-    #[allow(unused_variables)]
-    cascade: Option<bool>,
+    #[allow(unused_variables)] cascade: Option<bool>,
 ) -> Result<(), String> {
     let cascade = cascade.unwrap_or(true); // Default to cascading cancel
 
@@ -1404,8 +1566,12 @@ pub async fn cancel_execution(
     // Cancel child executions recursively
     for child_id in child_execution_ids {
         // Recursive call with Box::pin to handle async recursion
-        if let Err(e) = Box::pin(cancel_execution(app.clone(), child_id.clone(), Some(true))).await {
-            println!("[workflow] Warning: Failed to cancel child execution {}: {}", child_id, e);
+        if let Err(e) = Box::pin(cancel_execution(app.clone(), child_id.clone(), Some(true))).await
+        {
+            println!(
+                "[workflow] Warning: Failed to cancel child execution {}: {}",
+                child_id, e
+            );
         }
     }
 
@@ -1416,7 +1582,10 @@ pub async fn cancel_execution(
     if let Some(exec) = executions.get_mut(&execution_id) {
         exec.should_cancel = true;
         exec.execution.status = ExecutionStatus::Cancelled;
-        println!("[workflow] Execution {} cancelled (cascade={})", execution_id, cascade);
+        println!(
+            "[workflow] Execution {} cancelled (cascade={})",
+            execution_id, cascade
+        );
         Ok(())
     } else {
         Err("Execution not found".to_string())
@@ -1425,10 +1594,7 @@ pub async fn cancel_execution(
 
 /// Continue a paused execution
 #[tauri::command]
-pub async fn continue_execution(
-    app: AppHandle,
-    execution_id: String,
-) -> Result<(), String> {
+pub async fn continue_execution(app: AppHandle, execution_id: String) -> Result<(), String> {
     let (workflow, start_index, project_id, workflow_id, parent_execution_id, parent_node_id) = {
         let state = app.state::<WorkflowExecutionState>();
         let mut executions = state.executions.lock().unwrap();
@@ -1473,7 +1639,8 @@ pub async fn continue_execution(
 
     // Get project path if workflow is associated with a project
     let project_path: Option<String> = if let Some(ref pid) = project_id {
-        ctx.projects.iter()
+        ctx.projects
+            .iter()
             .find(|p| &p.id == pid)
             .map(|p| p.path.clone())
     } else {
@@ -1495,7 +1662,8 @@ pub async fn continue_execution(
             project_path,
             parent_execution_id,
             parent_node_id,
-        ).await;
+        )
+        .await;
     });
 
     Ok(())
@@ -1503,9 +1671,7 @@ pub async fn continue_execution(
 
 /// Get all running executions
 #[tauri::command]
-pub async fn get_running_executions(
-    app: AppHandle,
-) -> Result<HashMap<String, Execution>, String> {
+pub async fn get_running_executions(app: AppHandle) -> Result<HashMap<String, Execution>, String> {
     let state = app.state::<WorkflowExecutionState>();
     let executions = state.executions.lock().unwrap();
 
@@ -1545,34 +1711,28 @@ pub async fn get_workflow_output(
         .find(|(_, exec)| exec.workflow.id == workflow_id);
 
     match execution {
-        Some((exec_id, exec)) => {
-            Ok(WorkflowOutputResponse {
-                found: true,
-                workflow_id: Some(workflow_id),
-                execution_id: Some(exec_id.clone()),
-                lines: exec.output_buffer.get_lines(),
-                truncated: exec.output_buffer.is_truncated(),
-                buffer_size: exec.output_buffer.size(),
-            })
-        }
-        None => {
-            Ok(WorkflowOutputResponse {
-                found: false,
-                workflow_id: Some(workflow_id),
-                execution_id: None,
-                lines: vec![],
-                truncated: false,
-                buffer_size: 0,
-            })
-        }
+        Some((exec_id, exec)) => Ok(WorkflowOutputResponse {
+            found: true,
+            workflow_id: Some(workflow_id),
+            execution_id: Some(exec_id.clone()),
+            lines: exec.output_buffer.get_lines(),
+            truncated: exec.output_buffer.is_truncated(),
+            buffer_size: exec.output_buffer.size(),
+        }),
+        None => Ok(WorkflowOutputResponse {
+            found: false,
+            workflow_id: Some(workflow_id),
+            execution_id: None,
+            lines: vec![],
+            truncated: false,
+            buffer_size: 0,
+        }),
     }
 }
 
 /// Restore running executions (placeholder - executions don't persist across restarts)
 #[tauri::command]
-pub async fn restore_running_executions(
-    app: AppHandle,
-) -> Result<(), String> {
+pub async fn restore_running_executions(app: AppHandle) -> Result<(), String> {
     // Load running executions from store if any were saved
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
@@ -1585,7 +1745,10 @@ pub async fn restore_running_executions(
     // In a real implementation, you might want to offer to restart them
     if !running.is_empty() {
         // Clear the stored running executions
-        store.set("runningExecutions", serde_json::to_value::<Vec<Execution>>(vec![]).unwrap());
+        store.set(
+            "runningExecutions",
+            serde_json::to_value::<Vec<Execution>>(vec![]).unwrap(),
+        );
         store.save().map_err(|e| e.to_string())?;
     }
 
@@ -1594,10 +1757,7 @@ pub async fn restore_running_executions(
 
 /// Kill a specific workflow process (by execution id)
 #[tauri::command]
-pub async fn kill_process(
-    app: AppHandle,
-    execution_id: String,
-) -> Result<(), String> {
+pub async fn kill_process(app: AppHandle, execution_id: String) -> Result<(), String> {
     let state = app.state::<WorkflowExecutionState>();
     let mut executions = state.executions.lock().unwrap();
 
@@ -1606,13 +1766,16 @@ pub async fn kill_process(
         exec.execution.cancel();
 
         // Emit completion event
-        let _ = app.emit("execution_completed", ExecutionCompletedPayload {
-            execution_id: execution_id.clone(),
-            workflow_id: exec.workflow.id.clone(),
-            status: "cancelled".to_string(),
-            finished_at: Utc::now().to_rfc3339(),
-            total_duration_ms: 0,
-        });
+        let _ = app.emit(
+            "execution_completed",
+            ExecutionCompletedPayload {
+                execution_id: execution_id.clone(),
+                workflow_id: exec.workflow.id.clone(),
+                status: "cancelled".to_string(),
+                finished_at: Utc::now().to_rfc3339(),
+                total_duration_ms: 0,
+            },
+        );
 
         executions.remove(&execution_id);
         Ok(())
@@ -1662,7 +1825,8 @@ fn render_template(
             "error_message" => error.to_string(),
             _ => caps[0].to_string(), // Keep unknown variables as-is
         }
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Send webhook notification (fire-and-forget)
@@ -1679,7 +1843,10 @@ async fn send_webhook(
     let start = std::time::Instant::now();
 
     // Get payload template
-    let template = webhook.payload_template.as_deref().unwrap_or(DEFAULT_PAYLOAD_TEMPLATE);
+    let template = webhook
+        .payload_template
+        .as_deref()
+        .unwrap_or(DEFAULT_PAYLOAD_TEMPLATE);
 
     // Render payload
     let payload = render_template(
@@ -1739,7 +1906,11 @@ async fn send_webhook(
                 workflow_id,
                 success,
                 Some(status_code),
-                if success { None } else { Some(format!("HTTP {}", status_code)) },
+                if success {
+                    None
+                } else {
+                    Some(format!("HTTP {}", status_code))
+                },
                 Some(start.elapsed().as_millis() as u64),
             );
 
@@ -1807,15 +1978,19 @@ fn emit_webhook_delivery(
     error: Option<String>,
     response_time: Option<u64>,
 ) -> Result<(), String> {
-    app.emit("webhook_delivery", WebhookDeliveryPayload {
-        execution_id: execution_id.to_string(),
-        workflow_id: workflow_id.to_string(),
-        attempted_at: Utc::now().to_rfc3339(),
-        success,
-        status_code,
-        error,
-        response_time,
-    }).map_err(|e| e.to_string())
+    app.emit(
+        "webhook_delivery",
+        WebhookDeliveryPayload {
+            execution_id: execution_id.to_string(),
+            workflow_id: workflow_id.to_string(),
+            attempted_at: Utc::now().to_rfc3339(),
+            success,
+            status_code,
+            error,
+            response_time,
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 // ============================================================================
@@ -1856,17 +2031,16 @@ pub async fn get_available_workflows(
         .unwrap_or_default();
 
     // Build project name lookup map
-    let project_map: HashMap<String, String> = projects
-        .into_iter()
-        .map(|p| (p.id, p.name))
-        .collect();
+    let project_map: HashMap<String, String> =
+        projects.into_iter().map(|p| (p.id, p.name)).collect();
 
     // Filter and map workflows
     let available: Vec<AvailableWorkflowInfo> = workflows
         .into_iter()
         .filter(|w| w.id != exclude_workflow_id)
         .map(|w| {
-            let project_name = w.project_id
+            let project_name = w
+                .project_id
                 .as_ref()
                 .and_then(|pid| project_map.get(pid).cloned());
 
@@ -1999,10 +2173,7 @@ pub async fn detect_workflow_cycle(
             .map(|id| name_map.get(id).cloned().unwrap_or_else(|| id.clone()))
             .collect();
 
-        let description = format!(
-            "Cycle detected: {}",
-            cycle_names.join(" → ")
-        );
+        let description = format!("Cycle detected: {}", cycle_names.join(" → "));
 
         Ok(CycleDetectionResult {
             has_cycle: true,
@@ -2126,15 +2297,17 @@ pub async fn load_execution_history(
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
-    let items = history_store.histories.get(&workflow_id).cloned().unwrap_or_default();
+    let items = history_store
+        .histories
+        .get(&workflow_id)
+        .cloned()
+        .unwrap_or_default();
     Ok(items)
 }
 
 /// Load all execution history
 #[tauri::command]
-pub async fn load_all_execution_history(
-    app: AppHandle,
-) -> Result<ExecutionHistoryStore, String> {
+pub async fn load_all_execution_history(app: AppHandle) -> Result<ExecutionHistoryStore, String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     let history_store: ExecutionHistoryStore = store
@@ -2168,7 +2341,8 @@ pub async fn save_execution_history(
     // Trim output if needed
     let mut trimmed_item = item;
     if trimmed_item.output.len() > settings.max_output_lines {
-        trimmed_item.output = trimmed_item.output
+        trimmed_item.output = trimmed_item
+            .output
             .into_iter()
             .rev()
             .take(settings.max_output_lines)
@@ -2179,7 +2353,10 @@ pub async fn save_execution_history(
     }
 
     // Get or create history list for this workflow
-    let items = history_store.histories.entry(workflow_id).or_insert_with(Vec::new);
+    let items = history_store
+        .histories
+        .entry(workflow_id)
+        .or_insert_with(Vec::new);
 
     // Add new item
     items.push(trimmed_item);
@@ -2193,7 +2370,7 @@ pub async fn save_execution_history(
     // Save back to store
     store.set(
         HISTORY_STORE_KEY,
-        serde_json::to_value(&history_store).map_err(|e| e.to_string())?
+        serde_json::to_value(&history_store).map_err(|e| e.to_string())?,
     );
     store.save().map_err(|e| e.to_string())?;
 
@@ -2226,7 +2403,7 @@ pub async fn delete_execution_history(
     // Save back to store
     store.set(
         HISTORY_STORE_KEY,
-        serde_json::to_value(&history_store).map_err(|e| e.to_string())?
+        serde_json::to_value(&history_store).map_err(|e| e.to_string())?,
     );
     store.save().map_err(|e| e.to_string())?;
 
@@ -2251,7 +2428,7 @@ pub async fn clear_workflow_execution_history(
     // Save back to store
     store.set(
         HISTORY_STORE_KEY,
-        serde_json::to_value(&history_store).map_err(|e| e.to_string())?
+        serde_json::to_value(&history_store).map_err(|e| e.to_string())?,
     );
     store.save().map_err(|e| e.to_string())?;
 
@@ -2276,7 +2453,7 @@ pub async fn update_execution_history_settings(
     // Save back to store
     store.set(
         HISTORY_STORE_KEY,
-        serde_json::to_value(&history_store).map_err(|e| e.to_string())?
+        serde_json::to_value(&history_store).map_err(|e| e.to_string())?,
     );
     store.save().map_err(|e| e.to_string())?;
 

@@ -1,15 +1,15 @@
 // Project management commands
 // Implements US2: Project Management Functions
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::fs;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use tauri_plugin_store::StoreExt;
 use uuid::Uuid;
-use chrono::Utc;
 
-use crate::models::{Project, PackageManager, WorkspacePackage};
+use crate::models::{PackageManager, Project, WorkspacePackage};
 use crate::utils::store::STORE_FILE;
 
 /// Response for scan_project command
@@ -128,7 +128,8 @@ fn get_workspace_patterns(package_json: &PackageJson, path: &Path) -> Vec<String
                 if in_packages {
                     if trimmed.starts_with('-') {
                         // Extract pattern from "- 'pattern'" or "- pattern"
-                        let pattern = trimmed[1..].trim()
+                        let pattern = trimmed[1..]
+                            .trim()
                             .trim_matches('\'')
                             .trim_matches('"')
                             .to_string();
@@ -171,12 +172,14 @@ fn scan_workspace_packages(root_path: &Path, patterns: &[String]) -> Vec<Workspa
                     if let Ok(content) = fs::read_to_string(&package_json_path) {
                         if let Ok(pkg_json) = serde_json::from_str::<PackageJson>(&content) {
                             let name = pkg_json.name.unwrap_or_else(|| {
-                                entry.file_name()
+                                entry
+                                    .file_name()
                                     .map(|n| n.to_string_lossy().to_string())
                                     .unwrap_or_else(|| "unnamed".to_string())
                             });
 
-                            let relative_path = entry.strip_prefix(root_path)
+                            let relative_path = entry
+                                .strip_prefix(root_path)
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|_| entry.to_string_lossy().to_string());
 
@@ -208,11 +211,10 @@ pub fn parse_package_json(path: &Path) -> Result<PackageJson, String> {
         return Err("NO_PACKAGE_JSON".to_string());
     }
 
-    let content = fs::read_to_string(&package_json_path)
-        .map_err(|_| "INVALID_PACKAGE_JSON".to_string())?;
+    let content =
+        fs::read_to_string(&package_json_path).map_err(|_| "INVALID_PACKAGE_JSON".to_string())?;
 
-    serde_json::from_str(&content)
-        .map_err(|_| "INVALID_PACKAGE_JSON".to_string())
+    serde_json::from_str(&content).map_err(|_| "INVALID_PACKAGE_JSON".to_string())
 }
 
 /// Scan a project directory
@@ -289,7 +291,11 @@ pub async fn scan_project(
     // Parse workspace packages if monorepo
     let workspaces = if is_mono {
         let packages = scan_workspace_packages(project_path, &workspace_patterns);
-        if packages.is_empty() { None } else { Some(packages) }
+        if packages.is_empty() {
+            None
+        } else {
+            Some(packages)
+        }
     } else {
         None
     };
@@ -304,10 +310,7 @@ pub async fn scan_project(
 
 /// Save a project to store
 #[tauri::command]
-pub async fn save_project(
-    app: tauri::AppHandle,
-    project: Project,
-) -> Result<(), String> {
+pub async fn save_project(app: tauri::AppHandle, project: Project) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     let mut projects: Vec<Project> = store
@@ -322,7 +325,10 @@ pub async fn save_project(
         projects.push(project);
     }
 
-    store.set("projects", serde_json::to_value(&projects).map_err(|e| e.to_string())?);
+    store.set(
+        "projects",
+        serde_json::to_value(&projects).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -330,10 +336,7 @@ pub async fn save_project(
 
 /// Remove a project from store
 #[tauri::command]
-pub async fn remove_project(
-    app: tauri::AppHandle,
-    id: String,
-) -> Result<(), String> {
+pub async fn remove_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     let mut projects: Vec<Project> = store
@@ -343,7 +346,10 @@ pub async fn remove_project(
 
     projects.retain(|p| p.id != id);
 
-    store.set("projects", serde_json::to_value(&projects).map_err(|e| e.to_string())?);
+    store.set(
+        "projects",
+        serde_json::to_value(&projects).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -433,13 +439,20 @@ pub async fn refresh_project(
     projects[idx] = updated_project.clone();
 
     // Save updated projects
-    store.set("projects", serde_json::to_value(&projects).map_err(|e| e.to_string())?);
+    store.set(
+        "projects",
+        serde_json::to_value(&projects).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     // Parse workspace packages if monorepo
     let workspaces = if is_mono {
         let packages = scan_workspace_packages(project_path, &workspace_patterns);
-        if packages.is_empty() { None } else { Some(packages) }
+        if packages.is_empty() {
+            None
+        } else {
+            Some(packages)
+        }
     } else {
         None
     };
@@ -521,7 +534,10 @@ pub async fn trash_node_modules(
     // Move to trash
     match trash::delete(&node_modules_path) {
         Ok(_) => {
-            println!("[project] Moved node_modules to trash: {}", node_modules_path.display());
+            println!(
+                "[project] Moved node_modules to trash: {}",
+                node_modules_path.display()
+            );
             Ok(TrashNodeModulesResponse {
                 success: true,
                 message: Some(format!("Successfully moved node_modules to trash")),

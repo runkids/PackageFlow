@@ -1,9 +1,9 @@
 // Store helper functions
 // Provides utilities for loading and saving data using tauri-plugin-store
 
+use crate::models::{Execution, Project, SecurityScanData, Workflow};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::models::{Project, Workflow, Execution, SecurityScanData};
 
 /// Default scan reminder interval in days
 fn default_scan_reminder_interval() -> u32 {

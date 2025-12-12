@@ -14,7 +14,10 @@ pub enum WebhookNotificationType {
     /// Outgoing webhook sent successfully
     OutgoingSuccess { workflow_name: String, url: String },
     /// Outgoing webhook failed to send
-    OutgoingFailure { workflow_name: String, error: String },
+    OutgoingFailure {
+        workflow_name: String,
+        error: String,
+    },
 }
 
 /// Check if webhook notifications are enabled in settings
@@ -68,9 +71,16 @@ pub fn send_webhook_notification(
         ),
         WebhookNotificationType::OutgoingSuccess { workflow_name, url } => (
             "Webhook Sent".to_string(),
-            format!("\"{}\" webhook delivered to {}", workflow_name, truncate_url(&url)),
+            format!(
+                "\"{}\" webhook delivered to {}",
+                workflow_name,
+                truncate_url(&url)
+            ),
         ),
-        WebhookNotificationType::OutgoingFailure { workflow_name, error } => (
+        WebhookNotificationType::OutgoingFailure {
+            workflow_name,
+            error,
+        } => (
             "Webhook Failed".to_string(),
             format!("\"{}\" webhook failed: {}", workflow_name, error),
         ),

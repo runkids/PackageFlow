@@ -1,8 +1,8 @@
 // Version management models
 // Implements 006-node-package-manager feature
 
-use serde::{Deserialize, Serialize};
 use crate::models::PackageManager;
+use serde::{Deserialize, Serialize};
 
 /// Version requirement source from package.json
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

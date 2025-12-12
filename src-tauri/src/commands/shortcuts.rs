@@ -1,10 +1,10 @@
 // Keyboard shortcuts commands
 // Provides commands for managing keyboard shortcuts settings and global shortcuts
 
-use tauri::{AppHandle, Manager, Emitter};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState, Shortcut};
-use tauri_plugin_store::StoreExt;
 use crate::utils::store::{KeyboardShortcutsSettings, STORE_FILE};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_store::StoreExt;
 
 /// Load keyboard shortcuts settings
 #[tauri::command]
@@ -130,7 +130,10 @@ pub async fn register_global_toggle_shortcut(
                 }
             })?;
 
-        log::info!("[shortcuts] Registered global shortcut: {}", formatted_shortcut);
+        log::info!(
+            "[shortcuts] Registered global shortcut: {}",
+            formatted_shortcut
+        );
     }
 
     Ok(())

@@ -1,13 +1,12 @@
+use chrono::Utc;
 /**
  * Incoming Webhook Commands
  * Tauri IPC commands for managing incoming webhooks
  * @see specs/012-workflow-webhook-support
  */
-
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::models::{
     IncomingWebhookConfig, IncomingWebhookServerSettings, IncomingWebhookServerStatus, Workflow,
@@ -23,7 +22,9 @@ pub async fn generate_incoming_webhook_token() -> Result<String, String> {
 
 /// Get incoming webhook server status
 #[tauri::command]
-pub async fn get_incoming_webhook_status(app: AppHandle) -> Result<IncomingWebhookServerStatus, String> {
+pub async fn get_incoming_webhook_status(
+    app: AppHandle,
+) -> Result<IncomingWebhookServerStatus, String> {
     let manager = app.state::<IncomingWebhookManager>();
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
@@ -37,7 +38,9 @@ pub async fn get_incoming_webhook_status(app: AppHandle) -> Result<IncomingWebho
 
 /// Get incoming webhook server settings
 #[tauri::command]
-pub async fn get_incoming_webhook_settings(app: AppHandle) -> Result<IncomingWebhookServerSettings, String> {
+pub async fn get_incoming_webhook_settings(
+    app: AppHandle,
+) -> Result<IncomingWebhookServerSettings, String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     let settings: IncomingWebhookServerSettings = store
@@ -106,7 +109,7 @@ pub enum PortStatus {
 /// Check if a port is available for use
 #[tauri::command]
 pub async fn check_port_available(app: AppHandle, port: u16) -> Result<PortStatus, String> {
-    use std::net::{TcpListener, TcpStream, SocketAddr};
+    use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::time::Duration;
 
     // Check if our server is running on this port
@@ -144,7 +147,9 @@ pub async fn sync_incoming_webhook_server(app: &AppHandle) -> Result<(), String>
         .unwrap_or_default();
 
     let manager = app.state::<IncomingWebhookManager>();
-    manager.sync_server_state(app, &workflows, settings.port).await;
+    manager
+        .sync_server_state(app, &workflows, settings.port)
+        .await;
 
     Ok(())
 }

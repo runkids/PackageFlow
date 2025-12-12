@@ -14,6 +14,7 @@ import { KeyboardShortcutsDialog } from './components/settings/KeyboardShortcuts
 import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsHint, ShortcutToast } from './components/ui/KeyboardShortcutsHint';
 import { ScriptPtyTerminal, type ScriptPtyTerminalRef } from './components/terminal';
+import { useUpdater } from './hooks/useUpdater';
 
 type AppTab = 'workflow' | 'project-manager';
 
@@ -70,6 +71,9 @@ function TerminalPortal({ container, children }: TerminalPortalProps) {
 }
 
 function App() {
+  // Check for updates on app start
+  useUpdater();
+
   const [activeTab, setActiveTab] = useState<AppTab>('project-manager');
   const [workflowNavState, setWorkflowNavState] = useState<WorkflowNavState | null>(null);
   const [isKilling, setIsKilling] = useState(false);

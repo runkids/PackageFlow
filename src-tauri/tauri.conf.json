@@ -28,6 +28,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEzNDU0MjI3MTk4NDNCRDEKUldUUk80UVpKMEpGbzBObzVZSDNSOGJuc1JwRkw2d3NOcGYyY2pNN0JJSjQzREpPQ2huUVV6SncK",
+      "endpoints": [
+        "https://github.com/runkids/PackageFlow/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
@@ -38,6 +46,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "shortDescription": "PackageFlow App",
     "macOS": {
       "minimumSystemVersion": "10.15",
       "dmg": {

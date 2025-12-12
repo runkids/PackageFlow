@@ -1,10 +1,10 @@
 // Git worktree commands
 // Implements US5: Git Worktree Management
 
-use std::path::Path;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
-use crate::models::{Worktree, WorktreeStatus, EditorDefinition};
+use crate::models::{EditorDefinition, Worktree, WorktreeStatus};
 use crate::utils::path_resolver;
 use std::collections::HashMap;
 
@@ -292,13 +292,14 @@ pub async fn add_worktree(
             let list_result = list_worktrees(project_path).await?;
             if let Some(worktrees) = list_result.worktrees {
                 // Find the new worktree by path
-                let resolved_path = wt_path.canonicalize()
+                let resolved_path = wt_path
+                    .canonicalize()
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|_| worktree_path.clone());
 
-                let new_worktree = worktrees.into_iter().find(|w| {
-                    w.path == worktree_path || w.path == resolved_path
-                });
+                let new_worktree = worktrees
+                    .into_iter()
+                    .find(|w| w.path == worktree_path || w.path == resolved_path);
 
                 if let Some(wt) = new_worktree {
                     return Ok(AddWorktreeResponse {
@@ -362,13 +363,14 @@ pub async fn remove_worktree(
     let worktrees = list_result.worktrees.unwrap_or_default();
 
     // Find the worktree to remove
-    let resolved_path = wt_path.canonicalize()
+    let resolved_path = wt_path
+        .canonicalize()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| worktree_path.clone());
 
-    let worktree = worktrees.iter().find(|w| {
-        w.path == worktree_path || w.path == resolved_path
-    });
+    let worktree = worktrees
+        .iter()
+        .find(|w| w.path == worktree_path || w.path == resolved_path);
 
     match worktree {
         None => Ok(RemoveWorktreeResponse {
@@ -453,7 +455,10 @@ fn get_ahead_behind(path: &Path) -> Result<(i32, i32, bool), String> {
         return Ok((0, 0, false));
     }
 
-    match exec_git(path, &["rev-list", "--left-right", "--count", "@{u}...HEAD"]) {
+    match exec_git(
+        path,
+        &["rev-list", "--left-right", "--count", "@{u}...HEAD"],
+    ) {
         Ok(output) => {
             let parts: Vec<&str> = output.split('\t').collect();
             if parts.len() == 2 {
@@ -492,7 +497,9 @@ fn get_last_commit_info(path: &Path) -> Result<(Option<String>, Option<String>),
 
 /// T009: Get status for a single worktree
 #[tauri::command]
-pub async fn get_worktree_status(worktree_path: String) -> Result<GetWorktreeStatusResponse, String> {
+pub async fn get_worktree_status(
+    worktree_path: String,
+) -> Result<GetWorktreeStatusResponse, String> {
     let path = Path::new(&worktree_path);
 
     // Check if path exists
@@ -516,7 +523,8 @@ pub async fn get_worktree_status(worktree_path: String) -> Result<GetWorktreeSta
     // Get status information
     let uncommitted_count = get_uncommitted_count(path).unwrap_or(0);
     let (ahead, behind, has_tracking_branch) = get_ahead_behind(path).unwrap_or((0, 0, false));
-    let (last_commit_time, last_commit_message) = get_last_commit_info(path).unwrap_or((None, None));
+    let (last_commit_time, last_commit_message) =
+        get_last_commit_info(path).unwrap_or((None, None));
 
     Ok(GetWorktreeStatusResponse {
         success: true,
@@ -535,7 +543,9 @@ pub async fn get_worktree_status(worktree_path: String) -> Result<GetWorktreeSta
 
 /// T010: Get status for all worktrees in a project
 #[tauri::command]
-pub async fn get_all_worktree_statuses(project_path: String) -> Result<GetAllWorktreeStatusesResponse, String> {
+pub async fn get_all_worktree_statuses(
+    project_path: String,
+) -> Result<GetAllWorktreeStatusesResponse, String> {
     let path = Path::new(&project_path);
 
     // Check if git repo
@@ -565,18 +575,23 @@ pub async fn get_all_worktree_statuses(project_path: String) -> Result<GetAllWor
 
         if wt_path.exists() {
             let uncommitted_count = get_uncommitted_count(wt_path).unwrap_or(0);
-            let (ahead, behind, has_tracking_branch) = get_ahead_behind(wt_path).unwrap_or((0, 0, false));
-            let (last_commit_time, last_commit_message) = get_last_commit_info(wt_path).unwrap_or((None, None));
+            let (ahead, behind, has_tracking_branch) =
+                get_ahead_behind(wt_path).unwrap_or((0, 0, false));
+            let (last_commit_time, last_commit_message) =
+                get_last_commit_info(wt_path).unwrap_or((None, None));
 
-            statuses.insert(worktree.path.clone(), WorktreeStatus {
-                uncommitted_count,
-                ahead,
-                behind,
-                has_tracking_branch,
-                last_commit_time,
-                last_commit_message,
-                has_running_process: false,
-            });
+            statuses.insert(
+                worktree.path.clone(),
+                WorktreeStatus {
+                    uncommitted_count,
+                    ahead,
+                    behind,
+                    has_tracking_branch,
+                    last_commit_time,
+                    last_commit_message,
+                    has_running_process: false,
+                },
+            );
         }
     }
 
@@ -680,7 +695,11 @@ fn check_editor_available(command: &str) -> bool {
         if let Some(name) = app_name {
             let app_paths = [
                 format!("/Applications/{}", name),
-                format!("{}/Applications/{}", path_resolver::get_home_dir().unwrap_or_default(), name),
+                format!(
+                    "{}/Applications/{}",
+                    path_resolver::get_home_dir().unwrap_or_default(),
+                    name
+                ),
             ];
             for path in &app_paths {
                 if std::path::Path::new(path).exists() {
@@ -690,7 +709,10 @@ fn check_editor_available(command: &str) -> bool {
         }
 
         // Check for JetBrains Toolbox managed apps
-        if matches!(command, "webstorm" | "idea" | "pycharm" | "goland" | "rustrover" | "fleet") {
+        if matches!(
+            command,
+            "webstorm" | "idea" | "pycharm" | "goland" | "rustrover" | "fleet"
+        ) {
             let toolbox_base = format!(
                 "{}/Library/Application Support/JetBrains/Toolbox/apps",
                 path_resolver::get_home_dir().unwrap_or_default()
@@ -1144,7 +1166,9 @@ pub async fn save_worktree_template(
         TEMPLATES_STORE_KEY.to_string(),
         serde_json::to_value(&templates).map_err(|e| format!("Serialization error: {}", e))?,
     );
-    store.save().map_err(|e| format!("Failed to save store: {}", e))?;
+    store
+        .save()
+        .map_err(|e| format!("Failed to save store: {}", e))?;
 
     Ok(SaveTemplateResponse {
         success: true,
@@ -1185,7 +1209,9 @@ pub async fn delete_worktree_template(
         TEMPLATES_STORE_KEY.to_string(),
         serde_json::to_value(&templates).map_err(|e| format!("Serialization error: {}", e))?,
     );
-    store.save().map_err(|e| format!("Failed to save store: {}", e))?;
+    store
+        .save()
+        .map_err(|e| format!("Failed to save store: {}", e))?;
 
     Ok(DeleteTemplateResponse {
         success: true,
@@ -1413,7 +1439,8 @@ pub async fn create_worktree_from_template(
 
     // Apply patterns
     let branch_name = WorktreeTemplate::apply_pattern(&template.branch_pattern, &name, &repo_name);
-    let worktree_path_pattern = WorktreeTemplate::apply_pattern(&template.path_pattern, &name, &repo_name);
+    let worktree_path_pattern =
+        WorktreeTemplate::apply_pattern(&template.path_pattern, &name, &repo_name);
 
     // Resolve worktree path relative to project path
     let worktree_path = if worktree_path_pattern.starts_with("../") {
@@ -1445,7 +1472,8 @@ pub async fn create_worktree_from_template(
         worktree_path_str.clone(),
         branch_name.clone(),
         true, // create_branch
-    ).await?;
+    )
+    .await?;
 
     if !add_result.success {
         return Ok(CreateWorktreeFromTemplateResponse {
@@ -1460,9 +1488,15 @@ pub async fn create_worktree_from_template(
     let mut executed_scripts: Vec<String> = Vec::new();
     let wt_path = Path::new(&worktree_path_str);
 
-    println!("[Worktree] Template post_create_scripts: {:?}", template.post_create_scripts);
+    println!(
+        "[Worktree] Template post_create_scripts: {:?}",
+        template.post_create_scripts
+    );
     println!("[Worktree] Worktree path: {}", worktree_path_str);
-    println!("[Worktree] package.json exists: {}", wt_path.join("package.json").exists());
+    println!(
+        "[Worktree] package.json exists: {}",
+        wt_path.join("package.json").exists()
+    );
 
     for script in &template.post_create_scripts {
         // Check if package.json exists for npm scripts

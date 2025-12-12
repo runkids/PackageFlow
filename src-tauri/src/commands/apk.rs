@@ -1,13 +1,13 @@
 // APK file inspection commands
 // Implements APK File Inspection (Read-only)
 
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
-use chrono::Utc;
 
 use crate::models::ApkMetadata;
 
@@ -108,7 +108,10 @@ fn parse_android_manifest(data: &[u8]) -> Result<AndroidManifestInfo, String> {
         if s == "package" && i + 1 < strings.len() {
             // Next meaningful string after "package" might be the package name
             for j in (i + 1)..strings.len().min(i + 10) {
-                if strings[j].contains('.') && !strings[j].contains('/') && !strings[j].starts_with("android") {
+                if strings[j].contains('.')
+                    && !strings[j].contains('/')
+                    && !strings[j].starts_with("android")
+                {
                     info.package_name = strings[j].clone();
                     break;
                 }
@@ -116,7 +119,13 @@ fn parse_android_manifest(data: &[u8]) -> Result<AndroidManifestInfo, String> {
         }
         if s == "versionName" && i + 1 < strings.len() {
             for j in (i + 1)..strings.len().min(i + 5) {
-                if !strings[j].is_empty() && strings[j].chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                if !strings[j].is_empty()
+                    && strings[j]
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                {
                     info.version_name = strings[j].clone();
                     break;
                 }
@@ -164,26 +173,35 @@ fn extract_string_pool(data: &[u8]) -> Result<Vec<String>, String> {
 
     while pos + 8 < data.len() {
         let chunk_type = u16::from_le_bytes([data[pos], data[pos + 1]]);
-        let chunk_size = u32::from_le_bytes([
-            data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]
-        ]) as usize;
+        let chunk_size =
+            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                as usize;
 
         if chunk_type == 0x0001 && chunk_size > 28 && pos + chunk_size <= data.len() {
             // Found string pool
-            let string_count = u32::from_le_bytes([
-                data[pos + 8], data[pos + 9], data[pos + 10], data[pos + 11]
-            ]) as usize;
+            let string_count =
+                u32::from_le_bytes([data[pos + 8], data[pos + 9], data[pos + 10], data[pos + 11]])
+                    as usize;
 
             let _style_count = u32::from_le_bytes([
-                data[pos + 12], data[pos + 13], data[pos + 14], data[pos + 15]
+                data[pos + 12],
+                data[pos + 13],
+                data[pos + 14],
+                data[pos + 15],
             ]);
 
             let flags = u32::from_le_bytes([
-                data[pos + 16], data[pos + 17], data[pos + 18], data[pos + 19]
+                data[pos + 16],
+                data[pos + 17],
+                data[pos + 18],
+                data[pos + 19],
             ]);
 
             let strings_start = u32::from_le_bytes([
-                data[pos + 20], data[pos + 21], data[pos + 22], data[pos + 23]
+                data[pos + 20],
+                data[pos + 21],
+                data[pos + 22],
+                data[pos + 23],
             ]) as usize;
 
             let is_utf8 = (flags & (1 << 8)) != 0;
@@ -192,15 +210,18 @@ fn extract_string_pool(data: &[u8]) -> Result<Vec<String>, String> {
             let offsets_start = pos + 28;
             let string_data_start = pos + strings_start;
 
-            for i in 0..string_count.min(500) { // Limit to prevent huge allocations
+            for i in 0..string_count.min(500) {
+                // Limit to prevent huge allocations
                 let offset_pos = offsets_start + i * 4;
                 if offset_pos + 4 > data.len() {
                     break;
                 }
 
                 let offset = u32::from_le_bytes([
-                    data[offset_pos], data[offset_pos + 1],
-                    data[offset_pos + 2], data[offset_pos + 3]
+                    data[offset_pos],
+                    data[offset_pos + 1],
+                    data[offset_pos + 2],
+                    data[offset_pos + 3],
                 ]) as usize;
 
                 let str_pos = string_data_start + offset;
@@ -308,7 +329,9 @@ fn extract_sdk_versions(data: &[u8], strings: &[String], info: &mut AndroidManif
             if val >= 14 && val <= 35 {
                 if info.min_sdk.is_empty() {
                     info.min_sdk = val.to_string();
-                } else if info.target_sdk.is_empty() && val >= info.min_sdk.parse::<u32>().unwrap_or(0) {
+                } else if info.target_sdk.is_empty()
+                    && val >= info.min_sdk.parse::<u32>().unwrap_or(0)
+                {
                     info.target_sdk = val.to_string();
                     break;
                 }
@@ -329,19 +352,20 @@ struct AndroidManifestInfo {
 
 /// Extract metadata from APK file
 fn extract_apk_metadata(apk_path: &Path) -> Result<AndroidManifestInfo, String> {
-    let file = File::open(apk_path)
-        .map_err(|e| format!("Failed to open APK: {}", e))?;
+    let file = File::open(apk_path).map_err(|e| format!("Failed to open APK: {}", e))?;
 
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read APK as zip: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read APK as zip: {}", e))?;
 
     // Find AndroidManifest.xml
     let mut manifest_data = Vec::new();
     {
-        let mut manifest_entry = archive.by_name("AndroidManifest.xml")
+        let mut manifest_entry = archive
+            .by_name("AndroidManifest.xml")
             .map_err(|_| "AndroidManifest.xml not found in APK".to_string())?;
 
-        manifest_entry.read_to_end(&mut manifest_data)
+        manifest_entry
+            .read_to_end(&mut manifest_data)
             .map_err(|e| format!("Failed to read manifest: {}", e))?;
     }
 
@@ -406,19 +430,41 @@ pub async fn scan_project_apk(dir_path: String) -> Result<ScanProjectApkResponse
             .unwrap_or_else(|| "unknown.apk".to_string());
 
         // Get file size
-        let file_size = fs::metadata(file_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let file_size = fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
 
         match extract_apk_metadata(file_path) {
             Ok(info) => {
                 let mut metadata = ApkMetadata::new(file_name, apk_path.clone());
-                metadata.package_name = if info.package_name.is_empty() { "N/A".to_string() } else { info.package_name };
-                metadata.version_name = if info.version_name.is_empty() { "N/A".to_string() } else { info.version_name };
-                metadata.version_code = if info.version_code.is_empty() { "N/A".to_string() } else { info.version_code };
-                metadata.app_name = if info.app_name.is_empty() { "N/A".to_string() } else { info.app_name };
-                metadata.min_sdk = if info.min_sdk.is_empty() { "N/A".to_string() } else { info.min_sdk };
-                metadata.target_sdk = if info.target_sdk.is_empty() { "N/A".to_string() } else { info.target_sdk };
+                metadata.package_name = if info.package_name.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    info.package_name
+                };
+                metadata.version_name = if info.version_name.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    info.version_name
+                };
+                metadata.version_code = if info.version_code.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    info.version_code
+                };
+                metadata.app_name = if info.app_name.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    info.app_name
+                };
+                metadata.min_sdk = if info.min_sdk.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    info.min_sdk
+                };
+                metadata.target_sdk = if info.target_sdk.is_empty() {
+                    "N/A".to_string()
+                } else {
+                    info.target_sdk
+                };
                 metadata.file_size = file_size;
 
                 // Get file creation time

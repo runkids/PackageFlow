@@ -1,24 +1,21 @@
 // Monorepo Tool Support Commands
 // Feature: 008-monorepo-support
 
-use crate::models::{
-    MonorepoToolType, MonorepoToolInfo, DetectMonorepoToolsResponse,
-    GetDependencyGraphResponse, DependencyGraph, DependencyNode, DependencyEdge,
-    GetNxTargetsResponse, NxTarget,
-    GetTurboPipelinesResponse, TurboPipeline,
-    RunNxCommandResponse, RunTurboCommandResponse,
-    GetTurboCacheStatusResponse, TurboCacheStatus,
-    ClearTurboCacheResponse, RunBatchScriptsResponse,
-    GetNxCacheStatusResponse, NxCacheStatus, ClearNxCacheResponse,
-    BatchProgressPayload, BatchCompletedPayload, BatchExecutionResult,
-};
-use crate::commands::version::detect_volta;
 use crate::commands::project::parse_package_json;
+use crate::commands::version::detect_volta;
+use crate::models::{
+    BatchCompletedPayload, BatchExecutionResult, BatchProgressPayload, ClearNxCacheResponse,
+    ClearTurboCacheResponse, DependencyEdge, DependencyGraph, DependencyNode,
+    DetectMonorepoToolsResponse, GetDependencyGraphResponse, GetNxCacheStatusResponse,
+    GetNxTargetsResponse, GetTurboCacheStatusResponse, GetTurboPipelinesResponse, MonorepoToolInfo,
+    MonorepoToolType, NxCacheStatus, NxTarget, RunBatchScriptsResponse, RunNxCommandResponse,
+    RunTurboCommandResponse, TurboCacheStatus, TurboPipeline,
+};
 use crate::utils::path_resolver;
-use std::path::Path;
-use std::fs;
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -47,7 +44,11 @@ fn create_env_command(cmd: &str) -> std::process::Command {
 /// Returns (command, args) with version manager wrapper based on project config
 /// Priority: Volta > Corepack > direct execution
 /// Uses path_resolver to ensure commands work in macOS GUI apps
-pub fn get_volta_wrapped_command(project_path: &Path, base_command: &str, base_args: Vec<String>) -> (String, Vec<String>) {
+pub fn get_volta_wrapped_command(
+    project_path: &Path,
+    base_command: &str,
+    base_args: Vec<String>,
+) -> (String, Vec<String>) {
     // Parse package.json to check for version manager configs
     let (has_volta_config, has_package_manager_field) = match parse_package_json(project_path) {
         Ok(pj) => (pj.volta.is_some(), pj.package_manager.is_some()),
@@ -59,10 +60,15 @@ pub fn get_volta_wrapped_command(project_path: &Path, base_command: &str, base_a
     if has_volta_config {
         let volta_status = detect_volta();
         if volta_status.available {
-            let volta_command = volta_status.path.unwrap_or_else(|| path_resolver::get_tool_path("volta"));
+            let volta_command = volta_status
+                .path
+                .unwrap_or_else(|| path_resolver::get_tool_path("volta"));
             let mut volta_args = vec!["run".to_string(), base_command.to_string()];
             volta_args.extend(base_args);
-            println!("[version-manager] Using Volta: {} run {} ...", volta_command, base_command);
+            println!(
+                "[version-manager] Using Volta: {} run {} ...",
+                volta_command, base_command
+            );
             return (volta_command, volta_args);
         }
     }
@@ -202,7 +208,10 @@ pub fn detect_monorepo_tools(project_path: String) -> DetectMonorepoToolsRespons
 
 /// Get tool version lazily (call this when you need to display version info)
 #[tauri::command]
-pub async fn get_tool_version(project_path: String, tool_type: String) -> Result<Option<String>, String> {
+pub async fn get_tool_version(
+    project_path: String,
+    tool_type: String,
+) -> Result<Option<String>, String> {
     let version = match tool_type.as_str() {
         "nx" => get_nx_version(&project_path),
         "turbo" => get_turbo_version(&project_path),
@@ -387,37 +396,49 @@ pub async fn run_nx_command(
                 let stderr = String::from_utf8_lossy(&result.stderr).to_string();
 
                 // Emit output events
-                let _ = app.emit("script_output", serde_json::json!({
-                    "executionId": exec_id,
-                    "output": stdout,
-                    "stream": "stdout",
-                    "timestamp": chrono::Utc::now().to_rfc3339()
-                }));
+                let _ = app.emit(
+                    "script_output",
+                    serde_json::json!({
+                        "executionId": exec_id,
+                        "output": stdout,
+                        "stream": "stdout",
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                );
 
                 if !stderr.is_empty() {
-                    let _ = app.emit("script_output", serde_json::json!({
-                        "executionId": exec_id,
-                        "output": stderr,
-                        "stream": "stderr",
-                        "timestamp": chrono::Utc::now().to_rfc3339()
-                    }));
+                    let _ = app.emit(
+                        "script_output",
+                        serde_json::json!({
+                            "executionId": exec_id,
+                            "output": stderr,
+                            "stream": "stderr",
+                            "timestamp": chrono::Utc::now().to_rfc3339()
+                        }),
+                    );
                 }
 
                 // Emit completion event
-                let _ = app.emit("script_completed", serde_json::json!({
-                    "executionId": exec_id,
-                    "exitCode": result.status.code().unwrap_or(-1),
-                    "success": result.status.success(),
-                    "durationMs": 0
-                }));
+                let _ = app.emit(
+                    "script_completed",
+                    serde_json::json!({
+                        "executionId": exec_id,
+                        "exitCode": result.status.code().unwrap_or(-1),
+                        "success": result.status.success(),
+                        "durationMs": 0
+                    }),
+                );
             }
             Err(_) => {
-                let _ = app.emit("script_completed", serde_json::json!({
-                    "executionId": exec_id,
-                    "exitCode": -1,
-                    "success": false,
-                    "durationMs": 0
-                }));
+                let _ = app.emit(
+                    "script_completed",
+                    serde_json::json!({
+                        "executionId": exec_id,
+                        "exitCode": -1,
+                        "success": false,
+                        "durationMs": 0
+                    }),
+                );
             }
         }
     });
@@ -484,7 +505,8 @@ pub fn get_turbo_pipelines(project_path: String) -> GetTurboPipelinesResponse {
                 })
             });
 
-            let cache = config.get("cache")
+            let cache = config
+                .get("cache")
                 .and_then(|c| c.as_bool())
                 .unwrap_or(true);
 
@@ -589,36 +611,48 @@ pub async fn run_turbo_command(
                 let stdout = String::from_utf8_lossy(&result.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&result.stderr).to_string();
 
-                let _ = app.emit("script_output", serde_json::json!({
-                    "executionId": exec_id,
-                    "output": stdout,
-                    "stream": "stdout",
-                    "timestamp": chrono::Utc::now().to_rfc3339()
-                }));
+                let _ = app.emit(
+                    "script_output",
+                    serde_json::json!({
+                        "executionId": exec_id,
+                        "output": stdout,
+                        "stream": "stdout",
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                );
 
                 if !stderr.is_empty() {
-                    let _ = app.emit("script_output", serde_json::json!({
-                        "executionId": exec_id,
-                        "output": stderr,
-                        "stream": "stderr",
-                        "timestamp": chrono::Utc::now().to_rfc3339()
-                    }));
+                    let _ = app.emit(
+                        "script_output",
+                        serde_json::json!({
+                            "executionId": exec_id,
+                            "output": stderr,
+                            "stream": "stderr",
+                            "timestamp": chrono::Utc::now().to_rfc3339()
+                        }),
+                    );
                 }
 
-                let _ = app.emit("script_completed", serde_json::json!({
-                    "executionId": exec_id,
-                    "exitCode": result.status.code().unwrap_or(-1),
-                    "success": result.status.success(),
-                    "durationMs": 0
-                }));
+                let _ = app.emit(
+                    "script_completed",
+                    serde_json::json!({
+                        "executionId": exec_id,
+                        "exitCode": result.status.code().unwrap_or(-1),
+                        "success": result.status.success(),
+                        "durationMs": 0
+                    }),
+                );
             }
             Err(_) => {
-                let _ = app.emit("script_completed", serde_json::json!({
-                    "executionId": exec_id,
-                    "exitCode": -1,
-                    "success": false,
-                    "durationMs": 0
-                }));
+                let _ = app.emit(
+                    "script_completed",
+                    serde_json::json!({
+                        "executionId": exec_id,
+                        "exitCode": -1,
+                        "success": false,
+                        "durationMs": 0
+                    }),
+                );
             }
         }
     });
@@ -921,7 +955,12 @@ pub async fn run_batch_scripts(
         }
         _ => {
             // Fallback: use pnpm/npm workspace commands
-            vec!["pnpm".to_string(), "run".to_string(), script.clone(), "--recursive".to_string()]
+            vec![
+                "pnpm".to_string(),
+                "run".to_string(),
+                script.clone(),
+                "--recursive".to_string(),
+            ]
         }
     };
 
@@ -934,13 +973,16 @@ pub async fn run_batch_scripts(
         let total = packages.len() as u32;
 
         // Emit initial progress
-        let _ = app.emit("batch_progress", BatchProgressPayload {
-            execution_id: exec_id.clone(),
-            total,
-            completed: 0,
-            running: packages.clone(),
-            results: vec![],
-        });
+        let _ = app.emit(
+            "batch_progress",
+            BatchProgressPayload {
+                execution_id: exec_id.clone(),
+                total,
+                completed: 0,
+                running: packages.clone(),
+                results: vec![],
+            },
+        );
 
         let output = create_env_command(&cmd)
             .args(&cmd_args)
@@ -952,12 +994,15 @@ pub async fn run_batch_scripts(
                 let stdout = String::from_utf8_lossy(&result.stdout).to_string();
 
                 // Emit output
-                let _ = app.emit("script_output", serde_json::json!({
-                    "executionId": exec_id,
-                    "output": stdout,
-                    "stream": "stdout",
-                    "timestamp": chrono::Utc::now().to_rfc3339()
-                }));
+                let _ = app.emit(
+                    "script_output",
+                    serde_json::json!({
+                        "executionId": exec_id,
+                        "output": stdout,
+                        "stream": "stdout",
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                );
 
                 // Create results for each package
                 for (idx, pkg) in packages.iter().enumerate() {
@@ -972,30 +1017,39 @@ pub async fn run_batch_scripts(
                     });
 
                     // Emit progress update
-                    let _ = app.emit("batch_progress", BatchProgressPayload {
-                        execution_id: exec_id.clone(),
-                        total,
-                        completed: (idx + 1) as u32,
-                        running: packages[idx + 1..].to_vec(),
-                        results: results.clone(),
-                    });
+                    let _ = app.emit(
+                        "batch_progress",
+                        BatchProgressPayload {
+                            execution_id: exec_id.clone(),
+                            total,
+                            completed: (idx + 1) as u32,
+                            running: packages[idx + 1..].to_vec(),
+                            results: results.clone(),
+                        },
+                    );
                 }
 
                 // Emit batch completed
-                let _ = app.emit("batch_completed", BatchCompletedPayload {
-                    execution_id: exec_id.clone(),
-                    success: result.status.success(),
-                    results: results.clone(),
-                    duration: start_time.elapsed().as_millis() as u64,
-                });
+                let _ = app.emit(
+                    "batch_completed",
+                    BatchCompletedPayload {
+                        execution_id: exec_id.clone(),
+                        success: result.status.success(),
+                        results: results.clone(),
+                        duration: start_time.elapsed().as_millis() as u64,
+                    },
+                );
             }
             Err(_e) => {
-                let _ = app.emit("batch_completed", BatchCompletedPayload {
-                    execution_id: exec_id.clone(),
-                    success: false,
-                    results: vec![],
-                    duration: start_time.elapsed().as_millis() as u64,
-                });
+                let _ = app.emit(
+                    "batch_completed",
+                    BatchCompletedPayload {
+                        execution_id: exec_id.clone(),
+                        success: false,
+                        results: vec![],
+                        duration: start_time.elapsed().as_millis() as u64,
+                    },
+                );
             }
         }
     });
@@ -1139,24 +1193,28 @@ fn parse_nx_graph_json(json: &Value) -> DependencyGraph {
     if let Some(graph) = json.get("graph") {
         if let Some(nodes_obj) = graph.get("nodes").and_then(|n| n.as_object()) {
             for (id, node) in nodes_obj {
-                let node_type = node.get("type")
+                let node_type = node
+                    .get("type")
                     .and_then(|t| t.as_str())
                     .unwrap_or("package")
                     .to_string();
 
                 nodes.push(DependencyNode {
                     id: id.clone(),
-                    name: node.get("name")
+                    name: node
+                        .get("name")
                         .and_then(|n| n.as_str())
                         .unwrap_or(id)
                         .to_string(),
                     node_type,
-                    root: node.get("data")
+                    root: node
+                        .get("data")
                         .and_then(|d| d.get("root"))
                         .and_then(|r| r.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    tags: node.get("data")
+                    tags: node
+                        .get("data")
                         .and_then(|d| d.get("tags"))
                         .and_then(|t| t.as_array())
                         .map(|arr| {
@@ -1177,7 +1235,8 @@ fn parse_nx_graph_json(json: &Value) -> DependencyGraph {
                             edges.push(DependencyEdge {
                                 source: source.clone(),
                                 target: t.to_string(),
-                                edge_type: target.get("type")
+                                edge_type: target
+                                    .get("type")
                                     .and_then(|t| t.as_str())
                                     .unwrap_or("static")
                                     .to_string(),
@@ -1214,7 +1273,8 @@ fn get_workspace_dependency_graph(
         let pkg_json_path = Path::new(&pkg_path).join("package.json");
         if let Ok(content) = fs::read_to_string(&pkg_json_path) {
             if let Ok(json) = serde_json::from_str::<Value>(&content) {
-                let name = json.get("name")
+                let name = json
+                    .get("name")
                     .and_then(|n| n.as_str())
                     .unwrap_or("unknown")
                     .to_string();
@@ -1222,7 +1282,8 @@ fn get_workspace_dependency_graph(
                 let id = name.clone();
                 package_map.insert(name.clone(), pkg_path.clone());
 
-                let scripts_count = json.get("scripts")
+                let scripts_count = json
+                    .get("scripts")
                     .and_then(|s| s.as_object())
                     .map(|o| o.len() as u32)
                     .unwrap_or(0);
@@ -1246,15 +1307,19 @@ fn get_workspace_dependency_graph(
                     if let Some(deps) = json.get(*dep_key).and_then(|d| d.as_object()) {
                         for (dep_name, _) in deps {
                             // Only include internal workspace dependencies
-                            if package_map.contains_key(dep_name) ||
-                               packages.iter().any(|p| {
-                                   let pjson = Path::new(p).join("package.json");
-                                   if let Ok(c) = fs::read_to_string(&pjson) {
-                                       if let Ok(j) = serde_json::from_str::<Value>(&c) {
-                                           j.get("name").and_then(|n| n.as_str()) == Some(dep_name)
-                                       } else { false }
-                                   } else { false }
-                               })
+                            if package_map.contains_key(dep_name)
+                                || packages.iter().any(|p| {
+                                    let pjson = Path::new(p).join("package.json");
+                                    if let Ok(c) = fs::read_to_string(&pjson) {
+                                        if let Ok(j) = serde_json::from_str::<Value>(&c) {
+                                            j.get("name").and_then(|n| n.as_str()) == Some(dep_name)
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                })
                             {
                                 edges.push(DependencyEdge {
                                     source: dep_name.clone(),
@@ -1308,10 +1373,16 @@ fn get_workspace_package_dirs(project_path: &str) -> Vec<String> {
                                     if level1_path.is_dir() {
                                         // Second level: packages/core/api, packages/core/config, etc.
                                         if let Ok(level2_entries) = fs::read_dir(&level1_path) {
-                                            for level2_entry in level2_entries.filter_map(|e| e.ok()) {
+                                            for level2_entry in
+                                                level2_entries.filter_map(|e| e.ok())
+                                            {
                                                 let level2_path = level2_entry.path();
-                                                if level2_path.is_dir() && level2_path.join("package.json").exists() {
-                                                    packages.push(level2_path.to_string_lossy().to_string());
+                                                if level2_path.is_dir()
+                                                    && level2_path.join("package.json").exists()
+                                                {
+                                                    packages.push(
+                                                        level2_path.to_string_lossy().to_string(),
+                                                    );
                                                 }
                                             }
                                         }
@@ -1326,7 +1397,9 @@ fn get_workspace_package_dirs(project_path: &str) -> Vec<String> {
                             if let Ok(entries) = fs::read_dir(&glob_path) {
                                 for entry in entries.filter_map(|e| e.ok()) {
                                     let entry_path = entry.path();
-                                    if entry_path.is_dir() && entry_path.join("package.json").exists() {
+                                    if entry_path.is_dir()
+                                        && entry_path.join("package.json").exists()
+                                    {
                                         packages.push(entry_path.to_string_lossy().to_string());
                                     }
                                 }
@@ -1363,12 +1436,15 @@ fn get_workspace_package_dirs(project_path: &str) -> Vec<String> {
                     };
 
                     for pattern in workspace_patterns {
-                        let glob_path = path.join(pattern.trim_end_matches("/*").trim_end_matches("/**"));
+                        let glob_path =
+                            path.join(pattern.trim_end_matches("/*").trim_end_matches("/**"));
                         if glob_path.is_dir() {
                             if let Ok(entries) = fs::read_dir(&glob_path) {
                                 for entry in entries.filter_map(|e| e.ok()) {
                                     let entry_path = entry.path();
-                                    if entry_path.is_dir() && entry_path.join("package.json").exists() {
+                                    if entry_path.is_dir()
+                                        && entry_path.join("package.json").exists()
+                                    {
                                         packages.push(entry_path.to_string_lossy().to_string());
                                     }
                                 }

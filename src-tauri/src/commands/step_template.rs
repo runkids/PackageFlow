@@ -1,11 +1,11 @@
 // Step Template commands for custom template management
 // Stores custom templates in the Tauri store
 
-use tauri_plugin_store::StoreExt;
-use crate::utils::store::STORE_FILE;
 use crate::models::step_template::{
-    CustomStepTemplate, ListCustomTemplatesResponse, CustomTemplateResponse,
+    CustomStepTemplate, CustomTemplateResponse, ListCustomTemplatesResponse,
 };
+use crate::utils::store::STORE_FILE;
+use tauri_plugin_store::StoreExt;
 
 const CUSTOM_TEMPLATES_KEY: &str = "customStepTemplates";
 

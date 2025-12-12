@@ -1,13 +1,13 @@
 // IPA file inspection commands
 // Implements US6: IPA File Inspection (Read-only)
 
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
-use chrono::Utc;
 
 use crate::models::IpaMetadata;
 
@@ -85,11 +85,10 @@ fn find_ipa_files(dir_path: &Path, max_depth: usize) -> Vec<String> {
 
 /// Extract Info.plist data from an IPA file
 fn extract_plist_from_ipa(ipa_path: &Path) -> Result<plist::Value, String> {
-    let file = File::open(ipa_path)
-        .map_err(|e| format!("Failed to open IPA: {}", e))?;
+    let file = File::open(ipa_path).map_err(|e| format!("Failed to open IPA: {}", e))?;
 
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read IPA as zip: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read IPA as zip: {}", e))?;
 
     // Find Info.plist in Payload/*.app/
     let plist_entry_name = (0..archive.len())
@@ -110,22 +109,28 @@ fn extract_plist_from_ipa(ipa_path: &Path) -> Result<plist::Value, String> {
         .next()
         .ok_or_else(|| "Info.plist not found in IPA".to_string())?;
 
-    let mut plist_entry = archive.by_name(&plist_entry_name)
+    let mut plist_entry = archive
+        .by_name(&plist_entry_name)
         .map_err(|e| format!("Failed to read plist entry: {}", e))?;
 
     let mut plist_data = Vec::new();
-    plist_entry.read_to_end(&mut plist_data)
+    plist_entry
+        .read_to_end(&mut plist_data)
         .map_err(|e| format!("Failed to read plist data: {}", e))?;
 
     // Parse plist (supports both binary and XML formats)
-    plist::from_bytes(&plist_data)
-        .map_err(|e| format!("Failed to parse plist: {}", e))
+    plist::from_bytes(&plist_data).map_err(|e| format!("Failed to parse plist: {}", e))
 }
 
 /// Extract metadata from plist Value
-fn extract_metadata_from_plist(plist_value: &plist::Value, file_name: &str, file_path: &str) -> IpaMetadata {
+fn extract_metadata_from_plist(
+    plist_value: &plist::Value,
+    file_name: &str,
+    file_path: &str,
+) -> IpaMetadata {
     let get_string = |key: &str| -> String {
-        plist_value.as_dictionary()
+        plist_value
+            .as_dictionary()
             .and_then(|d| d.get(key))
             .and_then(|v| v.as_string())
             .map(|s| s.to_string())
@@ -145,7 +150,8 @@ fn extract_metadata_from_plist(plist_value: &plist::Value, file_name: &str, file
     };
 
     // Device capabilities can be array or dictionary
-    let device_capabilities = plist_value.as_dictionary()
+    let device_capabilities = plist_value
+        .as_dictionary()
         .and_then(|d| d.get("UIRequiredDeviceCapabilities"))
         .map(|v| {
             if let Some(arr) = v.as_array() {
@@ -154,10 +160,7 @@ fn extract_metadata_from_plist(plist_value: &plist::Value, file_name: &str, file
                     .collect::<Vec<_>>()
                     .join(", ")
             } else if let Some(dict) = v.as_dictionary() {
-                dict.keys()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                dict.keys().cloned().collect::<Vec<_>>().join(", ")
             } else {
                 "N/A".to_string()
             }
@@ -199,9 +202,7 @@ fn plist_to_json(value: &plist::Value) -> serde_json::Value {
             // Encode binary data as base64
             serde_json::Value::String(base64_encode(d))
         }
-        plist::Value::Date(d) => {
-            serde_json::Value::String(d.to_xml_format())
-        }
+        plist::Value::Date(d) => serde_json::Value::String(d.to_xml_format()),
         plist::Value::Real(r) => {
             serde_json::json!(*r)
         }
@@ -321,11 +322,7 @@ pub async fn scan_project_ipa(dir_path: String) -> Result<ScanProjectIpaResponse
                 results.push(metadata);
             }
             Err(e) => {
-                results.push(IpaMetadata::with_error(
-                    file_name,
-                    ipa_path,
-                    e,
-                ));
+                results.push(IpaMetadata::with_error(file_name, ipa_path, e));
             }
         }
     }

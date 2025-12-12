@@ -2,9 +2,9 @@
 // Represents an automation workflow
 // Feature 013: Extended to support multiple node types (trigger-workflow)
 
-use serde::{Deserialize, Serialize};
-use crate::models::webhook::WebhookConfig;
 use crate::models::incoming_webhook::IncomingWebhookConfig;
+use crate::models::webhook::WebhookConfig;
+use serde::{Deserialize, Serialize};
 
 /// Represents an automation workflow
 #[derive(Debug, Clone, Serialize, Deserialize)]

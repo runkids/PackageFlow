@@ -3,7 +3,6 @@
  * HTTP server for receiving external webhook triggers
  * @see specs/012-workflow-webhook-support
  */
-
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -15,9 +14,9 @@ use axum::{
     routing::post,
     Router,
 };
-use tokio::sync::{oneshot, RwLock};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
+use tokio::sync::{oneshot, RwLock};
 
 use crate::models::{IncomingWebhookServerStatus, WebhookTriggerResponse, Workflow};
 use crate::services::notification::{send_webhook_notification, WebhookNotificationType};
@@ -58,9 +57,12 @@ impl IncomingWebhookManager {
 
     /// Check if any workflow has incoming webhook enabled
     fn has_active_webhooks(workflows: &[Workflow]) -> bool {
-        workflows
-            .iter()
-            .any(|w| w.incoming_webhook.as_ref().map(|c| c.enabled).unwrap_or(false))
+        workflows.iter().any(|w| {
+            w.incoming_webhook
+                .as_ref()
+                .map(|c| c.enabled)
+                .unwrap_or(false)
+        })
     }
 
     /// Build workflow_id -> token mapping
@@ -181,7 +183,12 @@ impl IncomingWebhookManager {
     pub async fn get_status(&self, workflows: &[Workflow]) -> IncomingWebhookServerStatus {
         let active_count = workflows
             .iter()
-            .filter(|w| w.incoming_webhook.as_ref().map(|c| c.enabled).unwrap_or(false))
+            .filter(|w| {
+                w.incoming_webhook
+                    .as_ref()
+                    .map(|c| c.enabled)
+                    .unwrap_or(false)
+            })
             .count();
 
         IncomingWebhookServerStatus {
@@ -256,7 +263,13 @@ async fn handle_webhook_trigger(
         workflow_id
     );
 
-    match crate::commands::workflow::execute_workflow(state.app.clone(), workflow_id.clone(), None, None).await
+    match crate::commands::workflow::execute_workflow(
+        state.app.clone(),
+        workflow_id.clone(),
+        None,
+        None,
+    )
+    .await
     {
         Ok(execution_id) => {
             log::info!(

@@ -2,8 +2,8 @@
 // Test and validate webhook configurations
 // @see specs/012-workflow-webhook-support
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 
 use crate::models::webhook::{WebhookTestResult, DEFAULT_PAYLOAD_TEMPLATE, SUPPORTED_VARIABLES};
 
@@ -26,7 +26,9 @@ pub async fn test_webhook(
     }
 
     // Build test payload with sample data
-    let template = payload_template.as_deref().unwrap_or(DEFAULT_PAYLOAD_TEMPLATE);
+    let template = payload_template
+        .as_deref()
+        .unwrap_or(DEFAULT_PAYLOAD_TEMPLATE);
     let payload = render_test_template(template);
 
     // Build HTTP client with 10 second timeout
@@ -67,13 +69,20 @@ pub async fn test_webhook(
             };
 
             let response_time = start.elapsed().as_millis() as u64;
-            println!("[webhook] Test response: {} ({}ms)", status_code, response_time);
+            println!(
+                "[webhook] Test response: {} ({}ms)",
+                status_code, response_time
+            );
 
             Ok(WebhookTestResult {
                 success,
                 status_code: Some(status_code),
                 response_body: body,
-                error: if success { None } else { Some(format!("HTTP {}", status_code)) },
+                error: if success {
+                    None
+                } else {
+                    Some(format!("HTTP {}", status_code))
+                },
                 response_time,
             })
         }
@@ -118,7 +127,8 @@ fn render_test_template(template: &str) -> String {
             "error_message" => "".to_string(),
             _ => caps[0].to_string(), // Keep unknown variables as-is
         }
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Validate payload template variables

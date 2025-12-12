@@ -1,10 +1,13 @@
 // Git commands module
 // Implements Git integration feature (009-git-integration)
 
-use std::path::Path;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
-use crate::models::git::{GitStatus, GitFile, GitFileStatus, Branch, Commit, Stash, FileDiff, FileDiffStatus, DiffHunk, DiffLine, DiffLineType};
+use crate::models::git::{
+    Branch, Commit, DiffHunk, DiffLine, DiffLineType, FileDiff, FileDiffStatus, GitFile,
+    GitFileStatus, GitStatus, Stash,
+};
 use crate::utils::path_resolver;
 
 // ============================================================================
@@ -274,9 +277,10 @@ pub fn exec_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         // Check for credential errors
-        if stderr.contains("could not read Username") ||
-           stderr.contains("Permission denied") ||
-           stderr.contains("Host key verification failed") {
+        if stderr.contains("could not read Username")
+            || stderr.contains("Permission denied")
+            || stderr.contains("Host key verification failed")
+        {
             return Err("AUTH_FAILED: Authentication required. Please configure SSH keys or credential helper.".to_string());
         }
         Err(stderr)
@@ -303,9 +307,16 @@ pub fn parse_git_status_porcelain(output: &str) -> GitStatus {
 
         // Header lines start with #
         if line.starts_with("# branch.head ") {
-            status.branch = line.strip_prefix("# branch.head ").unwrap_or("").to_string();
+            status.branch = line
+                .strip_prefix("# branch.head ")
+                .unwrap_or("")
+                .to_string();
         } else if line.starts_with("# branch.upstream ") {
-            status.upstream = Some(line.strip_prefix("# branch.upstream ").unwrap_or("").to_string());
+            status.upstream = Some(
+                line.strip_prefix("# branch.upstream ")
+                    .unwrap_or("")
+                    .to_string(),
+            );
         } else if line.starts_with("# branch.ab ") {
             // Format: # branch.ab +ahead -behind
             let ab = line.strip_prefix("# branch.ab ").unwrap_or("");
@@ -657,9 +668,8 @@ pub async fn get_branches(
 
     // Build branch list command
     let include_remote = include_remote.unwrap_or(true);
-    let format_arg = format!(
-        "--format=%(refname:short)|%(objectname:short)|%(subject)|%(upstream:short)"
-    );
+    let format_arg =
+        format!("--format=%(refname:short)|%(objectname:short)|%(subject)|%(upstream:short)");
 
     let result = if include_remote {
         exec_git(path, &["branch", "-a", &format_arg])
@@ -680,16 +690,16 @@ pub async fn get_branches(
                 if parts.len() >= 3 {
                     let name = parts[0].to_string();
                     let is_remote = name.starts_with("remotes/") || name.contains('/');
-                    let display_name = name
-                        .strip_prefix("remotes/")
-                        .unwrap_or(&name)
-                        .to_string();
+                    let display_name = name.strip_prefix("remotes/").unwrap_or(&name).to_string();
 
                     branches.push(Branch {
                         name: display_name.clone(),
                         is_current: display_name == current_branch,
                         is_remote,
-                        upstream: parts.get(3).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+                        upstream: parts
+                            .get(3)
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.to_string()),
                         last_commit_hash: parts[1].to_string(),
                         last_commit_message: parts[2].to_string(),
                     });
@@ -750,10 +760,9 @@ pub async fn create_branch(
     match result {
         Ok(_) => {
             // Get branch info
-            let hash = exec_git(path, &["rev-parse", "--short", &branch_name])
-                .unwrap_or_default();
-            let message = exec_git(path, &["log", "-1", "--format=%s", &branch_name])
-                .unwrap_or_default();
+            let hash = exec_git(path, &["rev-parse", "--short", &branch_name]).unwrap_or_default();
+            let message =
+                exec_git(path, &["log", "-1", "--format=%s", &branch_name]).unwrap_or_default();
 
             Ok(CreateBranchResponse {
                 success: true,
@@ -1091,7 +1100,8 @@ pub async fn git_pull(
     match exec_git(path, &args) {
         Ok(output) => {
             // Check for conflicts
-            let has_conflicts = output.contains("CONFLICT") || output.contains("Automatic merge failed");
+            let has_conflicts =
+                output.contains("CONFLICT") || output.contains("Automatic merge failed");
 
             // Try to count updated files from output
             let updated_files = output
@@ -1409,7 +1419,8 @@ pub async fn get_remotes(project_path: String) -> Result<GetRemotesResponse, Str
     match exec_git(path, &["remote", "-v"]) {
         Ok(output) => {
             let mut remotes: Vec<GitRemote> = Vec::new();
-            let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut seen_names: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
 
             for line in output.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -1583,7 +1594,8 @@ pub async fn git_fetch(
             error: None,
         }),
         Err(e) => {
-            let error = if e.contains("Could not resolve host") || e.contains("Connection refused") {
+            let error = if e.contains("Could not resolve host") || e.contains("Connection refused")
+            {
                 "NETWORK_ERROR".to_string()
             } else if e.contains("Authentication") || e.contains("permission denied") {
                 "AUTH_FAILED".to_string()
@@ -1795,7 +1807,8 @@ pub async fn get_git_auth_status(project_path: String) -> Result<GetGitAuthStatu
             }
             Err(_) => (false, vec![]),
         }
-    }).await;
+    })
+    .await;
 
     let (ssh_agent_available, ssh_identities) = ssh_result.unwrap_or((false, vec![]));
 
@@ -1850,10 +1863,14 @@ pub async fn test_remote_connection(
                 .args(&["ls-remote", "--exit-code", "--heads", &remote])
                 .current_dir(&path_buf)
                 .env("GIT_TERMINAL_PROMPT", "0")
-                .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new")
+                .env(
+                    "GIT_SSH_COMMAND",
+                    "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new",
+                )
                 .output()
-        })
-    ).await;
+        }),
+    )
+    .await;
 
     match result {
         Ok(Ok(Ok(output))) => {
@@ -1865,13 +1882,15 @@ pub async fn test_remote_connection(
                 })
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let error = if stderr.contains("could not read Username") ||
-                              stderr.contains("Permission denied") ||
-                              stderr.contains("Host key verification failed") {
+                let error = if stderr.contains("could not read Username")
+                    || stderr.contains("Permission denied")
+                    || stderr.contains("Host key verification failed")
+                {
                     "AUTH_FAILED".to_string()
-                } else if stderr.contains("Could not resolve host") ||
-                          stderr.contains("Connection refused") ||
-                          stderr.contains("Connection timed out") {
+                } else if stderr.contains("Could not resolve host")
+                    || stderr.contains("Connection refused")
+                    || stderr.contains("Connection timed out")
+                {
                     "NETWORK_ERROR".to_string()
                 } else if stderr.contains("does not appear to be a git repository") {
                     "INVALID_REMOTE".to_string()
@@ -2149,49 +2168,61 @@ fn parse_diff_output(diff_output: &str, file_path: &str, status: FileDiffStatus)
         }
 
         // Skip diff header lines
-        if line.starts_with("diff --git") ||
-           line.starts_with("index ") ||
-           line.starts_with("---") ||
-           line.starts_with("+++") ||
-           line.starts_with("new file mode") ||
-           line.starts_with("deleted file mode") ||
-           line.starts_with("old mode") ||
-           line.starts_with("new mode") ||
-           line.starts_with("similarity index") ||
-           line.starts_with("rename from") ||
-           line.starts_with("rename to") {
+        if line.starts_with("diff --git")
+            || line.starts_with("index ")
+            || line.starts_with("---")
+            || line.starts_with("+++")
+            || line.starts_with("new file mode")
+            || line.starts_with("deleted file mode")
+            || line.starts_with("old mode")
+            || line.starts_with("new mode")
+            || line.starts_with("similarity index")
+            || line.starts_with("rename from")
+            || line.starts_with("rename to")
+        {
             continue;
         }
 
         // Content lines
         if let Some(ref mut hunk) = current_hunk {
-            let (line_type, content, old_ln, new_ln) = if let Some(stripped) = line.strip_prefix('+') {
-                additions += 1;
-                let ln = new_line_num;
-                new_line_num += 1;
-                (DiffLineType::Addition, stripped.to_string(), None, Some(ln))
-            } else if let Some(stripped) = line.strip_prefix('-') {
-                deletions += 1;
-                let ln = old_line_num;
-                old_line_num += 1;
-                (DiffLineType::Deletion, stripped.to_string(), Some(ln), None)
-            } else if let Some(stripped) = line.strip_prefix(' ') {
-                let old_ln = old_line_num;
-                let new_ln = new_line_num;
-                old_line_num += 1;
-                new_line_num += 1;
-                (DiffLineType::Context, stripped.to_string(), Some(old_ln), Some(new_ln))
-            } else if line.starts_with('\\') {
-                // "\ No newline at end of file" - skip
-                continue;
-            } else {
-                // Treat as context line without prefix
-                let old_ln = old_line_num;
-                let new_ln = new_line_num;
-                old_line_num += 1;
-                new_line_num += 1;
-                (DiffLineType::Context, line.to_string(), Some(old_ln), Some(new_ln))
-            };
+            let (line_type, content, old_ln, new_ln) =
+                if let Some(stripped) = line.strip_prefix('+') {
+                    additions += 1;
+                    let ln = new_line_num;
+                    new_line_num += 1;
+                    (DiffLineType::Addition, stripped.to_string(), None, Some(ln))
+                } else if let Some(stripped) = line.strip_prefix('-') {
+                    deletions += 1;
+                    let ln = old_line_num;
+                    old_line_num += 1;
+                    (DiffLineType::Deletion, stripped.to_string(), Some(ln), None)
+                } else if let Some(stripped) = line.strip_prefix(' ') {
+                    let old_ln = old_line_num;
+                    let new_ln = new_line_num;
+                    old_line_num += 1;
+                    new_line_num += 1;
+                    (
+                        DiffLineType::Context,
+                        stripped.to_string(),
+                        Some(old_ln),
+                        Some(new_ln),
+                    )
+                } else if line.starts_with('\\') {
+                    // "\ No newline at end of file" - skip
+                    continue;
+                } else {
+                    // Treat as context line without prefix
+                    let old_ln = old_line_num;
+                    let new_ln = new_line_num;
+                    old_line_num += 1;
+                    new_line_num += 1;
+                    (
+                        DiffLineType::Context,
+                        line.to_string(),
+                        Some(old_ln),
+                        Some(new_ln),
+                    )
+                };
 
             hunk.lines.push(DiffLine {
                 index: line_index,
@@ -2315,7 +2346,10 @@ pub async fn get_file_diff(
 }
 
 /// Get diff for an untracked file by reading its content
-fn get_untracked_file_diff(repo_path: &Path, file_path: &str) -> Result<GetFileDiffResponse, String> {
+fn get_untracked_file_diff(
+    repo_path: &Path,
+    file_path: &str,
+) -> Result<GetFileDiffResponse, String> {
     let full_path = repo_path.join(file_path);
 
     // Check if it's a directory

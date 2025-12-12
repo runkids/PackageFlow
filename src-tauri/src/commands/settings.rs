@@ -1,12 +1,12 @@
 // Settings commands for data persistence
 // Implements US7: Data Persistence Across Sessions
 
+use crate::models::{Project, Workflow};
+use crate::utils::store::{AppSettings, StoreData, STORE_FILE};
+use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
-use std::sync::Mutex;
-use std::path::PathBuf;
-use crate::utils::store::{AppSettings, StoreData, STORE_FILE};
-use crate::models::{Project, Workflow};
 
 /// Config file name for storing custom store path
 const STORE_CONFIG_FILE: &str = "store-config.json";
@@ -50,7 +50,10 @@ fn load_store_config(app: &tauri::AppHandle) -> Result<StoreConfig, String> {
 fn save_store_config(app: &tauri::AppHandle, config: &StoreConfig) -> Result<(), String> {
     let config_store = app.store(STORE_CONFIG_FILE).map_err(|e| e.to_string())?;
 
-    config_store.set("config", serde_json::to_value(config).map_err(|e| e.to_string())?);
+    config_store.set(
+        "config",
+        serde_json::to_value(config).map_err(|e| e.to_string())?,
+    );
     config_store.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -73,7 +76,10 @@ fn get_actual_store_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
             }
         }
         // Fall back to default if custom path is invalid
-        log::warn!("Custom store path invalid, falling back to default: {}", custom_path);
+        log::warn!(
+            "Custom store path invalid, falling back to default: {}",
+            custom_path
+        );
     }
 
     let default_dir = get_default_store_dir(app)?;
@@ -86,11 +92,10 @@ fn read_store_data_from_path(path: &PathBuf) -> Result<StoreData, String> {
         return Ok(StoreData::default());
     }
 
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read store file: {}", e))?;
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read store file: {}", e))?;
 
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse store data: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse store data: {}", e))
 }
 
 /// Write store data to file
@@ -104,8 +109,7 @@ fn write_store_data_to_path(path: &PathBuf, data: &StoreData) -> Result<(), Stri
     let content = serde_json::to_string_pretty(data)
         .map_err(|e| format!("Failed to serialize store data: {}", e))?;
 
-    std::fs::write(path, content)
-        .map_err(|e| format!("Failed to write store file: {}", e))?;
+    std::fs::write(path, content).map_err(|e| format!("Failed to write store file: {}", e))?;
 
     Ok(())
 }
@@ -125,9 +129,7 @@ impl Default for SettingsState {
 
 /// Load settings from store
 #[tauri::command]
-pub async fn load_settings(
-    app: tauri::AppHandle,
-) -> Result<AppSettings, String> {
+pub async fn load_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     // Try to load settings from store
@@ -141,14 +143,14 @@ pub async fn load_settings(
 
 /// Save settings to store
 #[tauri::command]
-pub async fn save_settings(
-    app: tauri::AppHandle,
-    settings: AppSettings,
-) -> Result<(), String> {
+pub async fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     // Save to store
-    store.set("settings", serde_json::to_value(&settings).map_err(|e| e.to_string())?);
+    store.set(
+        "settings",
+        serde_json::to_value(&settings).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -156,9 +158,7 @@ pub async fn save_settings(
 
 /// Load all projects from store
 #[tauri::command]
-pub async fn load_projects(
-    app: tauri::AppHandle,
-) -> Result<Vec<Project>, String> {
+pub async fn load_projects(app: tauri::AppHandle) -> Result<Vec<Project>, String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     let projects: Vec<Project> = store
@@ -171,13 +171,13 @@ pub async fn load_projects(
 
 /// Save projects to store
 #[tauri::command]
-pub async fn save_projects(
-    app: tauri::AppHandle,
-    projects: Vec<Project>,
-) -> Result<(), String> {
+pub async fn save_projects(app: tauri::AppHandle, projects: Vec<Project>) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
-    store.set("projects", serde_json::to_value(&projects).map_err(|e| e.to_string())?);
+    store.set(
+        "projects",
+        serde_json::to_value(&projects).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -185,9 +185,7 @@ pub async fn save_projects(
 
 /// Load all workflows from store
 #[tauri::command]
-pub async fn load_workflows(
-    app: tauri::AppHandle,
-) -> Result<Vec<Workflow>, String> {
+pub async fn load_workflows(app: tauri::AppHandle) -> Result<Vec<Workflow>, String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     let workflows: Vec<Workflow> = store
@@ -200,13 +198,13 @@ pub async fn load_workflows(
 
 /// Save workflows to store
 #[tauri::command]
-pub async fn save_workflows(
-    app: tauri::AppHandle,
-    workflows: Vec<Workflow>,
-) -> Result<(), String> {
+pub async fn save_workflows(app: tauri::AppHandle, workflows: Vec<Workflow>) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
-    store.set("workflows", serde_json::to_value(&workflows).map_err(|e| e.to_string())?);
+    store.set(
+        "workflows",
+        serde_json::to_value(&workflows).map_err(|e| e.to_string())?,
+    );
     store.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -214,9 +212,7 @@ pub async fn save_workflows(
 
 /// Load complete store data
 #[tauri::command]
-pub async fn load_store_data(
-    app: tauri::AppHandle,
-) -> Result<StoreData, String> {
+pub async fn load_store_data(app: tauri::AppHandle) -> Result<StoreData, String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     // Load each field separately for flexibility
@@ -266,9 +262,7 @@ pub async fn load_store_data(
 
 /// Get current store path information
 #[tauri::command]
-pub async fn get_store_path(
-    app: tauri::AppHandle,
-) -> Result<StorePathInfo, String> {
+pub async fn get_store_path(app: tauri::AppHandle) -> Result<StorePathInfo, String> {
     let config = load_store_config(&app)?;
     let default_dir = get_default_store_dir(&app)?;
     let default_path = default_dir.join(STORE_FILE);
@@ -361,9 +355,7 @@ pub async fn set_store_path(
 
 /// Reset to default store path
 #[tauri::command]
-pub async fn reset_store_path(
-    app: tauri::AppHandle,
-) -> Result<StorePathInfo, String> {
+pub async fn reset_store_path(app: tauri::AppHandle) -> Result<StorePathInfo, String> {
     let config = load_store_config(&app)?;
     let default_dir = get_default_store_dir(&app)?;
     let default_path = default_dir.join(STORE_FILE);
@@ -377,12 +369,30 @@ pub async fn reset_store_path(
 
             // Write to default location using tauri-plugin-store
             let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
-            store.set("version", serde_json::to_value(&custom_data.version).map_err(|e| e.to_string())?);
-            store.set("settings", serde_json::to_value(&custom_data.settings).map_err(|e| e.to_string())?);
-            store.set("projects", serde_json::to_value(&custom_data.projects).map_err(|e| e.to_string())?);
-            store.set("workflows", serde_json::to_value(&custom_data.workflows).map_err(|e| e.to_string())?);
-            store.set("runningExecutions", serde_json::to_value(&custom_data.running_executions).map_err(|e| e.to_string())?);
-            store.set("securityScans", serde_json::to_value(&custom_data.security_scans).map_err(|e| e.to_string())?);
+            store.set(
+                "version",
+                serde_json::to_value(&custom_data.version).map_err(|e| e.to_string())?,
+            );
+            store.set(
+                "settings",
+                serde_json::to_value(&custom_data.settings).map_err(|e| e.to_string())?,
+            );
+            store.set(
+                "projects",
+                serde_json::to_value(&custom_data.projects).map_err(|e| e.to_string())?,
+            );
+            store.set(
+                "workflows",
+                serde_json::to_value(&custom_data.workflows).map_err(|e| e.to_string())?,
+            );
+            store.set(
+                "runningExecutions",
+                serde_json::to_value(&custom_data.running_executions).map_err(|e| e.to_string())?,
+            );
+            store.set(
+                "securityScans",
+                serde_json::to_value(&custom_data.security_scans).map_err(|e| e.to_string())?,
+            );
             store.save().map_err(|e| e.to_string())?;
         }
     }
@@ -404,9 +414,7 @@ pub async fn reset_store_path(
 
 /// Open store file location in file explorer
 #[tauri::command]
-pub async fn open_store_location(
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn open_store_location(app: tauri::AppHandle) -> Result<(), String> {
     let path_info = get_store_path(app.clone()).await?;
     let path = PathBuf::from(&path_info.current_path);
 

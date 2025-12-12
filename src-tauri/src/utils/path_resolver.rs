@@ -1,11 +1,11 @@
 // Path resolution utilities for macOS GUI apps
 // GUI apps don't inherit shell PATH, so we need to find tools manually
 
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
-use once_cell::sync::Lazy;
 use std::sync::RwLock;
-use std::collections::HashMap;
 
 /// Cache for resolved tool paths
 static TOOL_PATH_CACHE: Lazy<RwLock<HashMap<String, Option<String>>>> =
@@ -156,7 +156,10 @@ fn find_tool_uncached(tool_name: &str) -> Option<String> {
     }
 
     // Special handling for Node.js tools - check NVM versions
-    if matches!(tool_name, "node" | "npm" | "npx" | "corepack" | "yarn" | "pnpm") {
+    if matches!(
+        tool_name,
+        "node" | "npm" | "npx" | "corepack" | "yarn" | "pnpm"
+    ) {
         if let Some(nvm_path) = find_nvm_tool(tool_name) {
             return Some(nvm_path);
         }
@@ -229,11 +232,14 @@ pub fn create_command(tool_name: &str) -> Command {
 
     // Terminal/TTY settings for interactive tools and dev servers
     cmd.env("TERM", "xterm-256color");
-    cmd.env("FORCE_COLOR", "1");  // Enable colored output
-    cmd.env("CI", "false");       // Not in CI environment
+    cmd.env("FORCE_COLOR", "1"); // Enable colored output
+    cmd.env("CI", "false"); // Not in CI environment
 
     // Node.js specific settings
-    cmd.env("NODE_ENV", std::env::var("NODE_ENV").unwrap_or_else(|_| "development".to_string()));
+    cmd.env(
+        "NODE_ENV",
+        std::env::var("NODE_ENV").unwrap_or_else(|_| "development".to_string()),
+    );
 
     cmd
 }

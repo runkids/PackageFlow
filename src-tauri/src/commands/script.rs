@@ -1,16 +1,16 @@
 // Script execution commands
 // Implements US3: Script Execution with Real-time Output
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
-use std::process::Stdio;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
-use uuid::Uuid;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
+use std::process::Stdio;
+use std::sync::Mutex;
 use std::time::Instant;
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
+use uuid::Uuid;
 
 use crate::utils::path_resolver;
 
@@ -50,8 +50,8 @@ impl std::fmt::Display for ExecutionStatus {
 #[serde(rename_all = "camelCase")]
 pub struct OutputLine {
     pub content: String,
-    pub stream: String,     // "stdout" | "stderr"
-    pub timestamp: String,  // ISO 8601
+    pub stream: String,    // "stdout" | "stderr"
+    pub timestamp: String, // ISO 8601
 }
 
 /// Output buffer with size limit for storing script output history (Feature 007)
@@ -106,7 +106,11 @@ impl OutputBuffer {
 
     /// Get combined output as a single string
     pub fn get_combined_output(&self) -> String {
-        self.lines.iter().map(|l| l.content.as_str()).collect::<Vec<_>>().join("")
+        self.lines
+            .iter()
+            .map(|l| l.content.as_str())
+            .collect::<Vec<_>>()
+            .join("")
     }
 
     /// Check if content was truncated due to size limit
@@ -178,7 +182,8 @@ fn kill_process_tree(pid: u32) -> Result<(), String> {
 
     match &pkill_result {
         Ok(output) => {
-            println!("[kill_process_tree] pkill -P {} result: status={}, stderr={}",
+            println!(
+                "[kill_process_tree] pkill -P {} result: status={}, stderr={}",
                 pid,
                 output.status,
                 String::from_utf8_lossy(&output.stderr)
@@ -196,7 +201,8 @@ fn kill_process_tree(pid: u32) -> Result<(), String> {
 
     match &kill_result {
         Ok(output) => {
-            println!("[kill_process_tree] kill -9 {} result: status={}, stderr={}",
+            println!(
+                "[kill_process_tree] kill -9 {} result: status={}, stderr={}",
                 pid,
                 output.status,
                 String::from_utf8_lossy(&output.stderr)
@@ -260,11 +266,11 @@ pub async fn execute_script(
     script_name: String,
     package_manager: String,
     cwd: Option<String>,
-    project_name: Option<String>,  // Feature 007: Optional project name for reconnection
+    project_name: Option<String>, // Feature 007: Optional project name for reconnection
 ) -> Result<ExecuteScriptResponse, String> {
     let execution_id = Uuid::new_v4().to_string();
     let working_dir = cwd.clone().unwrap_or_else(|| project_path.clone());
-    let stored_project_path = cwd.unwrap_or(project_path);  // Feature 007: Store actual working dir
+    let stored_project_path = cwd.unwrap_or(project_path); // Feature 007: Store actual working dir
 
     // Determine command based on package manager
     // Special handling for built-in commands (install, build, etc.)
@@ -284,7 +290,10 @@ pub async fn execute_script(
         vec!["run".to_string(), script_name.clone()]
     };
 
-    println!("[execute_script] Spawning {} {:?} in {}", cmd, args, working_dir);
+    println!(
+        "[execute_script] Spawning {} {:?} in {}",
+        cmd, args, working_dir
+    );
 
     // Use path_resolver to create command with proper PATH for macOS GUI apps
     let mut command = path_resolver::create_command(cmd);
@@ -316,22 +325,25 @@ pub async fn execute_script(
     {
         let state = app.state::<ScriptExecutionState>();
         let mut executions = state.executions.lock().unwrap();
-        executions.insert(execution_id.clone(), RunningExecution {
-            execution_id: execution_id.clone(),
-            script_name: script_name.clone(),
-            started_at: start_time,
-            child: Some(child),
-            stdin,
-            pid,
-            // Feature 007: New fields
-            project_path: stored_path.clone(),
-            project_name: stored_name.clone(),
-            output_buffer: OutputBuffer::new(),
-            started_at_iso: started_at_iso.clone(),
-            status: ExecutionStatus::Running,
-            exit_code: None,
-            completed_at: None,
-        });
+        executions.insert(
+            execution_id.clone(),
+            RunningExecution {
+                execution_id: execution_id.clone(),
+                script_name: script_name.clone(),
+                started_at: start_time,
+                child: Some(child),
+                stdin,
+                pid,
+                // Feature 007: New fields
+                project_path: stored_path.clone(),
+                project_name: stored_name.clone(),
+                output_buffer: OutputBuffer::new(),
+                started_at_iso: started_at_iso.clone(),
+                status: ExecutionStatus::Running,
+                exit_code: None,
+                completed_at: None,
+            },
+        );
     }
 
     // Spawn task to handle stdout
@@ -355,12 +367,15 @@ pub async fn execute_script(
                 }
             }
 
-            let _ = app_stdout.emit("script_output", ScriptOutputPayload {
-                execution_id: exec_id_stdout.clone(),
-                output: line,
-                stream: "stdout".to_string(),
-                timestamp,
-            });
+            let _ = app_stdout.emit(
+                "script_output",
+                ScriptOutputPayload {
+                    execution_id: exec_id_stdout.clone(),
+                    output: line,
+                    stream: "stdout".to_string(),
+                    timestamp,
+                },
+            );
         }
     });
 
@@ -385,12 +400,15 @@ pub async fn execute_script(
                 }
             }
 
-            let _ = app_stderr.emit("script_output", ScriptOutputPayload {
-                execution_id: exec_id_stderr.clone(),
-                output: line,
-                stream: "stderr".to_string(),
-                timestamp,
-            });
+            let _ = app_stderr.emit(
+                "script_output",
+                ScriptOutputPayload {
+                    execution_id: exec_id_stderr.clone(),
+                    output: line,
+                    stream: "stderr".to_string(),
+                    timestamp,
+                },
+            );
         }
     });
 
@@ -406,7 +424,9 @@ pub async fn execute_script(
         let child_opt = {
             let state = app_wait.state::<ScriptExecutionState>();
             let mut executions = state.executions.lock().unwrap();
-            executions.get_mut(&exec_id_wait).and_then(|exec| exec.child.take())
+            executions
+                .get_mut(&exec_id_wait)
+                .and_then(|exec| exec.child.take())
         };
 
         // Wait for the child process (no lock held)
@@ -419,12 +439,15 @@ pub async fn execute_script(
         let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
         let duration = start_time.elapsed();
 
-        let _ = app_wait.emit("script_completed", ScriptCompletedPayload {
-            execution_id: exec_id_wait.clone(),
-            exit_code,
-            success: exit_code == 0,
-            duration_ms: duration.as_millis() as u64,
-        });
+        let _ = app_wait.emit(
+            "script_completed",
+            ScriptCompletedPayload {
+                execution_id: exec_id_wait.clone(),
+                exit_code,
+                success: exit_code == 0,
+                duration_ms: duration.as_millis() as u64,
+            },
+        );
 
         // Feature 007: Update status instead of removing (keep for 5 min retention)
         let state = app_wait.state::<ScriptExecutionState>();
@@ -471,39 +494,81 @@ pub async fn execute_command(
     command: String,
     args: Vec<String>,
     cwd: String,
-    project_path: Option<String>,   // Feature 007: Optional project root
-    project_name: Option<String>,   // Feature 007: Optional project name
+    project_path: Option<String>, // Feature 007: Optional project root
+    project_name: Option<String>, // Feature 007: Optional project name
 ) -> Result<ExecuteScriptResponse, String> {
     // Validate allowed commands
     let allowed_commands = [
         // Package managers
-        "npm", "yarn", "pnpm", "bun",
+        "npm",
+        "yarn",
+        "pnpm",
+        "bun",
         // Node.js tools
-        "node", "npx", "tsx",
+        "node",
+        "npx",
+        "tsx",
         // Version managers
-        "volta", "fnm", "nvm", "corepack",
+        "volta",
+        "fnm",
+        "nvm",
+        "corepack",
         // Version control
         "git",
         // Build tools
-        "make", "cmake",
+        "make",
+        "cmake",
         // Rust
-        "cargo", "rustc", "rustup",
+        "cargo",
+        "rustc",
+        "rustup",
         // Python
-        "python", "python3", "pip", "pip3", "pipenv", "poetry", "uv",
+        "python",
+        "python3",
+        "pip",
+        "pip3",
+        "pipenv",
+        "poetry",
+        "uv",
         // Go
         "go",
         // Mobile development (Expo / React Native)
-        "expo", "eas",
+        "expo",
+        "eas",
         // Mobile development (Flutter)
-        "flutter", "dart",
+        "flutter",
+        "dart",
         // Mobile development (iOS)
-        "pod", "xcodebuild", "fastlane", "xcrun",
+        "pod",
+        "xcodebuild",
+        "fastlane",
+        "xcrun",
         // Container
-        "docker", "docker-compose",
+        "docker",
+        "docker-compose",
         // File operations
-        "ls", "cat", "head", "tail", "find", "grep", "mkdir", "rm", "cp", "mv", "touch", "chmod",
+        "ls",
+        "cat",
+        "head",
+        "tail",
+        "find",
+        "grep",
+        "mkdir",
+        "rm",
+        "cp",
+        "mv",
+        "touch",
+        "chmod",
         // Utilities
-        "echo", "pwd", "which", "env", "curl", "wget", "tar", "unzip", "open",
+        "echo",
+        "pwd",
+        "which",
+        "env",
+        "curl",
+        "wget",
+        "tar",
+        "unzip",
+        "open",
         // macOS
         "brew",
     ];
@@ -527,7 +592,10 @@ pub async fn execute_command(
 
     let execution_id = Uuid::new_v4().to_string();
 
-    println!("[execute_command] command: {}, args: {:?}, cwd: {}", command, args, cwd);
+    println!(
+        "[execute_command] command: {}, args: {:?}, cwd: {}",
+        command, args, cwd
+    );
 
     // Use path_resolver to create command with proper PATH for macOS GUI apps
     let mut cmd = path_resolver::create_command(&command);
@@ -558,22 +626,25 @@ pub async fn execute_command(
     {
         let state = app.state::<ScriptExecutionState>();
         let mut executions = state.executions.lock().unwrap();
-        executions.insert(execution_id.clone(), RunningExecution {
-            execution_id: execution_id.clone(),
-            script_name: format!("{} {}", command, args.join(" ")),
-            started_at: start_time,
-            child: Some(child),
-            stdin,
-            pid,
-            // Feature 007: New fields
-            project_path: stored_path,
-            project_name: project_name.clone(),
-            output_buffer: OutputBuffer::new(),
-            started_at_iso: started_at_iso.clone(),
-            status: ExecutionStatus::Running,
-            exit_code: None,
-            completed_at: None,
-        });
+        executions.insert(
+            execution_id.clone(),
+            RunningExecution {
+                execution_id: execution_id.clone(),
+                script_name: format!("{} {}", command, args.join(" ")),
+                started_at: start_time,
+                child: Some(child),
+                stdin,
+                pid,
+                // Feature 007: New fields
+                project_path: stored_path,
+                project_name: project_name.clone(),
+                output_buffer: OutputBuffer::new(),
+                started_at_iso: started_at_iso.clone(),
+                status: ExecutionStatus::Running,
+                exit_code: None,
+                completed_at: None,
+            },
+        );
     }
 
     // Spawn task to handle stdout
@@ -597,12 +668,15 @@ pub async fn execute_command(
                 }
             }
 
-            let _ = app_stdout.emit("script_output", ScriptOutputPayload {
-                execution_id: exec_id_stdout.clone(),
-                output: line,
-                stream: "stdout".to_string(),
-                timestamp,
-            });
+            let _ = app_stdout.emit(
+                "script_output",
+                ScriptOutputPayload {
+                    execution_id: exec_id_stdout.clone(),
+                    output: line,
+                    stream: "stdout".to_string(),
+                    timestamp,
+                },
+            );
         }
     });
 
@@ -627,12 +701,15 @@ pub async fn execute_command(
                 }
             }
 
-            let _ = app_stderr.emit("script_output", ScriptOutputPayload {
-                execution_id: exec_id_stderr.clone(),
-                output: line,
-                stream: "stderr".to_string(),
-                timestamp,
-            });
+            let _ = app_stderr.emit(
+                "script_output",
+                ScriptOutputPayload {
+                    execution_id: exec_id_stderr.clone(),
+                    output: line,
+                    stream: "stderr".to_string(),
+                    timestamp,
+                },
+            );
         }
     });
 
@@ -648,7 +725,9 @@ pub async fn execute_command(
         let child_opt = {
             let state = app_wait.state::<ScriptExecutionState>();
             let mut executions = state.executions.lock().unwrap();
-            executions.get_mut(&exec_id_wait).and_then(|exec| exec.child.take())
+            executions
+                .get_mut(&exec_id_wait)
+                .and_then(|exec| exec.child.take())
         };
 
         // Wait for the child process (no lock held)
@@ -661,12 +740,15 @@ pub async fn execute_command(
         let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
         let duration = start_time.elapsed();
 
-        let _ = app_wait.emit("script_completed", ScriptCompletedPayload {
-            execution_id: exec_id_wait.clone(),
-            exit_code,
-            success: exit_code == 0,
-            duration_ms: duration.as_millis() as u64,
-        });
+        let _ = app_wait.emit(
+            "script_completed",
+            ScriptCompletedPayload {
+                execution_id: exec_id_wait.clone(),
+                exit_code,
+                success: exit_code == 0,
+                duration_ms: duration.as_millis() as u64,
+            },
+        );
 
         // Feature 007: Update status instead of removing (keep for 5 min retention)
         let state = app_wait.state::<ScriptExecutionState>();
@@ -704,19 +786,28 @@ pub async fn cancel_script(
         let state = app.state::<ScriptExecutionState>();
         let mut executions = state.executions.lock().unwrap();
 
-        println!("[cancel_script] Current tracked executions: {:?}", executions.keys().collect::<Vec<_>>());
+        println!(
+            "[cancel_script] Current tracked executions: {:?}",
+            executions.keys().collect::<Vec<_>>()
+        );
 
         if let Some(execution) = executions.get_mut(&execution_id) {
             // Only cancel if still running
             if execution.status != ExecutionStatus::Running {
-                println!("[cancel_script] Execution {} is not running (status: {:?})", execution_id, execution.status);
+                println!(
+                    "[cancel_script] Execution {} is not running (status: {:?})",
+                    execution_id, execution.status
+                );
                 return Ok(CancelScriptResponse {
                     success: false,
                     error: Some("Execution is not running".to_string()),
                 });
             }
 
-            println!("[cancel_script] Found execution: {}, PID: {:?}", execution.script_name, execution.pid);
+            println!(
+                "[cancel_script] Found execution: {}, PID: {:?}",
+                execution.script_name, execution.pid
+            );
             let duration = execution.started_at.elapsed().as_millis() as u64;
             let pid = execution.pid;
             let child = execution.child.take();
@@ -752,12 +843,15 @@ pub async fn cancel_script(
 
     // Emit completion event
     if should_emit {
-        let emit_result = app.emit("script_completed", ScriptCompletedPayload {
-            execution_id: execution_id.clone(),
-            exit_code: -1,
-            success: false,
-            duration_ms,
-        });
+        let emit_result = app.emit(
+            "script_completed",
+            ScriptCompletedPayload {
+                execution_id: execution_id.clone(),
+                exit_code: -1,
+                success: false,
+                duration_ms,
+            },
+        );
         println!("[cancel_script] Emit result: {:?}", emit_result);
     }
 
@@ -769,15 +863,16 @@ pub async fn cancel_script(
 
 /// Kill all processes tracked by this app (safe mode - only kills PackageFlow-started processes)
 #[tauri::command]
-pub async fn kill_all_node_processes(
-    app: AppHandle,
-) -> Result<CancelScriptResponse, String> {
+pub async fn kill_all_node_processes(app: AppHandle) -> Result<CancelScriptResponse, String> {
     // Collect data to kill outside the lock
     let to_kill: Vec<(String, Option<u32>, Option<Child>, u64)> = {
         let state = app.state::<ScriptExecutionState>();
         let mut executions = state.executions.lock().unwrap();
 
-        println!("[kill_all_node_processes] Starting, tracked executions: {}", executions.len());
+        println!(
+            "[kill_all_node_processes] Starting, tracked executions: {}",
+            executions.len()
+        );
 
         // Feature 007: Only kill running executions
         let running_ids: Vec<String> = executions
@@ -786,28 +881,37 @@ pub async fn kill_all_node_processes(
             .map(|(id, _)| id.clone())
             .collect();
 
-        println!("[kill_all_node_processes] Running execution IDs to kill: {:?}", running_ids);
+        println!(
+            "[kill_all_node_processes] Running execution IDs to kill: {:?}",
+            running_ids
+        );
 
-        running_ids.into_iter().filter_map(|exec_id| {
-            if let Some(execution) = executions.get_mut(&exec_id) {
-                println!("[kill_all_node_processes] Processing {}: {}, PID: {:?}", exec_id, execution.script_name, execution.pid);
+        running_ids
+            .into_iter()
+            .filter_map(|exec_id| {
+                if let Some(execution) = executions.get_mut(&exec_id) {
+                    println!(
+                        "[kill_all_node_processes] Processing {}: {}, PID: {:?}",
+                        exec_id, execution.script_name, execution.pid
+                    );
 
-                let pid = execution.pid;
-                let child = execution.child.take();
-                let duration_ms = execution.started_at.elapsed().as_millis() as u64;
+                    let pid = execution.pid;
+                    let child = execution.child.take();
+                    let duration_ms = execution.started_at.elapsed().as_millis() as u64;
 
-                // Update status while we have the lock
-                execution.status = ExecutionStatus::Cancelled;
-                execution.exit_code = Some(-1);
-                execution.completed_at = Some(Utc::now().to_rfc3339());
-                execution.child = None;
-                execution.stdin = None;
+                    // Update status while we have the lock
+                    execution.status = ExecutionStatus::Cancelled;
+                    execution.exit_code = Some(-1);
+                    execution.completed_at = Some(Utc::now().to_rfc3339());
+                    execution.child = None;
+                    execution.stdin = None;
 
-                Some((exec_id, pid, child, duration_ms))
-            } else {
-                None
-            }
-        }).collect()
+                    Some((exec_id, pid, child, duration_ms))
+                } else {
+                    None
+                }
+            })
+            .collect()
     };
 
     let mut killed_count = 0;
@@ -825,19 +929,31 @@ pub async fn kill_all_node_processes(
         }
 
         killed_count += 1;
-        println!("[kill_all_node_processes] Killed process tree for {}", exec_id);
+        println!(
+            "[kill_all_node_processes] Killed process tree for {}",
+            exec_id
+        );
 
         // Emit completion event
-        let emit_result = app.emit("script_completed", ScriptCompletedPayload {
-            execution_id: exec_id.clone(),
-            exit_code: -1,
-            success: false,
-            duration_ms,
-        });
-        println!("[kill_all_node_processes] Emit result for {}: {:?}", exec_id, emit_result);
+        let emit_result = app.emit(
+            "script_completed",
+            ScriptCompletedPayload {
+                execution_id: exec_id.clone(),
+                exit_code: -1,
+                success: false,
+                duration_ms,
+            },
+        );
+        println!(
+            "[kill_all_node_processes] Emit result for {}: {:?}",
+            exec_id, emit_result
+        );
     }
 
-    println!("[kill_all_node_processes] Completed, killed_count: {}", killed_count);
+    println!(
+        "[kill_all_node_processes] Completed, killed_count: {}",
+        killed_count
+    );
 
     Ok(CancelScriptResponse {
         success: true,
@@ -919,11 +1035,11 @@ pub struct RunningScriptInfo {
     // Original fields
     pub execution_id: String,
     pub script_name: String,
-    pub started_at_ms: u64,  // elapsed time for backward compatibility
+    pub started_at_ms: u64, // elapsed time for backward compatibility
     // Feature 007: New fields for reconnection support
     pub project_path: String,
     pub project_name: Option<String>,
-    pub started_at: String,  // ISO 8601 absolute timestamp
+    pub started_at: String, // ISO 8601 absolute timestamp
     pub status: ExecutionStatus,
     pub exit_code: Option<i32>,
     pub completed_at: Option<String>,
@@ -931,9 +1047,7 @@ pub struct RunningScriptInfo {
 
 /// Get list of script executions (Feature 007: includes completed scripts within 5 min retention)
 #[tauri::command]
-pub async fn get_running_scripts(
-    app: AppHandle,
-) -> Result<Vec<RunningScriptInfo>, String> {
+pub async fn get_running_scripts(app: AppHandle) -> Result<Vec<RunningScriptInfo>, String> {
     // Feature 007 (T025): Clean up expired scripts first
     cleanup_expired_executions(&app);
 
@@ -1071,10 +1185,16 @@ pub async fn write_to_script(
 ) -> Result<WriteToScriptResponse, String> {
     // Security: Limit input size
     if input.len() > MAX_STDIN_INPUT_SIZE {
-        println!("[write_to_script] SECURITY: Input too large ({} bytes), rejected", input.len());
+        println!(
+            "[write_to_script] SECURITY: Input too large ({} bytes), rejected",
+            input.len()
+        );
         return Ok(WriteToScriptResponse {
             success: false,
-            error: Some(format!("Input too large (max {} bytes)", MAX_STDIN_INPUT_SIZE)),
+            error: Some(format!(
+                "Input too large (max {} bytes)",
+                MAX_STDIN_INPUT_SIZE
+            )),
         });
     }
 
@@ -1129,7 +1249,10 @@ pub async fn write_to_script(
             };
             println!(
                 "[write_to_script] Writing {} ({} bytes) to script '{}' (execution: {})",
-                input_type, bytes.len(), script_name, execution_id
+                input_type,
+                bytes.len(),
+                script_name,
+                execution_id
             );
 
             match stdin.write_all(bytes).await {

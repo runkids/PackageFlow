@@ -3,7 +3,6 @@
  * Data structures for incoming webhook configuration
  * @see specs/012-workflow-webhook-support
  */
-
 use serde::{Deserialize, Serialize};
 
 /// Incoming Webhook configuration (per workflow)

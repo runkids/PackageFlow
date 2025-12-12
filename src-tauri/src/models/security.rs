@@ -158,7 +158,9 @@ impl ScanError {
             code: ScanErrorCode::NoNodeModules,
             message: "node_modules directory not found".to_string(),
             details: None,
-            suggestion: Some("Please run npm/pnpm/yarn install to install dependencies".to_string()),
+            suggestion: Some(
+                "Please run npm/pnpm/yarn install to install dependencies".to_string(),
+            ),
         }
     }
 
@@ -176,7 +178,9 @@ impl ScanError {
             code: ScanErrorCode::ParseError,
             message: "Failed to parse audit output".to_string(),
             details,
-            suggestion: Some("Please try scanning again, or check your package manager version".to_string()),
+            suggestion: Some(
+                "Please try scanning again, or check your package manager version".to_string(),
+            ),
         }
     }
 
@@ -311,7 +315,11 @@ impl VulnScanResult {
         }
     }
 
-    pub fn success(mut self, vulnerabilities: Vec<VulnItem>, dependency_count: DependencyCount) -> Self {
+    pub fn success(
+        mut self,
+        vulnerabilities: Vec<VulnItem>,
+        dependency_count: DependencyCount,
+    ) -> Self {
         self.status = ScanStatus::Success;
         self.summary = VulnSummary::from_vulnerabilities(&vulnerabilities);
         self.vulnerabilities = vulnerabilities;

@@ -8,9 +8,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 
 use crate::models::{
-    PackageManager, Severity, ScanStatus, VulnSummary, DependencyCount,
-    CvssInfo, FixInfo, ScanError, VulnItem, VulnScanResult, SecurityScanData,
-    SecurityScanSummary, WorkspaceVulnSummary, WorkspacePackage,
+    CvssInfo, DependencyCount, FixInfo, PackageManager, ScanError, ScanStatus, SecurityScanData,
+    SecurityScanSummary, Severity, VulnItem, VulnScanResult, VulnSummary, WorkspacePackage,
+    WorkspaceVulnSummary,
 };
 use crate::utils::path_resolver;
 use crate::utils::store::STORE_FILE;
@@ -150,12 +150,15 @@ fn compute_workspace_summaries(
 
     // Initialize summaries for all workspaces
     for ws in workspaces {
-        summaries.insert(ws.name.clone(), WorkspaceVulnSummary {
-            package_name: ws.name.clone(),
-            relative_path: ws.relative_path.clone(),
-            summary: VulnSummary::default(),
-            vulnerability_ids: Vec::new(),
-        });
+        summaries.insert(
+            ws.name.clone(),
+            WorkspaceVulnSummary {
+                package_name: ws.name.clone(),
+                relative_path: ws.relative_path.clone(),
+                summary: VulnSummary::default(),
+                vulnerability_ids: Vec::new(),
+            },
+        );
     }
 
     // Aggregate vulnerabilities per workspace
@@ -179,7 +182,9 @@ fn compute_workspace_summaries(
 }
 
 /// Detect package manager based on lock files
-fn detect_package_manager_internal(project_path: &str) -> Result<(PackageManager, Option<String>), String> {
+fn detect_package_manager_internal(
+    project_path: &str,
+) -> Result<(PackageManager, Option<String>), String> {
     let path = Path::new(project_path);
 
     // Check for lock files in order of priority
@@ -234,8 +239,7 @@ fn run_single_audit(
     known_workspace_names: &[String],
 ) -> Result<(Vec<VulnItem>, DependencyCount, String), ScanError> {
     // Check if CLI is installed
-    let (installed, version, _) = check_cli_internal(pm)
-        .map_err(|e| ScanError::unknown(e))?;
+    let (installed, version, _) = check_cli_internal(pm).map_err(|e| ScanError::unknown(e))?;
 
     if !installed {
         return Err(ScanError::cli_not_found(&pm.to_string()));
@@ -255,7 +259,10 @@ fn run_single_audit(
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     // Check for network errors
-    if stderr.contains("ENOTFOUND") || stderr.contains("ETIMEDOUT") || stderr.contains("ECONNREFUSED") {
+    if stderr.contains("ENOTFOUND")
+        || stderr.contains("ETIMEDOUT")
+        || stderr.contains("ECONNREFUSED")
+    {
         return Err(ScanError::network_error(Some(stderr)));
     }
 
@@ -304,7 +311,9 @@ fn merge_vulnerabilities(all_vulns: Vec<Vec<VulnItem>>) -> Vec<VulnItem> {
 }
 
 /// Check if CLI tool is installed
-fn check_cli_internal(pm: &PackageManager) -> Result<(bool, Option<String>, Option<String>), String> {
+fn check_cli_internal(
+    pm: &PackageManager,
+) -> Result<(bool, Option<String>, Option<String>), String> {
     let cmd_name = match pm {
         PackageManager::Npm => "npm",
         PackageManager::Pnpm => "pnpm",
@@ -326,7 +335,11 @@ fn check_cli_internal(pm: &PackageManager) -> Result<(bool, Option<String>, Opti
         .map_err(|e| e.to_string())?;
 
     let version = if version_output.status.success() {
-        Some(String::from_utf8_lossy(&version_output.stdout).trim().to_string())
+        Some(
+            String::from_utf8_lossy(&version_output.stdout)
+                .trim()
+                .to_string(),
+        )
     } else {
         None
     };
@@ -335,16 +348,22 @@ fn check_cli_internal(pm: &PackageManager) -> Result<(bool, Option<String>, Opti
 }
 
 /// Parse npm/pnpm audit JSON output (v7+ format)
-fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_workspace_names: &[String]) -> Result<VulnScanResult, ScanError> {
-    let json: Value = serde_json::from_str(json_str)
-        .map_err(|e| ScanError::parse_error(Some(e.to_string())))?;
+fn parse_npm_audit(
+    json_str: &str,
+    project_id: &str,
+    pm: PackageManager,
+    known_workspace_names: &[String],
+) -> Result<VulnScanResult, ScanError> {
+    let json: Value =
+        serde_json::from_str(json_str).map_err(|e| ScanError::parse_error(Some(e.to_string())))?;
 
     let mut vulnerabilities: Vec<VulnItem> = Vec::new();
 
     // Check for pnpm/npm v6 format (has "advisories" key)
     if let Some(advisories) = json.get("advisories").and_then(|v| v.as_object()) {
         for (advisory_id, advisory) in advisories {
-            let severity_str = advisory.get("severity")
+            let severity_str = advisory
+                .get("severity")
                 .and_then(|s| s.as_str())
                 .unwrap_or("info");
             let severity = match severity_str {
@@ -355,65 +374,76 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
                 _ => Severity::Info,
             };
 
-            let package_name = advisory.get("module_name")
+            let package_name = advisory
+                .get("module_name")
                 .and_then(|m| m.as_str())
                 .unwrap_or_default()
                 .to_string();
 
-            let title = advisory.get("title")
+            let title = advisory
+                .get("title")
                 .and_then(|t| t.as_str())
                 .unwrap_or(&package_name)
                 .to_string();
 
-            let advisory_url = advisory.get("url")
+            let advisory_url = advisory
+                .get("url")
                 .and_then(|u| u.as_str())
                 .map(|s| s.to_string());
 
-            let cves: Vec<String> = advisory.get("cves")
+            let cves: Vec<String> = advisory
+                .get("cves")
                 .and_then(|c| c.as_array())
-                .map(|arr| arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .collect()
+                })
                 .unwrap_or_default();
 
-            let cwes: Vec<String> = advisory.get("cwe")
+            let cwes: Vec<String> = advisory
+                .get("cwe")
                 .and_then(|c| c.as_array())
-                .map(|arr| arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .collect()
+                })
                 .unwrap_or_default();
 
-            let cvss_info = advisory.get("cvss")
-                .and_then(|cvss| {
-                    let score = cvss.get("score").and_then(|s| s.as_f64())?;
-                    let vector = cvss.get("vectorString")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    Some(CvssInfo {
-                        score: score as f32,
-                        vector,
-                    })
-                });
+            let cvss_info = advisory.get("cvss").and_then(|cvss| {
+                let score = cvss.get("score").and_then(|s| s.as_f64())?;
+                let vector = cvss
+                    .get("vectorString")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                Some(CvssInfo {
+                    score: score as f32,
+                    vector,
+                })
+            });
 
-            let vulnerable_versions = advisory.get("vulnerable_versions")
+            let vulnerable_versions = advisory
+                .get("vulnerable_versions")
                 .and_then(|v| v.as_str())
                 .unwrap_or("*")
                 .to_string();
 
-            let patched_versions = advisory.get("patched_versions")
+            let patched_versions = advisory
+                .get("patched_versions")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let recommendation = advisory.get("recommendation")
+            let recommendation = advisory
+                .get("recommendation")
                 .and_then(|r| r.as_str())
                 .map(|s| s.to_string());
 
             // Get findings for paths and version info
-            let findings = advisory.get("findings")
-                .and_then(|f| f.as_array());
+            let findings = advisory.get("findings").and_then(|f| f.as_array());
 
             let mut paths: Vec<Vec<String>> = Vec::new();
             let mut installed_version = vulnerable_versions.clone();
@@ -426,7 +456,9 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
                     if let Some(finding_paths) = finding.get("paths").and_then(|p| p.as_array()) {
                         for path in finding_paths {
                             if let Some(path_str) = path.as_str() {
-                                paths.push(path_str.split('>').map(|s| s.trim().to_string()).collect());
+                                paths.push(
+                                    path_str.split('>').map(|s| s.trim().to_string()).collect(),
+                                );
                             }
                         }
                     }
@@ -443,7 +475,8 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
                 installed_version,
                 severity,
                 title,
-                description: advisory.get("overview")
+                description: advisory
+                    .get("overview")
                     .and_then(|o| o.as_str())
                     .map(|s| s.to_string()),
                 recommendation,
@@ -465,7 +498,8 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
     else if let Some(vulns) = json.get("vulnerabilities").and_then(|v| v.as_object()) {
         for (pkg_name, vuln_data) in vulns {
             // Get severity
-            let severity_str = vuln_data.get("severity")
+            let severity_str = vuln_data
+                .get("severity")
                 .and_then(|s| s.as_str())
                 .unwrap_or("info");
             let severity = match severity_str {
@@ -504,7 +538,8 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
                         }
                         if let Some(cvss) = via_obj.get("cvss") {
                             if let Some(score) = cvss.get("score").and_then(|s| s.as_f64()) {
-                                let vector = cvss.get("vectorString")
+                                let vector = cvss
+                                    .get("vectorString")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
@@ -519,42 +554,51 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
             }
 
             // Get fix info
-            let fix_available = vuln_data.get("fixAvailable")
+            let fix_available = vuln_data
+                .get("fixAvailable")
                 .map(|f| !f.is_null() && (f.is_object() || f.as_bool().unwrap_or(false)))
                 .unwrap_or(false);
 
-            let fix_info = vuln_data.get("fixAvailable")
+            let fix_info = vuln_data
+                .get("fixAvailable")
                 .and_then(|f| f.as_object())
                 .map(|fix_obj| FixInfo {
-                    package: fix_obj.get("name")
+                    package: fix_obj
+                        .get("name")
                         .and_then(|n| n.as_str())
                         .unwrap_or(pkg_name)
                         .to_string(),
-                    version: fix_obj.get("version")
+                    version: fix_obj
+                        .get("version")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    is_major_update: fix_obj.get("isSemVerMajor")
+                    is_major_update: fix_obj
+                        .get("isSemVerMajor")
                         .and_then(|m| m.as_bool())
                         .unwrap_or(false),
                 });
 
             // Get affected version range
-            let range = vuln_data.get("range")
+            let range = vuln_data
+                .get("range")
                 .and_then(|r| r.as_str())
                 .unwrap_or("*")
                 .to_string();
 
             // Check if direct dependency
-            let is_direct = vuln_data.get("isDirect")
+            let is_direct = vuln_data
+                .get("isDirect")
                 .and_then(|d| d.as_bool())
                 .unwrap_or(false);
 
             // Build dependency paths from nodes
-            let paths: Vec<Vec<String>> = vuln_data.get("nodes")
+            let paths: Vec<Vec<String>> = vuln_data
+                .get("nodes")
                 .and_then(|n| n.as_array())
                 .map(|nodes| {
-                    nodes.iter()
+                    nodes
+                        .iter()
                         .filter_map(|node| node.as_str())
                         .map(|path| path.split('>').map(|s| s.trim().to_string()).collect())
                         .collect()
@@ -562,11 +606,13 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
                 .unwrap_or_default();
 
             // Get source ID for advisory ID
-            let id = via.and_then(|arr| {
-                arr.iter()
-                    .find_map(|v| v.get("source").and_then(|s| s.as_u64()))
-            }).map(|s| s.to_string())
-            .unwrap_or_else(|| format!("{}-{}", pkg_name, severity_str));
+            let id = via
+                .and_then(|arr| {
+                    arr.iter()
+                        .find_map(|v| v.get("source").and_then(|s| s.as_u64()))
+                })
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{}-{}", pkg_name, severity_str));
 
             let workspace_packages = extract_workspace_packages(&paths, known_workspace_names);
 
@@ -594,7 +640,8 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
     }
 
     // Get dependency counts from metadata
-    let dependency_count = json.get("metadata")
+    let dependency_count = json
+        .get("metadata")
         .and_then(|m| m.get("dependencies"))
         .map(|deps| DependencyCount {
             prod: deps.get("prod").and_then(|p| p.as_u64()).unwrap_or(0) as u32,
@@ -612,7 +659,11 @@ fn parse_npm_audit(json_str: &str, project_id: &str, pm: PackageManager, known_w
 }
 
 /// Parse Yarn v1 audit NDJSON output
-fn parse_yarn_audit(output: &str, project_id: &str, known_workspace_names: &[String]) -> Result<VulnScanResult, ScanError> {
+fn parse_yarn_audit(
+    output: &str,
+    project_id: &str,
+    known_workspace_names: &[String],
+) -> Result<VulnScanResult, ScanError> {
     let mut vulnerabilities: Vec<VulnItem> = Vec::new();
     let mut dependency_count = DependencyCount::default();
 
@@ -632,7 +683,8 @@ fn parse_yarn_audit(output: &str, project_id: &str, known_workspace_names: &[Str
             "auditAdvisory" => {
                 if let Some(data) = json.get("data") {
                     if let Some(advisory) = data.get("advisory") {
-                        let severity_str = advisory.get("severity")
+                        let severity_str = advisory
+                            .get("severity")
                             .and_then(|s| s.as_str())
                             .unwrap_or("info");
                         let severity = match severity_str {
@@ -643,73 +695,91 @@ fn parse_yarn_audit(output: &str, project_id: &str, known_workspace_names: &[Str
                             _ => Severity::Info,
                         };
 
-                        let id = advisory.get("id")
+                        let id = advisory
+                            .get("id")
                             .and_then(|i| i.as_u64())
                             .map(|i| i.to_string())
                             .unwrap_or_default();
 
-                        let package_name = advisory.get("module_name")
+                        let package_name = advisory
+                            .get("module_name")
                             .and_then(|m| m.as_str())
                             .unwrap_or("")
                             .to_string();
 
-                        let title = advisory.get("title")
+                        let title = advisory
+                            .get("title")
                             .and_then(|t| t.as_str())
                             .unwrap_or(&package_name)
                             .to_string();
 
-                        let advisory_url = advisory.get("url")
+                        let advisory_url = advisory
+                            .get("url")
                             .and_then(|u| u.as_str())
                             .map(|s| s.to_string());
 
-                        let recommendation = advisory.get("recommendation")
+                        let recommendation = advisory
+                            .get("recommendation")
                             .and_then(|r| r.as_str())
                             .map(|s| s.to_string());
 
-                        let vulnerable_versions = advisory.get("vulnerable_versions")
+                        let vulnerable_versions = advisory
+                            .get("vulnerable_versions")
                             .and_then(|v| v.as_str())
                             .unwrap_or("*")
                             .to_string();
 
-                        let patched_versions = advisory.get("patched_versions")
+                        let patched_versions = advisory
+                            .get("patched_versions")
                             .and_then(|p| p.as_str())
                             .map(|s| s.to_string());
 
-                        let cves: Vec<String> = advisory.get("cves")
+                        let cves: Vec<String> = advisory
+                            .get("cves")
                             .and_then(|c| c.as_array())
-                            .map(|arr| arr.iter()
-                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                .collect())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
                             .unwrap_or_default();
 
-                        let cwe = advisory.get("cwe")
+                        let cwe = advisory
+                            .get("cwe")
                             .and_then(|c| c.as_str())
                             .map(|s| s.to_string());
                         let cwes = cwe.map(|c| vec![c]).unwrap_or_default();
 
                         // Get paths from findings
-                        let paths: Vec<Vec<String>> = advisory.get("findings")
+                        let paths: Vec<Vec<String>> = advisory
+                            .get("findings")
                             .and_then(|f| f.as_array())
                             .map(|findings| {
-                                findings.iter()
+                                findings
+                                    .iter()
                                     .filter_map(|finding| {
-                                        finding.get("paths")
-                                            .and_then(|p| p.as_array())
-                                            .map(|paths| {
-                                                paths.iter()
+                                        finding.get("paths").and_then(|p| p.as_array()).map(
+                                            |paths| {
+                                                paths
+                                                    .iter()
                                                     .filter_map(|path| {
-                                                        path.as_str()
-                                                            .map(|s| s.split('>').map(|p| p.trim().to_string()).collect())
+                                                        path.as_str().map(|s| {
+                                                            s.split('>')
+                                                                .map(|p| p.trim().to_string())
+                                                                .collect()
+                                                        })
                                                     })
                                                     .collect::<Vec<Vec<String>>>()
-                                            })
+                                            },
+                                        )
                                     })
                                     .flatten()
                                     .collect()
                             })
                             .unwrap_or_default();
 
-                        let installed_version = advisory.get("findings")
+                        let installed_version = advisory
+                            .get("findings")
                             .and_then(|f| f.as_array())
                             .and_then(|findings| findings.first())
                             .and_then(|f| f.get("version"))
@@ -717,13 +787,15 @@ fn parse_yarn_audit(output: &str, project_id: &str, known_workspace_names: &[Str
                             .unwrap_or("")
                             .to_string();
 
-                        let is_direct = data.get("resolution")
+                        let is_direct = data
+                            .get("resolution")
                             .and_then(|r| r.get("dev"))
                             .and_then(|d| d.as_bool())
-                            .map(|_| false)  // If there's dev info, it's likely not a direct dep
+                            .map(|_| false) // If there's dev info, it's likely not a direct dep
                             .unwrap_or(paths.iter().any(|p| p.len() <= 2));
 
-                        let workspace_packages = extract_workspace_packages(&paths, known_workspace_names);
+                        let workspace_packages =
+                            extract_workspace_packages(&paths, known_workspace_names);
 
                         vulnerabilities.push(VulnItem {
                             id,
@@ -751,17 +823,21 @@ fn parse_yarn_audit(output: &str, project_id: &str, known_workspace_names: &[Str
             "auditSummary" => {
                 if let Some(data) = json.get("data") {
                     dependency_count = DependencyCount {
-                        prod: data.get("dependencies")
+                        prod: data
+                            .get("dependencies")
                             .and_then(|d| d.as_u64())
                             .unwrap_or(0) as u32,
-                        dev: data.get("devDependencies")
+                        dev: data
+                            .get("devDependencies")
                             .and_then(|d| d.as_u64())
                             .unwrap_or(0) as u32,
-                        optional: data.get("optionalDependencies")
+                        optional: data
+                            .get("optionalDependencies")
                             .and_then(|d| d.as_u64())
                             .unwrap_or(0) as u32,
                         peer: 0,
-                        total: data.get("totalDependencies")
+                        total: data
+                            .get("totalDependencies")
                             .and_then(|d| d.as_u64())
                             .unwrap_or(0) as u32,
                     };
@@ -843,12 +919,15 @@ pub async fn run_security_audit(
     // Check if node_modules exists first
     if !Path::new(&project_path).join("node_modules").exists() {
         let error = ScanError::no_node_modules();
-        let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-            project_id: project_id.clone(),
-            success: false,
-            result: None,
-            error: Some(error.clone()),
-        });
+        let _ = app.emit(
+            "security_scan_completed",
+            SecurityScanCompletedPayload {
+                project_id: project_id.clone(),
+                success: false,
+                result: None,
+                error: Some(error.clone()),
+            },
+        );
         return Ok(RunSecurityAuditResponse {
             success: false,
             result: None,
@@ -858,50 +937,85 @@ pub async fn run_security_audit(
 
     // If package_manager is specified, use single PM mode
     if let Some(pm) = package_manager {
-        return run_single_pm_audit(app, project_id, project_path, pm, known_workspace_names.clone(), workspace_packages).await;
+        return run_single_pm_audit(
+            app,
+            project_id,
+            project_path,
+            pm,
+            known_workspace_names.clone(),
+            workspace_packages,
+        )
+        .await;
     }
 
     // Multi-PM mode: detect all available package managers
-    let _ = app.emit("security_scan_progress", SecurityScanProgressPayload {
-        project_id: project_id.clone(),
-        stage: "detecting".to_string(),
-        message: "Detecting package managers...".to_string(),
-    });
+    let _ = app.emit(
+        "security_scan_progress",
+        SecurityScanProgressPayload {
+            project_id: project_id.clone(),
+            stage: "detecting".to_string(),
+            message: "Detecting package managers...".to_string(),
+        },
+    );
 
     let available_pms = detect_all_package_managers(&project_path);
 
     if available_pms.is_empty() {
         // Fall back to npm if no lock files found but package.json exists
         if Path::new(&project_path).join("package.json").exists() {
-            return run_single_pm_audit(app, project_id, project_path, PackageManager::Npm, known_workspace_names.clone(), workspace_packages).await;
+            return run_single_pm_audit(
+                app,
+                project_id,
+                project_path,
+                PackageManager::Npm,
+                known_workspace_names.clone(),
+                workspace_packages,
+            )
+            .await;
         }
         return Ok(RunSecurityAuditResponse {
             success: false,
             result: None,
-            error: Some(ScanError::unknown("Not a Node.js project: package.json not found".to_string())),
+            error: Some(ScanError::unknown(
+                "Not a Node.js project: package.json not found".to_string(),
+            )),
         });
     }
 
     // If only one PM, use single PM mode
     if available_pms.len() == 1 {
         let (pm, _) = &available_pms[0];
-        return run_single_pm_audit(app, project_id, project_path, pm.clone(), known_workspace_names.clone(), workspace_packages).await;
+        return run_single_pm_audit(
+            app,
+            project_id,
+            project_path,
+            pm.clone(),
+            known_workspace_names.clone(),
+            workspace_packages,
+        )
+        .await;
     }
 
     // Multiple PMs found - run all and merge results
     let pm_names: Vec<String> = available_pms.iter().map(|(pm, _)| pm.to_string()).collect();
-    let _ = app.emit("security_scan_progress", SecurityScanProgressPayload {
-        project_id: project_id.clone(),
-        stage: "auditing".to_string(),
-        message: format!("Running security audit with {}...", pm_names.join(", ")),
-    });
+    let _ = app.emit(
+        "security_scan_progress",
+        SecurityScanProgressPayload {
+            project_id: project_id.clone(),
+            stage: "auditing".to_string(),
+            message: format!("Running security audit with {}...", pm_names.join(", ")),
+        },
+    );
 
     // Emit scan started with first PM (for compatibility)
     let primary_pm = available_pms[0].0.clone();
-    let _ = app.emit("security_scan_started", SecurityScanStartedPayload {
-        project_id: project_id.clone(),
-        package_manager: primary_pm.clone(),
-    });
+    let _ = app.emit(
+        "security_scan_started",
+        SecurityScanStartedPayload {
+            project_id: project_id.clone(),
+            package_manager: primary_pm.clone(),
+        },
+    );
 
     let mut all_vulns: Vec<Vec<VulnItem>> = Vec::new();
     let mut combined_dep_count = DependencyCount::default();
@@ -910,11 +1024,14 @@ pub async fn run_security_audit(
     let mut last_error: Option<ScanError> = None;
 
     for (pm, _lock_file) in &available_pms {
-        let _ = app.emit("security_scan_progress", SecurityScanProgressPayload {
-            project_id: project_id.clone(),
-            stage: "auditing".to_string(),
-            message: format!("Running {} audit...", pm),
-        });
+        let _ = app.emit(
+            "security_scan_progress",
+            SecurityScanProgressPayload {
+                project_id: project_id.clone(),
+                stage: "auditing".to_string(),
+                message: format!("Running {} audit...", pm),
+            },
+        );
 
         match run_single_audit(&project_path, pm, &project_id, &known_workspace_names) {
             Ok((vulns, dep_count, version)) => {
@@ -938,13 +1055,17 @@ pub async fn run_security_audit(
 
     // If all audits failed, return the last error
     if successful_pms.is_empty() {
-        let error = last_error.unwrap_or_else(|| ScanError::unknown("All audits failed".to_string()));
-        let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-            project_id: project_id.clone(),
-            success: false,
-            result: None,
-            error: Some(error.clone()),
-        });
+        let error =
+            last_error.unwrap_or_else(|| ScanError::unknown("All audits failed".to_string()));
+        let _ = app.emit(
+            "security_scan_completed",
+            SecurityScanCompletedPayload {
+                project_id: project_id.clone(),
+                success: false,
+                result: None,
+                error: Some(error.clone()),
+            },
+        );
         return Ok(RunSecurityAuditResponse {
             success: false,
             result: None,
@@ -953,11 +1074,14 @@ pub async fn run_security_audit(
     }
 
     // Merge and deduplicate vulnerabilities
-    let _ = app.emit("security_scan_progress", SecurityScanProgressPayload {
-        project_id: project_id.clone(),
-        stage: "parsing".to_string(),
-        message: "Merging scan results...".to_string(),
-    });
+    let _ = app.emit(
+        "security_scan_progress",
+        SecurityScanProgressPayload {
+            project_id: project_id.clone(),
+            stage: "parsing".to_string(),
+            message: "Merging scan results...".to_string(),
+        },
+    );
 
     let merged_vulns = merge_vulnerabilities(all_vulns);
     let summary = VulnSummary::from_vulnerabilities(&merged_vulns);
@@ -984,12 +1108,15 @@ pub async fn run_security_audit(
         workspace_summaries,
     };
 
-    let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-        project_id: project_id.clone(),
-        success: true,
-        result: Some(scan_result.clone()),
-        error: None,
-    });
+    let _ = app.emit(
+        "security_scan_completed",
+        SecurityScanCompletedPayload {
+            project_id: project_id.clone(),
+            success: true,
+            result: Some(scan_result.clone()),
+            error: None,
+        },
+    );
 
     Ok(RunSecurityAuditResponse {
         success: true,
@@ -1008,22 +1135,28 @@ async fn run_single_pm_audit(
     workspace_packages: Option<Vec<WorkspacePackage>>,
 ) -> Result<RunSecurityAuditResponse, String> {
     // Emit scan started event
-    let _ = app.emit("security_scan_started", SecurityScanStartedPayload {
-        project_id: project_id.clone(),
-        package_manager: pm.clone(),
-    });
+    let _ = app.emit(
+        "security_scan_started",
+        SecurityScanStartedPayload {
+            project_id: project_id.clone(),
+            package_manager: pm.clone(),
+        },
+    );
 
     // Check if CLI is installed
     let (installed, version, _) = match check_cli_internal(&pm) {
         Ok(result) => result,
         Err(e) => {
             let error = ScanError::unknown(e);
-            let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-                project_id: project_id.clone(),
-                success: false,
-                result: None,
-                error: Some(error.clone()),
-            });
+            let _ = app.emit(
+                "security_scan_completed",
+                SecurityScanCompletedPayload {
+                    project_id: project_id.clone(),
+                    success: false,
+                    result: None,
+                    error: Some(error.clone()),
+                },
+            );
             return Ok(RunSecurityAuditResponse {
                 success: false,
                 result: None,
@@ -1034,12 +1167,15 @@ async fn run_single_pm_audit(
 
     if !installed {
         let error = ScanError::cli_not_found(&pm.to_string());
-        let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-            project_id: project_id.clone(),
-            success: false,
-            result: None,
-            error: Some(error.clone()),
-        });
+        let _ = app.emit(
+            "security_scan_completed",
+            SecurityScanCompletedPayload {
+                project_id: project_id.clone(),
+                success: false,
+                result: None,
+                error: Some(error.clone()),
+            },
+        );
         return Ok(RunSecurityAuditResponse {
             success: false,
             result: None,
@@ -1048,11 +1184,14 @@ async fn run_single_pm_audit(
     }
 
     // Emit progress event
-    let _ = app.emit("security_scan_progress", SecurityScanProgressPayload {
-        project_id: project_id.clone(),
-        stage: "auditing".to_string(),
-        message: format!("Running security audit with {}...", pm),
-    });
+    let _ = app.emit(
+        "security_scan_progress",
+        SecurityScanProgressPayload {
+            project_id: project_id.clone(),
+            stage: "auditing".to_string(),
+            message: format!("Running security audit with {}...", pm),
+        },
+    );
 
     // Run audit command
     let cmd_name = pm.to_string();
@@ -1065,12 +1204,15 @@ async fn run_single_pm_audit(
         Ok(o) => o,
         Err(e) => {
             let error = ScanError::unknown(format!("Failed to execute audit: {}", e));
-            let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-                project_id: project_id.clone(),
-                success: false,
-                result: None,
-                error: Some(error.clone()),
-            });
+            let _ = app.emit(
+                "security_scan_completed",
+                SecurityScanCompletedPayload {
+                    project_id: project_id.clone(),
+                    success: false,
+                    result: None,
+                    error: Some(error.clone()),
+                },
+            );
             return Ok(RunSecurityAuditResponse {
                 success: false,
                 result: None,
@@ -1085,14 +1227,20 @@ async fn run_single_pm_audit(
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     // Check for network errors in stderr
-    if stderr.contains("ENOTFOUND") || stderr.contains("ETIMEDOUT") || stderr.contains("ECONNREFUSED") {
+    if stderr.contains("ENOTFOUND")
+        || stderr.contains("ETIMEDOUT")
+        || stderr.contains("ECONNREFUSED")
+    {
         let error = ScanError::network_error(Some(stderr));
-        let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-            project_id: project_id.clone(),
-            success: false,
-            result: None,
-            error: Some(error.clone()),
-        });
+        let _ = app.emit(
+            "security_scan_completed",
+            SecurityScanCompletedPayload {
+                project_id: project_id.clone(),
+                success: false,
+                result: None,
+                error: Some(error.clone()),
+            },
+        );
         return Ok(RunSecurityAuditResponse {
             success: false,
             result: None,
@@ -1101,11 +1249,14 @@ async fn run_single_pm_audit(
     }
 
     // Emit progress event
-    let _ = app.emit("security_scan_progress", SecurityScanProgressPayload {
-        project_id: project_id.clone(),
-        stage: "parsing".to_string(),
-        message: "Parsing scan results...".to_string(),
-    });
+    let _ = app.emit(
+        "security_scan_progress",
+        SecurityScanProgressPayload {
+            project_id: project_id.clone(),
+            stage: "parsing".to_string(),
+            message: "Parsing scan results...".to_string(),
+        },
+    );
 
     // Parse output based on package manager
     let mut result = match pm {
@@ -1125,12 +1276,15 @@ async fn run_single_pm_audit(
 
     match result {
         Ok(scan_result) => {
-            let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-                project_id: project_id.clone(),
-                success: true,
-                result: Some(scan_result.clone()),
-                error: None,
-            });
+            let _ = app.emit(
+                "security_scan_completed",
+                SecurityScanCompletedPayload {
+                    project_id: project_id.clone(),
+                    success: true,
+                    result: Some(scan_result.clone()),
+                    error: None,
+                },
+            );
             Ok(RunSecurityAuditResponse {
                 success: true,
                 result: Some(scan_result),
@@ -1138,12 +1292,15 @@ async fn run_single_pm_audit(
             })
         }
         Err(error) => {
-            let _ = app.emit("security_scan_completed", SecurityScanCompletedPayload {
-                project_id: project_id.clone(),
-                success: false,
-                result: None,
-                error: Some(error.clone()),
-            });
+            let _ = app.emit(
+                "security_scan_completed",
+                SecurityScanCompletedPayload {
+                    project_id: project_id.clone(),
+                    success: false,
+                    result: None,
+                    error: Some(error.clone()),
+                },
+            );
             Ok(RunSecurityAuditResponse {
                 success: false,
                 result: None,
@@ -1177,9 +1334,7 @@ pub async fn get_security_scan(
 
 /// Get all security scans summary
 #[tauri::command]
-pub async fn get_all_security_scans(
-    app: AppHandle,
-) -> Result<GetAllSecurityScansResponse, String> {
+pub async fn get_all_security_scans(app: AppHandle) -> Result<GetAllSecurityScansResponse, String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
 
     // Get projects
@@ -1244,17 +1399,16 @@ pub async fn save_security_scan(
         .unwrap_or_default();
 
     // Update or create scan data
-    let scan_data = security_scans
-        .entry(project_id.clone())
-        .or_insert_with(|| SecurityScanData::new(project_id.clone(), result.package_manager.clone()));
+    let scan_data = security_scans.entry(project_id.clone()).or_insert_with(|| {
+        SecurityScanData::new(project_id.clone(), result.package_manager.clone())
+    });
 
     scan_data.update_scan(result);
     // Clear snooze when a new scan is performed
     scan_data.snooze_until = None;
 
     // Save back to store
-    let value = serde_json::to_value(&security_scans)
-        .map_err(|e| e.to_string())?;
+    let value = serde_json::to_value(&security_scans).map_err(|e| e.to_string())?;
     store.set("securityScans", value);
     store.save().map_err(|e| e.to_string())?;
 
@@ -1291,8 +1445,7 @@ pub async fn snooze_scan_reminder(
     scan_data.snooze_until = Some(snooze_until_str);
 
     // Save back to store
-    let value = serde_json::to_value(&security_scans)
-        .map_err(|e| e.to_string())?;
+    let value = serde_json::to_value(&security_scans).map_err(|e| e.to_string())?;
     store.set("securityScans", value);
     store.save().map_err(|e| e.to_string())?;
 
@@ -1322,8 +1475,7 @@ pub async fn dismiss_scan_reminder(
     }
 
     // Save back to store
-    let value = serde_json::to_value(&security_scans)
-        .map_err(|e| e.to_string())?;
+    let value = serde_json::to_value(&security_scans).map_err(|e| e.to_string())?;
     store.set("securityScans", value);
     store.save().map_err(|e| e.to_string())?;
 

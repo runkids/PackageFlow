@@ -9,23 +9,28 @@ mod utils;
 // Re-export models for use in commands
 pub use models::*;
 
-use commands::{settings, project, script, workflow, worktree, ipa, apk, security, version, monorepo, git, step_template, webhook, incoming_webhook, shortcuts};
 use commands::script::ScriptExecutionState;
 use commands::workflow::WorkflowExecutionState;
+use commands::{
+    apk, git, incoming_webhook, ipa, monorepo, project, script, security, settings, shortcuts,
+    step_template, version, webhook, workflow, worktree,
+};
 use services::IncomingWebhookManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Plugins
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_pty::init())  // Feature 008: PTY for interactive terminals
-        .plugin(tauri_plugin_notification::init())  // Feature 015: Webhook desktop notifications
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())  // Keyboard shortcuts enhancement
+        .plugin(tauri_plugin_pty::init()) // Feature 008: PTY for interactive terminals
+        .plugin(tauri_plugin_notification::init()) // Feature 015: Webhook desktop notifications
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build()) // Keyboard shortcuts enhancement
         // App state
         .manage(ScriptExecutionState::default())
         .manage(WorkflowExecutionState::default())

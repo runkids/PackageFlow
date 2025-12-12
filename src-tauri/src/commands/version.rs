@@ -1,16 +1,16 @@
 // Version management commands
 // Feature: 006-node-package-manager
 
+use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
-use serde::{Deserialize, Serialize};
-use regex::Regex;
 
-use crate::models::{
-    PackageManager, VersionRequirement, VersionSource, SystemEnvironment,
-    ToolStatus, VersionCompatibility, CompatibilityItem, VersionTool, RecommendedAction,
-};
 use crate::commands::project::parse_package_json;
+use crate::models::{
+    CompatibilityItem, PackageManager, RecommendedAction, SystemEnvironment, ToolStatus,
+    VersionCompatibility, VersionRequirement, VersionSource, VersionTool,
+};
 use crate::utils::path_resolver;
 
 // ============================================================================
@@ -47,7 +47,9 @@ pub struct VersionCompatibilityResponse {
 
 /// Parse packageManager field format: (npm|pnpm|yarn)@VERSION[+HASH]
 fn parse_package_manager_field(value: &str) -> Option<(PackageManager, String)> {
-    let re = Regex::new(r"^(npm|pnpm|yarn|bun)@(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?)(?:\+[a-zA-Z0-9]+)?$").ok()?;
+    let re =
+        Regex::new(r"^(npm|pnpm|yarn|bun)@(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?)(?:\+[a-zA-Z0-9]+)?$")
+            .ok()?;
     let caps = re.captures(value)?;
 
     let pm_name = caps.get(1)?.as_str();
@@ -243,7 +245,8 @@ fn detect_corepack() -> ToolStatus {
     ];
 
     // Also check NVM versions if available
-    let mut paths_to_check: Vec<String> = common_paths.iter()
+    let mut paths_to_check: Vec<String> = common_paths
+        .iter()
         .filter(|p| !p.contains('*'))
         .cloned()
         .collect();
@@ -540,25 +543,32 @@ pub async fn check_version_compatibility(
     };
 
     // Check Node.js compatibility
-    let node_compat = if let (Some(required), Some(current)) = (&requirement.node, &env.node_version) {
-        let is_compat = check_semver_satisfies(required, current);
-        CompatibilityItem {
-            is_compatible: is_compat,
-            current: Some(current.clone()),
-            required: Some(required.clone()),
-            name: Some("node".to_string()),
-            message: if is_compat {
-                None
-            } else {
-                Some(format!("Node.js version mismatch: current {}, required {}", current, required))
-            },
-        }
-    } else {
-        CompatibilityItem::default()
-    };
+    let node_compat =
+        if let (Some(required), Some(current)) = (&requirement.node, &env.node_version) {
+            let is_compat = check_semver_satisfies(required, current);
+            CompatibilityItem {
+                is_compatible: is_compat,
+                current: Some(current.clone()),
+                required: Some(required.clone()),
+                name: Some("node".to_string()),
+                message: if is_compat {
+                    None
+                } else {
+                    Some(format!(
+                        "Node.js version mismatch: current {}, required {}",
+                        current, required
+                    ))
+                },
+            }
+        } else {
+            CompatibilityItem::default()
+        };
 
     // Check package manager compatibility
-    let pm_compat = if let (Some(pm_name), Some(pm_version)) = (&requirement.package_manager_name, &requirement.package_manager_version) {
+    let pm_compat = if let (Some(pm_name), Some(pm_version)) = (
+        &requirement.package_manager_name,
+        &requirement.package_manager_version,
+    ) {
         let current_version = match pm_name {
             PackageManager::Npm => env.npm_version.clone(),
             PackageManager::Yarn => env.yarn_version.clone(),
