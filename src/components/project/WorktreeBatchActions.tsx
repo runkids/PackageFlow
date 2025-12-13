@@ -109,6 +109,7 @@ export function WorktreeBatchActions({ worktrees, projectPath, onComplete }: Wor
             AUTH_FAILED: 'Authentication failed',
             NETWORK_ERROR: 'Network error',
             NO_REMOTE: 'No remote configured',
+            INVALID_REMOTE: 'Invalid remote configuration',
           };
           const errorMsg = result.error
             ? errorMessages[result.error] || result.error
@@ -201,6 +202,7 @@ export function WorktreeBatchActions({ worktrees, projectPath, onComplete }: Wor
           const errorMessages: Record<string, string> = {
             MERGE_CONFLICT: 'Conflicts detected, resolve manually',
             NO_UPSTREAM: 'No upstream branch',
+            NO_REMOTE: 'No remote configured',
             AUTH_FAILED: 'Authentication failed',
             NETWORK_ERROR: 'Network error',
           };

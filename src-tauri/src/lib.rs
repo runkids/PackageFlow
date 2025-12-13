@@ -228,6 +228,8 @@ pub fn run() {
             deploy::disconnect_platform,
             deploy::start_deployment,
             deploy::get_deployment_history,
+            deploy::delete_deployment_history_item,
+            deploy::clear_deployment_history,
             deploy::get_deployment_config,
             deploy::save_deployment_config,
             deploy::detect_framework,
@@ -243,6 +245,15 @@ pub fn run() {
             deploy::get_project_binding,
             deploy::get_deploy_preferences,
             deploy::set_default_account,
+            // GitHub Pages workflow generation
+            deploy::generate_github_actions_workflow,
+            // Cloudflare Pages integration
+            deploy::validate_cloudflare_token,
+            deploy::add_cloudflare_account,
+            deploy::check_account_usage,
+            // Secure backup commands
+            deploy::export_deploy_backup,
+            deploy::import_deploy_backup,
             // File watcher commands (package.json monitoring)
             file_watcher::watch_project,
             file_watcher::unwatch_project,

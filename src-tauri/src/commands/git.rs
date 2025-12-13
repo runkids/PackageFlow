@@ -1014,7 +1014,8 @@ pub async fn git_push(
         });
     }
 
-    let remote = remote.unwrap_or_else(|| "origin".to_string());
+    let remote = remote.filter(|r| !r.trim().is_empty());
+    let branch = branch.filter(|b| !b.trim().is_empty());
     let set_upstream = set_upstream.unwrap_or(false);
     let force = force.unwrap_or(false);
 
@@ -1029,10 +1030,16 @@ pub async fn git_push(
         args.push("--force");
     }
 
-    args.push(&remote);
-
-    if let Some(ref branch) = branch {
-        args.push(branch);
+    if let Some(ref remote) = remote {
+        args.push(remote);
+        if let Some(ref branch) = branch {
+            args.push(branch);
+        }
+    } else if branch.is_some() {
+        return Ok(GitPushResponse {
+            success: false,
+            error: Some("REMOTE_REQUIRED".to_string()),
+        });
     }
 
     match exec_git(path, &args) {
@@ -1041,13 +1048,32 @@ pub async fn git_push(
             error: None,
         }),
         Err(e) => {
-            let error = if e.contains("no upstream") || e.contains("no such remote") {
+            let error_lower = e.to_lowercase();
+
+            let error = if error_lower.contains("no upstream")
+                || error_lower.contains("has no upstream")
+                || error_lower.contains("no tracking information")
+                || error_lower.contains("no tracking")
+            {
                 "NO_UPSTREAM".to_string()
-            } else if e.contains("rejected") && e.contains("non-fast-forward") {
+            } else if error_lower.contains("no configured push destination")
+                || error_lower.contains("no remote repository specified")
+                || error_lower.contains("does not appear to be a git repository")
+                || error_lower.contains("no such remote")
+            {
+                "NO_REMOTE".to_string()
+            } else if error_lower.contains("rejected")
+                && error_lower.contains("non-fast-forward")
+            {
                 "REJECTED_NON_FAST_FORWARD".to_string()
-            } else if e.contains("Authentication") || e.contains("permission denied") {
+            } else if error_lower.contains("auth_failed")
+                || error_lower.contains("authentication")
+                || error_lower.contains("permission denied")
+            {
                 "AUTH_FAILED".to_string()
-            } else if e.contains("Could not resolve host") || e.contains("Connection refused") {
+            } else if error_lower.contains("could not resolve host")
+                || error_lower.contains("connection refused")
+            {
                 "NETWORK_ERROR".to_string()
             } else {
                 format!("GIT_ERROR: {}", e)
@@ -1081,7 +1107,8 @@ pub async fn git_pull(
         });
     }
 
-    let remote = remote.unwrap_or_else(|| "origin".to_string());
+    let remote = remote.filter(|r| !r.trim().is_empty());
+    let branch = branch.filter(|b| !b.trim().is_empty());
     let rebase = rebase.unwrap_or(false);
 
     // Build pull args
@@ -1091,10 +1118,18 @@ pub async fn git_pull(
         args.push("--rebase");
     }
 
-    args.push(&remote);
-
-    if let Some(ref branch) = branch {
-        args.push(branch);
+    if let Some(ref remote) = remote {
+        args.push(remote);
+        if let Some(ref branch) = branch {
+            args.push(branch);
+        }
+    } else if branch.is_some() {
+        return Ok(GitPullResponse {
+            success: false,
+            updated_files: None,
+            has_conflicts: Some(false),
+            error: Some("REMOTE_REQUIRED".to_string()),
+        });
     }
 
     match exec_git(path, &args) {
@@ -1128,11 +1163,28 @@ pub async fn git_pull(
                 });
             }
 
-            let error = if e.contains("no upstream") || e.contains("no tracking") {
+            let error_lower = e.to_lowercase();
+
+            let error = if error_lower.contains("no upstream")
+                || error_lower.contains("has no upstream")
+                || error_lower.contains("no tracking")
+                || error_lower.contains("no tracking information")
+                || error_lower.contains("there is no tracking information")
+            {
                 "NO_UPSTREAM".to_string()
-            } else if e.contains("Authentication") || e.contains("permission denied") {
+            } else if error_lower.contains("no remote repository specified")
+                || error_lower.contains("does not appear to be a git repository")
+                || error_lower.contains("no such remote")
+            {
+                "NO_REMOTE".to_string()
+            } else if error_lower.contains("auth_failed")
+                || error_lower.contains("authentication")
+                || error_lower.contains("permission denied")
+            {
                 "AUTH_FAILED".to_string()
-            } else if e.contains("Could not resolve host") || e.contains("Connection refused") {
+            } else if error_lower.contains("could not resolve host")
+                || error_lower.contains("connection refused")
+            {
                 "NETWORK_ERROR".to_string()
             } else {
                 format!("GIT_ERROR: {}", e)

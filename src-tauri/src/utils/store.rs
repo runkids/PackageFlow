@@ -180,5 +180,14 @@ impl Default for StoreData {
 /// Note: Must match frontend store file in src/lib/workflow-storage.ts
 pub const STORE_FILE: &str = "packageflow.json";
 
+/// Execution history store file (separate from main config to keep it smaller)
+pub const EXECUTION_HISTORY_FILE: &str = "execution-history.json";
+
+/// Security scans store file (separate from main config)
+pub const SECURITY_SCANS_FILE: &str = "security-scans.json";
+
+/// Deployment history store file (separate from main config)
+pub const DEPLOYMENT_HISTORY_FILE: &str = "deployment-history.json";
+
 // Store operations will be implemented in Phase 4 (US7) using tauri-plugin-store
 // The actual load/save functions require AppHandle which is only available in commands

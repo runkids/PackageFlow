@@ -5,14 +5,15 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>别再切换窗口了。用可视化方式自动化你的开发流程。</strong>
+  <strong>为 vibe coding 而生——把你的 package.json 变成开发控制台：脚本、worktree、工作流、部署与安全扫描，一个快又轻的桌面 App 搞定。</strong>
 </p>
 
 <p align="center">
+  <a href="https://github.com/runkids/PackageFlow/releases">下载</a> •
   <a href="#为什么选择-packageflow">为什么选择</a> •
-  <a href="#功能特性">功能特性</a> •
-  <a href="#安装">安装</a> •
+  <a href="#精选亮点">精选亮点</a> •
   <a href="#截图">截图</a> •
+  <a href="#安装">安装</a> •
   <a href="#开发">开发</a>
 </p>
 
@@ -25,83 +26,26 @@
 
 ## 为什么选择 PackageFlow？
 
-**痛点：** 作为前端开发者，你是否每天在多个终端之间来回切换——跑 Git 命令、执行构建脚本、管理 worktree、检查安全漏洞？这种上下文切换正在扼杀你的生产力。
+PackageFlow 是一个以 `package.json` 为核心的轻量桌面应用。它把每天最耗脑的事情——脚本、Git、worktree、安全扫描、部署——收敛成一个键盘友好的控制台。
 
-**解决方案：** PackageFlow 是一个轻量的桌面应用，把所有工具整合在一个地方——还有可视化工作流编辑器，让你不用写脚本就能自动化重复性任务。
+使用 **Tauri + Rust** 构建：体积小、启动快，没有 Electron 的臃肿负担。
+对新手也很友好：少记命令，多把想法做出来。
 
-### 有什么不同？
+## 精选亮点
 
-| 功能 | 传统工具 | PackageFlow |
-|------|---------|-------------|
-| **Git Worktree** | 只能用 CLI，难以可视化 | 可视化管理 + 快速切换器 |
-| **任务自动化** | Shell 脚本、CI/CD | 拖拽式工作流编辑器 |
-| **Monorepo** | 各自独立的 CLI 工具 | Nx 与 Turborepo 统一界面 |
-| **安全审计** | 手动执行 `npm audit` | 一键扫描 + 历史记录 |
+- **脚本 + 终端**：用卡片整理 `dev/build/test/lint`（以及更多），在内置 PTY 终端里看实时输出，快速停止进程（含端口检测）。
+- **工具链护栏**：检测 Volta/Corepack/版本不一致，并用正确版本执行命令。
+- **Git 不用跳出去**：状态、暂存、Diff 查看、提交、分支、历史、Stash，并支持 worktree 场景。
+- **Worktree + Session**：可视化管理所有 worktrees，<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd> 快速切换，为每个 worktree 保存“我在做什么”（目标/笔记/清单/标签），一键 Resume。
+- **Monorepo 感知**：自动检测 Nx/Turborepo、Workspace 视图、依赖图（重度 layout 交给 worker）。
+- **可视化工作流**：拖拽式工作流编辑器 + 步骤模板、Outgoing Webhook、Incoming Webhook 触发（含桌面通知）。
+- **一键部署**：生成 GitHub Pages workflow 或通过 Netlify/Cloudflare Pages 部署，拿到可分享的链接（含历史与多账号支持）。
+- **安全扫描不再忘记**：一键扫描、严重程度统计、提醒机制，依赖未安装时可直接跳到快速修复。
+- **数据在你手上**：所有数据本地保存（Tauri store），支持导出/导入（也包含 IPA/APK 检视等工具）。
 
-使用 **Tauri + Rust** 构建 = 快速、轻量（~15MB），没有 Electron 的臃肿问题。
-
-## 功能特性
-
-### 可视化工作流自动化
-使用拖放式可视化编辑器创建和执行自定义工作流。将多个任务串联在一起，设置 webhook 通知，并从其他工作流触发工作流。
-
-- 拖放式工作流构建器
-- 实时执行输出
-- Webhook 通知（Slack、Discord、自定义）
-- 常见任务的工作流模板
-- 暂停/恢复执行
-
-### Git 集成
-无需离开应用程序即可进行全面的 Git 管理。
-
-- 通过可视化差异查看器暂存/取消暂存文件
-- 带有语法高亮预览的提交
-- 分支管理（创建、切换、删除）
-- 暂存管理
-- 远程操作（推送、拉取、获取）
-- Rebase 支持
-
-### Git Worktree 管理
-使用 Git worktree 同时在多个分支上工作。
-
-- 创建和管理 worktree
-- 快速切换器（<kbd>Cmd</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd>）
-- 显示变更的状态徽章
-- 在您喜欢的 IDE 中打开（VS Code、Cursor、Zed）
-- Worktree 模板
-
-### Monorepo 支持
-对 Nx 和 Turborepo 工作区的一流支持。
-
-- 自动检测 monorepo 工具
-- 跨包运行目标
-- 依赖图可视化
-- 缓存管理
-- 批量脚本执行
-
-### 安全审计
-通过内置的漏洞扫描保护您的依赖项安全。
-
-- npm audit / Snyk 集成
-- 漏洞严重性分类
-- CVSS 评分和 CVE 详情
-- 修复建议
-- 扫描历史和提醒
-
-### 终端集成
-具有会话持久性的完整 PTY 终端。
-
-- 交互式终端会话
-- 刷新后自动重连
-- 输出历史保留
-- 多实例支持
-
-### 其他功能
-
-- **键盘快捷键** - 可自定义的常用操作快捷键
-- **iOS/Android 构建检查** - 分析 IPA 和 APK 文件
-- **数据导出/导入** - 备份和恢复您的配置
-- **深色/浅色主题** - 无论白天黑夜都能舒适使用
+<p align="center">
+  <img src="docs/screenshots/deploy-demo.gif" width="320" alt="部署 Demo" />
+</p>
 
 ## 安装
 
@@ -116,7 +60,7 @@ brew install --cask packageflow
 
 ```bash
 brew update
-brew reinstall --cask packageflow
+brew upgrade --cask packageflow
 ```
 
 ### 手动下载
@@ -125,24 +69,87 @@ brew reinstall --cask packageflow
 
 ## 截图
 
-<p align="center">
-  <a href="docs/screenshots/screenshot001.png"><img src="docs/screenshots/screenshot001.png" width="280" alt="截图 1"></a>
-  <a href="docs/screenshots/screenshot002.png"><img src="docs/screenshots/screenshot002.png" width="280" alt="截图 2"></a>
-  <a href="docs/screenshots/screenshot003.png"><img src="docs/screenshots/screenshot003.png" width="280" alt="截图 3"></a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/screenshot004.png"><img src="docs/screenshots/screenshot004.png" width="280" alt="截图 4"></a>
-  <a href="docs/screenshots/screenshot005.png"><img src="docs/screenshots/screenshot005.png" width="280" alt="截图 5"></a>
-  <a href="docs/screenshots/screenshot006.png"><img src="docs/screenshots/screenshot006.png" width="280" alt="截图 6"></a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/screenshot007.png"><img src="docs/screenshots/screenshot007.png" width="280" alt="截图 7"></a>
-  <a href="docs/screenshots/screenshot008.png"><img src="docs/screenshots/screenshot008.png" width="280" alt="截图 8"></a>
-  <a href="docs/screenshots/screenshot009.png"><img src="docs/screenshots/screenshot009.png" width="280" alt="截图 9"></a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/screenshot010.png"><img src="docs/screenshots/screenshot010.png" width="280" alt="截图 10"></a>
-</p>
+<table align="center">
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/screenshot001.png">
+        <img src="docs/screenshots/screenshot001.png" width="220" alt="截圖 1">
+        <div>Projects + Scripts</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot002.png">
+        <img src="docs/screenshots/screenshot002.png" width="220" alt="截圖 2">
+        <div>Monorepo Action</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot003.png">
+        <img src="docs/screenshots/screenshot003.png" width="220" alt="截圖 3">
+        <div>Dependency Graph</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot004.png">
+        <img src="docs/screenshots/screenshot004.png" width="220" alt="截圖 4">
+        <div>Terminals</div>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/screenshot005.png">
+        <img src="docs/screenshots/screenshot005.png" width="220" alt="截圖 5">
+        <div>Git</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot006.png">
+        <img src="docs/screenshots/screenshot006.png" width="220" alt="截圖 6">
+        <div>Step Template</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot007.png">
+        <img src="docs/screenshots/screenshot007.png" width="220" alt="截圖 7">
+        <div>Security</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot008.png">
+        <img src="docs/screenshots/screenshot008.png" width="220" alt="截圖 8">
+        <div>Webhook</div>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/screenshot009.png">
+        <img src="docs/screenshots/screenshot009.png" width="220" alt="截圖 9">
+        <div>Flow Display</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot010.png">
+        <img src="docs/screenshots/screenshot010.png" width="220" alt="截圖 10">
+        <div>Workflow With Project</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot011.png">
+        <img src="docs/screenshots/screenshot011.png" width="220" alt="截圖 11">
+        <div>Deploy Accounts</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot012.png">
+        <img src="docs/screenshots/screenshot012.png" width="220" alt="eyboard Shortcuts">
+        <div>Keyboard Shortcuts</div>
+      </a>
+    </td>
+    <td></td>
+  </tr>
+</table>
 
 <p align="center"><em>点击任意图片查看完整大小</em></p>
 
@@ -164,15 +171,21 @@ cd PackageFlow
 # 安装依赖
 pnpm install
 
-# 启动开发
-pnpm tauri dev
+# 启动 Vite（Web UI）
+pnpm dev
+
+# 启动桌面 App
+pnpm dev:tauri
 ```
 
 ### 构建
 
 ```bash
-# 构建生产版本
-pnpm tauri build
+# 构建 Web assets
+pnpm build
+
+# 构建桌面 App（dmg）
+pnpm build:tauri
 ```
 
 ## 贡献

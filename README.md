@@ -5,14 +5,15 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>Stop juggling terminals. Automate your dev workflow visually.</strong>
+  <strong>Built for vibe coding — scripts, worktrees, workflows, deploys, and audits in one fast desktop app.</strong>
 </p>
 
 <p align="center">
-  <a href="#why-packageflow">Why PackageFlow</a> •
-  <a href="#features">Features</a> •
-  <a href="#installation">Installation</a> •
+  <a href="https://github.com/runkids/PackageFlow/releases">Download</a> •
+  <a href="#why-packageflow">Why</a> •
+  <a href="#highlights">Highlights</a> •
   <a href="#screenshots">Screenshots</a> •
+  <a href="#installation">Installation</a> •
   <a href="#development">Development</a>
 </p>
 
@@ -25,83 +26,27 @@
 
 ## Why PackageFlow?
 
-**The Problem:** You're a frontend developer juggling multiple terminals, switching between Git commands, running build scripts, managing worktrees, and checking security audits. Context switching kills your productivity.
+PackageFlow is a lightweight desktop app for developers who live in `package.json`.
+It turns the messy parts of daily dev work—scripts, Git, worktrees, audits, deploys—into a single keyboard-friendly control panel.
 
-**The Solution:** PackageFlow is a lightweight desktop app that puts everything in one place—with a visual workflow builder that lets you automate repetitive tasks without writing scripts.
+Built with **Tauri + Rust** for a small footprint and a snappy UI (no Electron bloat).
+Beginner-friendly by design: fewer terminals, more shipping.
 
-### What Makes It Different
+## Highlights
 
-| Feature | Traditional Tools | PackageFlow |
-|---------|------------------|-------------|
-| **Git Worktree** | CLI-only, hard to visualize | Visual management with quick switcher |
-| **Task Automation** | Shell scripts, CI/CD | Drag-and-drop workflow builder |
-| **Monorepo** | Separate CLI tools | Unified UI for Nx & Turborepo |
-| **Security Audit** | Manual `npm audit` | One-click scan with history |
+- **Scripts + terminal**: run `dev/build/test/lint` (and more) from clean cards, see live output in a built-in PTY terminal, and stop processes fast (port detection included).
+- **Toolchain guardrails**: detect Volta/Corepack/version mismatches and run commands with the right versions.
+- **Git, without leaving the app**: status, staging, diff viewer, commit, branches, history, stashes, and worktree-aware operations.
+- **Worktrees + Sessions**: visualize all worktrees, jump with <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd>, and save “what I was doing” (goal/notes/checklist/tags) per worktree—then “Resume” with one click.
+- **Monorepo awareness**: Nx/Turborepo detection, workspaces view, and dependency graph (heavy layout work offloaded to a worker).
+- **Visual workflows**: drag-and-drop workflow builder with step templates, outgoing webhooks, and incoming webhook triggers (with desktop notifications).
+- **One-click deploy**: generate a GitHub Pages workflow or deploy via Netlify/Cloudflare Pages—then get a link you can share, with history and multi-account support.
+- **Security audits that don’t get forgotten**: run scans, view severity breakdowns, get reminders, and jump to quick fixes when dependencies aren’t installed.
+- **Local-first + portable**: everything stays local (Tauri store) and you can export/import app data (plus extras like IPA/APK inspection).
 
-Built with **Tauri + Rust** = Fast, lightweight (~15MB), no Electron bloat.
-
-## Features
-
-### Visual Workflow Automation
-Create and execute custom workflows with a drag-and-drop visual editor. Chain multiple tasks together, set up webhooks for notifications, and trigger workflows from other workflows.
-
-- Drag-and-drop workflow builder
-- Real-time execution output
-- Webhook notifications (Slack, Discord, custom)
-- Workflow templates for common tasks
-- Pause/resume execution
-
-### Git Integration
-Comprehensive Git management without leaving the app.
-
-- Stage/unstage files with visual diff viewer
-- Commit with syntax-highlighted previews
-- Branch management (create, switch, delete)
-- Stash management
-- Remote operations (push, pull, fetch)
-- Rebase support
-
-### Git Worktree Management
-Work on multiple branches simultaneously with Git worktrees.
-
-- Create and manage worktrees
-- Quick switcher (<kbd>Cmd</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd>)
-- Status badges showing changes
-- Open in your preferred IDE (VS Code, Cursor, Zed)
-- Worktree templates
-
-### Monorepo Support
-First-class support for Nx and Turborepo workspaces.
-
-- Auto-detect monorepo tools
-- Run targets across packages
-- Dependency graph visualization
-- Cache management
-- Batch script execution
-
-### Security Audit
-Keep your dependencies secure with built-in vulnerability scanning.
-
-- npm audit / Snyk integration
-- Vulnerability severity breakdown
-- CVSS scores and CVE details
-- Fix recommendations
-- Scan history and reminders
-
-### Terminal Integration
-Full PTY terminal with session persistence.
-
-- Interactive terminal sessions
-- Auto-reconnect after refresh
-- Output history preservation
-- Multi-instance support
-
-### Additional Features
-
-- **Keyboard shortcuts** - Customizable shortcuts for common actions
-- **iOS/Android build inspection** - Analyze IPA and APK files
-- **Data export/import** - Backup and restore your configurations
-- **Dark/Light theme** - Easy on the eyes, day or night
+<p align="center">
+  <img src="docs/screenshots/deploy-demo.gif" width="320" alt="Deploy demo" />
+</p>
 
 ## Installation
 
@@ -116,7 +61,7 @@ brew install --cask packageflow
 
 ```bash
 brew update
-brew reinstall --cask packageflow
+brew upgrade --cask packageflow
 ```
 
 ### Manual Download
@@ -125,24 +70,87 @@ Download the latest release from the [Releases](https://github.com/runkids/Packa
 
 ## Screenshots
 
-<p align="center">
-  <a href="docs/screenshots/screenshot001.png"><img src="docs/screenshots/screenshot001.png" width="280" alt="Screenshot 1"></a>
-  <a href="docs/screenshots/screenshot002.png"><img src="docs/screenshots/screenshot002.png" width="280" alt="Screenshot 2"></a>
-  <a href="docs/screenshots/screenshot003.png"><img src="docs/screenshots/screenshot003.png" width="280" alt="Screenshot 3"></a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/screenshot004.png"><img src="docs/screenshots/screenshot004.png" width="280" alt="Screenshot 4"></a>
-  <a href="docs/screenshots/screenshot005.png"><img src="docs/screenshots/screenshot005.png" width="280" alt="Screenshot 5"></a>
-  <a href="docs/screenshots/screenshot006.png"><img src="docs/screenshots/screenshot006.png" width="280" alt="Screenshot 6"></a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/screenshot007.png"><img src="docs/screenshots/screenshot007.png" width="280" alt="Screenshot 7"></a>
-  <a href="docs/screenshots/screenshot008.png"><img src="docs/screenshots/screenshot008.png" width="280" alt="Screenshot 8"></a>
-  <a href="docs/screenshots/screenshot009.png"><img src="docs/screenshots/screenshot009.png" width="280" alt="Screenshot 9"></a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/screenshot010.png"><img src="docs/screenshots/screenshot010.png" width="280" alt="Screenshot 10"></a>
-</p>
+<table align="center">
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/screenshot001.png">
+        <img src="docs/screenshots/screenshot001.png" width="220" alt="截圖 1">
+        <div>Projects + Scripts</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot002.png">
+        <img src="docs/screenshots/screenshot002.png" width="220" alt="截圖 2">
+        <div>Monorepo Action</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot003.png">
+        <img src="docs/screenshots/screenshot003.png" width="220" alt="截圖 3">
+        <div>Dependency Graph</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot004.png">
+        <img src="docs/screenshots/screenshot004.png" width="220" alt="截圖 4">
+        <div>Terminals</div>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/screenshot005.png">
+        <img src="docs/screenshots/screenshot005.png" width="220" alt="截圖 5">
+        <div>Git</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot006.png">
+        <img src="docs/screenshots/screenshot006.png" width="220" alt="截圖 6">
+        <div>Step Template</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot007.png">
+        <img src="docs/screenshots/screenshot007.png" width="220" alt="截圖 7">
+        <div>Security</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot008.png">
+        <img src="docs/screenshots/screenshot008.png" width="220" alt="截圖 8">
+        <div>Webhook</div>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/screenshot009.png">
+        <img src="docs/screenshots/screenshot009.png" width="220" alt="截圖 9">
+        <div>Flow Display</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot010.png">
+        <img src="docs/screenshots/screenshot010.png" width="220" alt="截圖 10">
+        <div>Workflow With Project</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot011.png">
+        <img src="docs/screenshots/screenshot011.png" width="220" alt="截圖 11">
+        <div>Deploy Accounts</div>
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/screenshot012.png">
+        <img src="docs/screenshots/screenshot012.png" width="220" alt="eyboard Shortcuts">
+        <div>Keyboard Shortcuts</div>
+      </a>
+    </td>
+    <td></td>
+  </tr>
+</table>
 
 <p align="center"><em>Click on any image to view full size</em></p>
 
@@ -164,15 +172,21 @@ cd PackageFlow
 # Install dependencies
 pnpm install
 
-# Start development
-pnpm tauri dev
+# Start Vite (web UI)
+pnpm dev
+
+# Start the desktop app
+pnpm dev:tauri
 ```
 
 ### Build
 
 ```bash
-# Build for production
-pnpm tauri build
+# Build web assets
+pnpm build
+
+# Build the desktop app (dmg)
+pnpm build:tauri
 ```
 
 ## Contributing

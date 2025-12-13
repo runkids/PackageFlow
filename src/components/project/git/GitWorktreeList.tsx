@@ -207,6 +207,7 @@ export function GitWorktreeList({
         const errorMessages: Record<string, string> = {
           MERGE_CONFLICT: 'Conflicts detected, resolve manually',
           NO_UPSTREAM: 'No upstream branch configured',
+          NO_REMOTE: 'No remote configured',
           AUTH_FAILED: 'Authentication failed',
           NETWORK_ERROR: 'Network error',
         };

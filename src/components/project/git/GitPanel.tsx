@@ -216,9 +216,14 @@ export function GitPanel({
   };
 
   // Handle push
-  const handlePush = async () => {
+  const handlePush = async (options?: {
+    remote?: string;
+    branch?: string;
+    setUpstream?: boolean;
+    force?: boolean;
+  }) => {
     try {
-      const response = await gitAPI.push(projectPath);
+      const response = await gitAPI.push(projectPath, options);
       if (response.success) {
         await loadStatus();
         return { success: true };

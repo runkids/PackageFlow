@@ -28,7 +28,7 @@ import type {
 import { FRAMEWORK_PRESETS } from '../../../types/deploy';
 import { useDeployAccounts } from '../../../hooks/useDeployAccounts';
 import { AccountSelector } from './AccountSelector';
-import { GithubIcon, NetlifyIcon } from '../../ui/icons';
+import { GithubIcon, NetlifyIcon, CloudflareIcon } from '../../ui/icons';
 import {
   Dialog,
   DialogContent,
@@ -119,10 +119,19 @@ interface PlatformCardProps {
 }
 
 function PlatformCard({ platform, isSelected, isConnected, onClick }: PlatformCardProps) {
-  const Icon = platform === 'github_pages' ? GithubIcon : NetlifyIcon;
-  const name = platform === 'github_pages' ? 'GitHub Pages' : 'Netlify';
-  const bgColor = platform === 'github_pages' ? 'bg-black' : 'bg-[#0e1e25]';
-  const iconSize = platform === 'github_pages' ? 'h-5 w-5' : 'h-5 w-5';
+  const getPlatformConfig = () => {
+    switch (platform) {
+      case 'github_pages':
+        return { Icon: GithubIcon, name: 'GitHub Pages', bgColor: 'bg-black', textWhite: true };
+      case 'netlify':
+        return { Icon: NetlifyIcon, name: 'Netlify', bgColor: 'bg-[#0e1e25]', textWhite: false };
+      case 'cloudflare_pages':
+        return { Icon: CloudflareIcon, name: 'Cloudflare Pages', bgColor: 'bg-[#f38020]', textWhite: false };
+      default:
+        return { Icon: GithubIcon, name: 'Unknown', bgColor: 'bg-muted', textWhite: false };
+    }
+  };
+  const { Icon, name, bgColor, textWhite } = getPlatformConfig();
 
   return (
     <button
@@ -142,7 +151,7 @@ function PlatformCard({ platform, isSelected, isConnected, onClick }: PlatformCa
           bgColor
         )}
       >
-        <Icon className={cn(iconSize, platform === 'github_pages' && 'text-white')} />
+        <Icon className={cn('h-5 w-5', textWhite && 'text-white')} />
       </span>
       <span className="font-medium text-sm">{name}</span>
       {!isConnected && (
@@ -266,26 +275,46 @@ export function DeploymentSettingsDialog({
   const [environment, setEnvironment] = useState<DeploymentEnvironment>('production');
   const [framework, setFramework] = useState<string>('');
   const [rootDirectory, setRootDirectory] = useState<string>('');
+  const [installCommand, setInstallCommand] = useState<string>('');
   const [buildCommand, setBuildCommand] = useState<string>('');
   const [outputDirectory, setOutputDirectory] = useState<string>('');
+  const [netlifySiteName, setNetlifySiteName] = useState<string>('');
+  const [cloudflareProjectName, setCloudflareProjectName] = useState<string>('');
   const [envVariables, setEnvVariables] = useState<EnvVariable[]>([]);
   const [showSecrets, setShowSecrets] = useState<Record<number, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Get accounts from multi-account system
-  const { accounts } = useDeployAccounts();
+  const {
+    accounts,
+    preferences,
+    isLoadingAccounts,
+    isLoadingPreferences,
+    getAccountsByPlatform,
+  } = useDeployAccounts();
+
+  // Filter accounts by the selected platform
+  const platformAccounts = useMemo(
+    () => getAccountsByPlatform(platform),
+    [getAccountsByPlatform, platform]
+  );
 
   // Initialize form from config
   useEffect(() => {
+    setValidationError(null);
     if (initialConfig) {
       setPlatform(initialConfig.platform);
       setAccountId(initialConfig.accountId);
       setEnvironment(initialConfig.environment);
       setFramework(initialConfig.frameworkPreset ?? '');
       setRootDirectory(initialConfig.rootDirectory ?? '');
+      setInstallCommand(initialConfig.installCommand ?? '');
       setBuildCommand(initialConfig.buildCommand ?? '');
       setOutputDirectory(initialConfig.outputDirectory ?? '');
+      setNetlifySiteName(initialConfig.netlifySiteName ?? '');
+      setCloudflareProjectName(initialConfig.cloudflareProjectName ?? '');
       setEnvVariables(initialConfig.envVariables);
     } else {
       // Reset to defaults
@@ -294,8 +323,11 @@ export function DeploymentSettingsDialog({
       setEnvironment('production');
       setFramework(detectedFramework ?? '');
       setRootDirectory('');
+      setInstallCommand('');
       setBuildCommand('');
       setOutputDirectory('');
+      setNetlifySiteName('');
+      setCloudflareProjectName('');
       setEnvVariables([]);
     }
   }, [initialConfig, detectedFramework, isOpen]);
@@ -346,6 +378,12 @@ export function DeploymentSettingsDialog({
   }, []);
 
   const handleSave = async () => {
+    setValidationError(null);
+    if ((platform === 'netlify' || platform === 'cloudflare_pages') && !accountId) {
+      setValidationError('Please select a deploy account.');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const config: DeploymentConfig = {
@@ -355,8 +393,11 @@ export function DeploymentSettingsDialog({
         environment,
         frameworkPreset: framework || undefined,
         rootDirectory: rootDirectory || undefined,
+        installCommand: installCommand || undefined,
         buildCommand: buildCommand || undefined,
         outputDirectory: outputDirectory || undefined,
+        netlifySiteName: netlifySiteName || undefined,
+        cloudflareProjectName: cloudflareProjectName || undefined,
         envVariables: envVariables.filter((v) => v.key.trim()),
       };
       await onSave(config);
@@ -367,11 +408,18 @@ export function DeploymentSettingsDialog({
   };
 
   const handlePlatformChange = (newPlatform: PlatformType) => {
+    setValidationError(null);
     setPlatform(newPlatform);
     setAccountId(undefined);
   };
 
+  const handleAccountChange = (newAccountId: string | undefined) => {
+    setValidationError(null);
+    setAccountId(newAccountId);
+  };
+
   // GitHub Pages doesn't require OAuth - it uses git credentials
+  // Cloudflare Pages uses API token (token-based auth)
   const isPlatformConnected = (p: PlatformType) => {
     if (p === 'github_pages') return true;
     return accounts.some((account) => account.platform === p);
@@ -417,7 +465,7 @@ export function DeploymentSettingsDialog({
             description="Choose where to deploy your project"
           >
             {/* Platform Selection */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <PlatformCard
                 platform="github_pages"
                 isSelected={platform === 'github_pages'}
@@ -430,6 +478,12 @@ export function DeploymentSettingsDialog({
                 isConnected={isPlatformConnected('netlify')}
                 onClick={() => handlePlatformChange('netlify')}
               />
+              <PlatformCard
+                platform="cloudflare_pages"
+                isSelected={platform === 'cloudflare_pages'}
+                isConnected={isPlatformConnected('cloudflare_pages')}
+                onClick={() => handlePlatformChange('cloudflare_pages')}
+              />
             </div>
 
             {/* Warning if platform not connected */}
@@ -437,51 +491,130 @@ export function DeploymentSettingsDialog({
               <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>
-                  Please connect your Netlify account first
+                  Please connect your {platform === 'netlify' ? 'Netlify' : 'Cloudflare Pages'} account first
                 </span>
               </div>
             )}
 
-            {/* Account Selector - only for Netlify */}
-            {platform === 'netlify' && (
+            {/* Account Selector - for Netlify and Cloudflare */}
+            {(platform === 'netlify' || platform === 'cloudflare_pages') && (
               <div className="space-y-1.5">
                 <label className="text-sm text-muted-foreground">Deploy Account</label>
                 <AccountSelector
                   platform={platform}
+                  accounts={platformAccounts}
+                  preferences={preferences}
+                  isLoading={isLoadingAccounts || isLoadingPreferences}
                   selectedAccountId={accountId}
-                  onAccountChange={setAccountId}
+                  onAccountChange={handleAccountChange}
                 />
+              </div>
+            )}
+
+            {/* Site Name - only for Netlify */}
+            {platform === 'netlify' && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">
+                  Site Name
+                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={netlifySiteName}
+                    onChange={(e) => setNetlifySiteName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                    placeholder="my-awesome-app"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    className={cn(
+                      'flex h-9 flex-1 rounded-md border border-border',
+                      'bg-background px-3 py-2 text-sm font-mono',
+                      'placeholder:text-muted-foreground',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                    )}
+                  />
+                  <span className="text-sm text-muted-foreground">.netlify.app</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Custom subdomain for your site. Leave empty to auto-generate.
+                </p>
+              </div>
+            )}
+
+            {/* Project Name - only for Cloudflare Pages */}
+            {platform === 'cloudflare_pages' && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">
+                  Project Name
+                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={cloudflareProjectName}
+                    onChange={(e) => setCloudflareProjectName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                    placeholder="my-awesome-app"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    className={cn(
+                      'flex h-9 flex-1 rounded-md border border-border',
+                      'bg-background px-3 py-2 text-sm font-mono',
+                      'placeholder:text-muted-foreground',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                    )}
+                  />
+                  <span className="text-sm text-muted-foreground">.pages.dev</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Custom project name for your site. Leave empty to auto-generate.
+                </p>
               </div>
             )}
 
             {/* GitHub Pages info */}
             {platform === 'github_pages' && (
               <div className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                <p>GitHub Pages uses your existing git credentials.</p>
-                <p className="text-xs mt-1">Make sure your project has a remote origin configured.</p>
+                <p>PackageFlow will generate a GitHub Actions workflow file for you.</p>
+                <p className="text-xs mt-1">
+                  You can optionally override install/build/output below (leave empty to auto-detect).
+                </p>
               </div>
             )}
           </Section>
 
-          {/* Divider */}
-          <div className="h-px bg-border" />
-
           {/* Section 2: Build Settings */}
-          <Section
-            icon={<FolderCode className="h-4 w-4" />}
-            title="Build Configuration"
-            description="Configure how your project is built"
-          >
-            {/* Environment */}
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">Environment</label>
-              <Select
-                value={environment}
-                onValueChange={(v) => setEnvironment(v as DeploymentEnvironment)}
-                options={environmentOptions}
-                aria-label="Deployment environment"
-              />
-            </div>
+          {platform && (
+            <>
+              {/* Divider */}
+              <div className="h-px bg-border" />
+
+              <Section
+                icon={<FolderCode className="h-4 w-4" />}
+                title={platform === 'github_pages' ? 'Workflow Build Configuration' : 'Build Configuration'}
+                description={
+                  platform === 'github_pages'
+                    ? 'Optional overrides for GitHub Actions workflow generation'
+                    : 'Configure how your project is built'
+                }
+                collapsible={platform === 'github_pages'}
+                defaultExpanded={platform !== 'github_pages'}
+              >
+            {/* Environment - Only for Netlify and Cloudflare */}
+            {platform !== 'github_pages' && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Environment</label>
+                <Select
+                  value={environment}
+                  onValueChange={(v) => setEnvironment(v as DeploymentEnvironment)}
+                  options={environmentOptions}
+                  aria-label="Deployment environment"
+                />
+              </div>
+            )}
 
             {/* Framework */}
             <div className="space-y-1.5">
@@ -511,6 +644,35 @@ export function DeploymentSettingsDialog({
                 aria-label="Framework"
               />
             </div>
+
+            {/* Install Command - GitHub Pages workflow only */}
+            {platform === 'github_pages' && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">
+                  Install Command
+                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={installCommand}
+                  onChange={(e) => setInstallCommand(e.target.value)}
+                  placeholder="Auto-detect from lockfile (e.g., npm ci)"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className={cn(
+                    'flex h-9 w-full rounded-md border border-border',
+                    'bg-background px-3 py-2 text-sm font-mono',
+                    'placeholder:text-muted-foreground',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                  )}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used in the generated workflow. Leave empty to auto-detect based on your lockfile.
+                </p>
+              </div>
+            )}
 
             {/* Build Command */}
             <div className="space-y-1.5">
@@ -566,45 +728,51 @@ export function DeploymentSettingsDialog({
               </p>
             </div>
 
-            {/* Root Directory */}
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">
-                Root Directory
-                <span className="ml-1 text-muted-foreground/60">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={rootDirectory}
-                onChange={(e) => setRootDirectory(e.target.value)}
-                placeholder="e.g., packages/web"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className={cn(
-                  'flex h-9 w-full rounded-md border border-border',
-                  'bg-background px-3 py-2 text-sm',
-                  'placeholder:text-muted-foreground',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                )}
-              />
-              <p className="text-xs text-muted-foreground">
-                Specify the path if your project is in a subdirectory
-              </p>
-            </div>
-          </Section>
+            {/* Root Directory - Only for Netlify and Cloudflare */}
+            {platform !== 'github_pages' && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">
+                  Root Directory
+                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={rootDirectory}
+                  onChange={(e) => setRootDirectory(e.target.value)}
+                  placeholder="e.g., packages/web"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className={cn(
+                    'flex h-9 w-full rounded-md border border-border',
+                    'bg-background px-3 py-2 text-sm',
+                    'placeholder:text-muted-foreground',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                  )}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Specify the path if your project is in a subdirectory
+                </p>
+              </div>
+            )}
+              </Section>
+            </>
+          )}
 
-          {/* Divider */}
-          <div className="h-px bg-border" />
+          {/* Section 3: Environment Variables - Only for Netlify and Cloudflare */}
+          {platform !== 'github_pages' && (
+            <>
+              {/* Divider */}
+              <div className="h-px bg-border" />
 
-          {/* Section 3: Environment Variables */}
-          <Section
-            icon={<Variable className="h-4 w-4" />}
-            title="Environment Variables"
-            description="Set variables available during build and runtime"
-            collapsible
-            defaultExpanded={envVariables.length > 0}
-          >
+              <Section
+                icon={<Variable className="h-4 w-4" />}
+                title="Environment Variables"
+                description="Set variables available during build and runtime"
+                collapsible
+                defaultExpanded={envVariables.length > 0}
+              >
             {envVariables.length > 0 ? (
               <div className="space-y-2">
                 {envVariables.map((env, index) => (
@@ -639,10 +807,18 @@ export function DeploymentSettingsDialog({
               <Plus className="mr-1.5 h-3.5 w-3.5" />
               Add Variable
             </Button>
-          </Section>
+              </Section>
+            </>
+          )}
         </div>
 
         {/* Footer */}
+        {validationError && (
+          <div className="mt-4 text-sm text-destructive flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {validationError}
+          </div>
+        )}
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel

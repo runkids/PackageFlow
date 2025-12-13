@@ -2,7 +2,7 @@
 // One-Click Deploy feature (015-one-click-deploy)
 // Extended with Multi Deploy Accounts (016-multi-deploy-accounts)
 
-export type PlatformType = 'github_pages' | 'netlify';
+export type PlatformType = 'github_pages' | 'netlify' | 'cloudflare_pages';
 
 export type DeploymentEnvironment = 'production' | 'preview';
 
@@ -58,6 +58,8 @@ export interface DeployPreferences {
   defaultGithubPagesAccountId?: string;
   /** Default Netlify account ID */
   defaultNetlifyAccountId?: string;
+  /** Default Cloudflare Pages account ID */
+  defaultCloudflarePagesAccountId?: string;
 }
 
 // T004: Result from removing an account
@@ -78,10 +80,20 @@ export interface DeploymentConfig {
   frameworkPreset?: string;
   envVariables: EnvVariable[];
   rootDirectory?: string;
+  /** Custom install command (used for GitHub Actions workflow generation) */
+  installCommand?: string;
   /** Custom build command (e.g., "pnpm build", "yarn build:prod") */
   buildCommand?: string;
   /** Custom output directory (overrides framework preset detection) */
   outputDirectory?: string;
+  /** Netlify site ID (for reusing existing site across deployments) */
+  netlifySiteId?: string;
+  /** Custom Netlify site name (e.g., "my-awesome-app" for my-awesome-app.netlify.app) */
+  netlifySiteName?: string;
+  /** Cloudflare account ID (required for Cloudflare Pages) */
+  cloudflareAccountId?: string;
+  /** Cloudflare project name (e.g., "my-app" for my-app.pages.dev) */
+  cloudflareProjectName?: string;
 }
 
 export interface Deployment {
@@ -95,6 +107,17 @@ export interface Deployment {
   commitHash?: string;
   commitMessage?: string;
   errorMessage?: string;
+  // Netlify-specific fields
+  /** Netlify admin dashboard URL */
+  adminUrl?: string;
+  /** Build time in seconds */
+  deployTime?: number;
+  /** Branch that was deployed */
+  branch?: string;
+  /** Site name (e.g., "my-app" for my-app.netlify.app) */
+  siteName?: string;
+  /** Unique preview URL for this specific deploy */
+  previewUrl?: string;
 }
 
 export interface OAuthFlowResult {
@@ -108,6 +131,60 @@ export interface DeploymentStatusEvent {
   status: DeploymentStatus;
   url?: string;
   errorMessage?: string;
+}
+
+// Result from GitHub Actions workflow generation
+export interface GitHubWorkflowResult {
+  success: boolean;
+  /** Path to the generated workflow file */
+  workflowPath: string;
+  /** Setup instructions for the user */
+  setupInstructions: string[];
+  /** GitHub username, if detected */
+  username?: string;
+  /** GitHub repository name, if detected */
+  repo?: string;
+}
+
+// Result from Cloudflare API token validation
+export interface CloudflareValidationResult {
+  valid: boolean;
+  /** Cloudflare account ID */
+  accountId?: string;
+  /** Account name from Cloudflare */
+  accountName?: string;
+  error?: string;
+}
+
+// Result from checking if a deploy account is in use
+export interface CheckAccountResult {
+  inUse: boolean;
+  affectedProjects: string[];
+}
+
+// Encrypted data structure (for backup)
+export interface EncryptedData {
+  /** Base64 encoded nonce */
+  nonce: string;
+  /** Base64 encoded ciphertext */
+  ciphertext: string;
+}
+
+// Result from backup export operation
+export interface BackupExportResult {
+  /** Encrypted backup data (can be saved to file) */
+  encryptedData: EncryptedData;
+  /** Number of accounts included in backup */
+  accountCount: number;
+}
+
+// Result from backup import operation
+export interface BackupImportResult {
+  success: boolean;
+  /** Number of accounts restored */
+  accountsRestored: number;
+  /** Error message if any */
+  error?: string;
 }
 
 // Framework presets

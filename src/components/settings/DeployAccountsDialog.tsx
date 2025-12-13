@@ -31,6 +31,8 @@ export function DeployAccountsDialog({ isOpen, onClose }: DeployAccountsDialogPr
     removeAccount,
     updateAccountDisplayName,
     setDefaultAccount,
+    refreshAccounts,
+    checkUsage,
   } = useDeployAccounts();
 
   const handleAddAccount = useCallback(async (platform: PlatformType): Promise<void> => {
@@ -55,7 +57,7 @@ export function DeployAccountsDialog({ isOpen, onClose }: DeployAccountsDialogPr
           <DialogClose onClick={onClose} />
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto min-h-0 py-2">
+        <div className="flex-1 overflow-y-auto min-h-0 py-2 pr-2 -mr-2">
           <AccountManager
             accounts={accounts}
             preferences={preferences}
@@ -66,6 +68,8 @@ export function DeployAccountsDialog({ isOpen, onClose }: DeployAccountsDialogPr
             onRemoveAccount={removeAccount}
             onUpdateDisplayName={handleUpdateDisplayName}
             onSetDefaultAccount={setDefaultAccount}
+            onRefreshAccounts={refreshAccounts}
+            onCheckUsage={checkUsage}
           />
         </div>
       </DialogContent>

@@ -9,6 +9,7 @@ import type {
   DeployAccount,
   DeployPreferences,
   RemoveAccountResult,
+  CheckAccountResult,
   OAuthFlowResult,
 } from '../types/deploy';
 
@@ -51,9 +52,11 @@ export interface UseDeployAccountsActions {
   // Utility
   clearError: () => void;
   hasAccountsForPlatform: (platform: PlatformType) => boolean;
+  checkUsage: (accountId: string) => Promise<CheckAccountResult | null>;
 }
 
 export type UseDeployAccountsReturn = UseDeployAccountsState & UseDeployAccountsActions;
+
 
 // ============================================================================
 // Hook Implementation
@@ -191,9 +194,18 @@ export function useDeployAccounts(): UseDeployAccountsReturn {
   }, []);
 
   const getDefaultAccount = useCallback((platform: PlatformType): DeployAccount | undefined => {
-    const defaultId = platform === 'github_pages'
-      ? preferences.defaultGithubPagesAccountId
-      : preferences.defaultNetlifyAccountId;
+    let defaultId: string | undefined;
+    switch (platform) {
+      case 'github_pages':
+        defaultId = preferences.defaultGithubPagesAccountId;
+        break;
+      case 'netlify':
+        defaultId = preferences.defaultNetlifyAccountId;
+        break;
+      case 'cloudflare_pages':
+        defaultId = preferences.defaultCloudflarePagesAccountId;
+        break;
+    }
 
     if (!defaultId) return undefined;
     return accounts.find(a => a.id === defaultId);
@@ -201,8 +213,23 @@ export function useDeployAccounts(): UseDeployAccountsReturn {
 
   const isDefaultAccount = useCallback((accountId: string): boolean => {
     return preferences.defaultGithubPagesAccountId === accountId ||
-           preferences.defaultNetlifyAccountId === accountId;
+           preferences.defaultNetlifyAccountId === accountId ||
+           preferences.defaultCloudflarePagesAccountId === accountId;
   }, [preferences]);
+
+  const checkUsage = useCallback(async (
+    accountId: string,
+  ): Promise<CheckAccountResult | null> => {
+    setError(null);
+    try {
+      const result = await deployAPI.checkAccountUsage(accountId);
+      return result;
+    } catch (err) {
+      const errorMsg = `Failed to check account usage: ${err}`;
+      setError(errorMsg);
+      return null;
+    }
+  }, []);
 
   // ========================================================================
   // Utility
@@ -246,5 +273,6 @@ export function useDeployAccounts(): UseDeployAccountsReturn {
     isDefaultAccount,
     clearError,
     hasAccountsForPlatform,
+    checkUsage,
   };
 }

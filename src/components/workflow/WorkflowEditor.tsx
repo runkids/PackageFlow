@@ -15,6 +15,7 @@ import { ExecutionHistoryPanel } from './ExecutionHistoryPanel';
 import { useWorkflow } from '../../hooks/useWorkflow';
 import { useTerminal, useExecutionListener } from '../../hooks/useTerminal';
 import { useExecutionHistoryContext } from '../../contexts/ExecutionHistoryContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog';
 import { SaveAsTemplateDialog } from './SaveAsTemplateDialog';
 import { WebhookSettingsDialog } from './WebhookSettingsDialog';
@@ -307,10 +308,8 @@ export function WorkflowEditor({ initialWorkflow, defaultCwd, onBack, onSaved }:
   const [isNewNodeDialogOpen, setIsNewNodeDialogOpen] = useState(false);
   const [insertPosition, setInsertPosition] = useState<number | undefined>(undefined);
   const [isTerminalExpanded, setIsTerminalExpanded] = useState(false);
-  const [terminalHeight, setTerminalHeight] = useState(() => {
-    const saved = localStorage.getItem('workflow-editor-terminal-height');
-    return saved ? parseInt(saved, 10) : 250;
-  });
+  const { terminalHeight, setTerminalHeight: saveTerminalHeight } = useSettings();
+  const [localTerminalHeight, setLocalTerminalHeight] = useState(terminalHeight);
   const [isResizing, setIsResizing] = useState(false);
   const [isSaveTemplateDialogOpen, setIsSaveTemplateDialogOpen] = useState(false);
   const [nodeToSaveAsTemplate, setNodeToSaveAsTemplate] = useState<string | null>(null);
@@ -575,35 +574,35 @@ export function WorkflowEditor({ initialWorkflow, defaultCwd, onBack, onSaved }:
     setIsTerminalExpanded((prev) => !prev);
   }, []);
 
+  // Sync local height with settings when settings load
+  useEffect(() => {
+    setLocalTerminalHeight(terminalHeight);
+  }, [terminalHeight]);
+
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
 
     const startY = e.clientY;
-    const startHeight = terminalHeight;
+    const startHeight = localTerminalHeight;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = startY - moveEvent.clientY;
       const newHeight = Math.min(Math.max(startHeight + deltaY, 100), 600);
-      setTerminalHeight(newHeight);
+      setLocalTerminalHeight(newHeight);
     };
 
     const handleMouseUp = () => {
       setIsResizing(false);
-      localStorage.setItem('workflow-editor-terminal-height', terminalHeight.toString());
+      // Save to persistent settings
+      saveTerminalHeight(localTerminalHeight);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [terminalHeight]);
-
-  useEffect(() => {
-    if (!isResizing) {
-      localStorage.setItem('workflow-editor-terminal-height', terminalHeight.toString());
-    }
-  }, [terminalHeight, isResizing]);
+  }, [localTerminalHeight, saveTerminalHeight]);
 
   const handleExportWorkflow = useCallback(async () => {
     if (!workflow) return;
@@ -816,7 +815,7 @@ export function WorkflowEditor({ initialWorkflow, defaultCwd, onBack, onSaved }:
             isTerminalExpanded ? 'h-auto' : 'h-12',
             isResizing && 'select-none'
           )}
-          style={isTerminalExpanded ? { height: terminalHeight } : undefined}
+          style={isTerminalExpanded ? { height: localTerminalHeight } : undefined}
         >
           {isTerminalExpanded && (
             <div

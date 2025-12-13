@@ -207,7 +207,7 @@ function App() {
 
   useEffect(() => {
     const cleanupOrphanedPorts = async () => {
-      const savedPorts = localStorage.getItem('devdash_running_ports');
+      const savedPorts = localStorage.getItem('PACKAGE_FLOW_RUNNING_PORTS');
       if (savedPorts) {
         try {
           const ports = JSON.parse(savedPorts) as number[];
@@ -218,7 +218,7 @@ function App() {
         } catch (err) {
           console.error('[App] Failed to cleanup orphaned ports:', err);
         }
-        localStorage.removeItem('devdash_running_ports');
+        localStorage.removeItem('PACKAGE_FLOW_RUNNING_PORTS');
       }
     };
 
@@ -229,9 +229,9 @@ function App() {
     const saveRunningPorts = () => {
       const info = runningProcessInfoRef.current;
       if (info.ports.length > 0) {
-        localStorage.setItem('devdash_running_ports', JSON.stringify(info.ports));
+        localStorage.setItem('PACKAGE_FLOW_RUNNING_PORTS', JSON.stringify(info.ports));
       } else {
-        localStorage.removeItem('devdash_running_ports');
+        localStorage.removeItem('PACKAGE_FLOW_RUNNING_PORTS');
       }
     };
 

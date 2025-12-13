@@ -1,6 +1,7 @@
 // DeploymentHistory Component
 // One-Click Deploy feature (015-one-click-deploy)
 
+import { useState } from 'react';
 import {
   Clock,
   Check,
@@ -10,20 +11,58 @@ import {
   GitCommit,
   AlertCircle,
   RefreshCw,
+  Trash2,
+  Settings,
+  GitBranch,
+  Globe,
+  Timer,
 } from 'lucide-react';
 import type { Deployment, DeploymentStatus } from '../../../types/deploy';
+import { deployAPI } from '../../../lib/tauri-api';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 
 interface DeploymentHistoryProps {
   deployments: Deployment[];
+  projectId: string;
   isLoading: boolean;
   onRefresh: () => void;
 }
 
 export function DeploymentHistory({
   deployments,
+  projectId,
   isLoading,
   onRefresh,
 }: DeploymentHistoryProps) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const handleDeleteItem = async (deploymentId: string) => {
+    setDeletingId(deploymentId);
+    try {
+      await deployAPI.deleteDeploymentHistoryItem(projectId, deploymentId);
+      onRefresh();
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleClearAll = () => {
+    setShowClearConfirm(true);
+  };
+
+  const handleConfirmClearAll = async () => {
+    setClearing(true);
+    try {
+      await deployAPI.clearDeploymentHistory(projectId);
+      onRefresh();
+    } finally {
+      setClearing(false);
+      setShowClearConfirm(false); // Close the dialog
+    }
+  };
+
   const getStatusIcon = (status: DeploymentStatus) => {
     switch (status) {
       case 'queued':
@@ -79,21 +118,59 @@ export function DeploymentHistory({
     });
   };
 
+  // Format deploy time from seconds
+  const formatDeployTime = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  };
+
+  // Get display duration - prefer deployTime if available
+  const getDisplayDuration = (deployment: Deployment) => {
+    if (deployment.deployTime) {
+      return formatDeployTime(deployment.deployTime);
+    }
+    return formatDuration(deployment.createdAt, deployment.completedAt);
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Clock className="h-4 w-4" />
           <span>Deployment History</span>
+          {deployments.length > 0 && (
+            <span className="rounded-full bg-muted px-1.5 text-xs">
+              {deployments.length}
+            </span>
+          )}
         </div>
-        <button
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {deployments.length > 0 && (
+            <button
+              onClick={handleClearAll}
+              disabled={clearing}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive disabled:opacity-50"
+              title="Clear all history"
+            >
+              {clearing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Trash2 className="h-3 w-3" />
+              )}
+              <span>Clear All</span>
+            </button>
+          )}
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {isLoading && deployments.length === 0 ? (
@@ -128,16 +205,35 @@ export function DeploymentHistory({
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatDate(deployment.createdAt)}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{formatDate(deployment.createdAt)}</span>
+                      {deployment.siteName && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Globe className="h-3 w-3" />
+                            {deployment.siteName}
+                          </span>
+                        </>
+                      )}
+                      {deployment.branch && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <GitBranch className="h-3 w-3" />
+                            {deployment.branch}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Duration & Link */}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>
-                    {formatDuration(deployment.createdAt, deployment.completedAt)}
+                {/* Duration & Links & Actions */}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1" title="Build time">
+                    <Timer className="h-3 w-3" />
+                    {getDisplayDuration(deployment)}
                   </span>
                   {deployment.url && (
                     <a
@@ -145,11 +241,34 @@ export function DeploymentHistory({
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-primary hover:underline"
+                      title="Open deployed site"
                     >
                       <ExternalLink className="h-3 w-3" />
-                      <span>Open</span>
                     </a>
                   )}
+                  {deployment.adminUrl && (
+                    <a
+                      href={deployment.adminUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                      title="Open Netlify Dashboard"
+                    >
+                      <Settings className="h-3 w-3" />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => handleDeleteItem(deployment.id)}
+                    disabled={deletingId === deployment.id}
+                    className="flex items-center gap-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
+                    title="Delete this deployment record"
+                  >
+                    {deletingId === deployment.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -178,6 +297,16 @@ export function DeploymentHistory({
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={showClearConfirm}
+        onOpenChange={setShowClearConfirm}
+        title="Clear All History"
+        description="Are you sure you want to clear all deployment history for this project? This action cannot be undone."
+        confirmText="Yes, Clear History"
+        variant="destructive"
+        onConfirm={handleConfirmClearAll}
+      />
     </div>
   );
 }

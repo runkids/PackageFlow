@@ -13,9 +13,11 @@ import {
   User,
   ExternalLink,
 } from 'lucide-react';
-import type { PlatformType, DeployAccount, DeployPreferences, RemoveAccountResult } from '../../../types/deploy';
+import { open as shellOpen } from '@tauri-apps/plugin-shell';
+import type { PlatformType, DeployAccount, DeployPreferences, RemoveAccountResult, CheckAccountResult } from '../../../types/deploy';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
-import { NetlifyIcon } from '../../ui/icons';
+import { NetlifyIcon, CloudflareIcon } from '../../ui/icons';
+import { CloudflareTokenDialog } from './CloudflareTokenDialog';
 
 // Platform configuration
 // Note: GitHub Pages doesn't require OAuth - it uses git credentials directly
@@ -26,6 +28,7 @@ const PLATFORMS: Array<{
   bgClass: string;
   description: string;
   dashboardUrl: string;
+  authType: 'oauth' | 'token';
 }> = [
   {
     id: 'netlify',
@@ -34,6 +37,16 @@ const PLATFORMS: Array<{
     bgClass: 'bg-[#0e1e25]',
     description: 'All-in-one platform for web development',
     dashboardUrl: 'https://app.netlify.com',
+    authType: 'oauth',
+  },
+  {
+    id: 'cloudflare_pages',
+    name: 'Cloudflare Pages',
+    icon: <CloudflareIcon className="h-5 w-5" />,
+    bgClass: 'bg-[#f38020]',
+    description: 'JAMstack platform with global edge network',
+    dashboardUrl: 'https://dash.cloudflare.com',
+    authType: 'token',
   },
 ];
 
@@ -49,6 +62,8 @@ interface AccountManagerProps {
   onRemoveAccount: (accountId: string, force?: boolean) => Promise<RemoveAccountResult>;
   onUpdateDisplayName: (accountId: string, displayName?: string) => Promise<void>;
   onSetDefaultAccount: (platform: PlatformType, accountId?: string) => Promise<void>;
+  onRefreshAccounts: () => Promise<void>;
+  onCheckUsage: (accountId: string) => Promise<CheckAccountResult | null>;
 }
 
 export function AccountManager({
@@ -61,6 +76,8 @@ export function AccountManager({
   onRemoveAccount,
   onUpdateDisplayName,
   onSetDefaultAccount,
+  onRefreshAccounts,
+  onCheckUsage,
 }: AccountManagerProps) {
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -68,13 +85,16 @@ export function AccountManager({
     accountId: string;
     affectedProjects: string[];
   } | null>(null);
+  // Cloudflare token dialog state
+  const [showCloudflareDialog, setShowCloudflareDialog] = useState(false);
 
   const getAccountsForPlatform = (platformId: PlatformType) =>
     accounts.filter(a => a.platform === platformId);
 
   const isDefaultAccount = (accountId: string) =>
     preferences.defaultGithubPagesAccountId === accountId ||
-    preferences.defaultNetlifyAccountId === accountId;
+    preferences.defaultNetlifyAccountId === accountId ||
+    preferences.defaultCloudflarePagesAccountId === accountId;
 
   const handleStartEdit = (account: DeployAccount) => {
     setEditingAccountId(account.id);
@@ -93,9 +113,8 @@ export function AccountManager({
   };
 
   const handleRemoveClick = async (accountId: string) => {
-    const result = await onRemoveAccount(accountId, false);
-    if (!result.success && result.affectedProjects.length > 0) {
-      // Show confirmation dialog with affected projects
+    const result = await onCheckUsage(accountId);
+    if (result) {
       setConfirmRemove({ accountId, affectedProjects: result.affectedProjects });
     }
   };
@@ -108,9 +127,18 @@ export function AccountManager({
   };
 
   const handleToggleDefault = async (account: DeployAccount) => {
-    const currentDefault = account.platform === 'github_pages'
-      ? preferences.defaultGithubPagesAccountId
-      : preferences.defaultNetlifyAccountId;
+    let currentDefault: string | undefined;
+    switch (account.platform) {
+      case 'github_pages':
+        currentDefault = preferences.defaultGithubPagesAccountId;
+        break;
+      case 'netlify':
+        currentDefault = preferences.defaultNetlifyAccountId;
+        break;
+      case 'cloudflare_pages':
+        currentDefault = preferences.defaultCloudflarePagesAccountId;
+        break;
+    }
 
     if (currentDefault === account.id) {
       // Clear default
@@ -119,6 +147,19 @@ export function AccountManager({
       // Set as default
       await onSetDefaultAccount(account.platform, account.id);
     }
+  };
+
+  const handleAddAccount = (platform: typeof PLATFORMS[number]) => {
+    if (platform.authType === 'token' && platform.id === 'cloudflare_pages') {
+      setShowCloudflareDialog(true);
+    } else {
+      onAddAccount(platform.id);
+    }
+  };
+
+  const handleCloudflareSuccess = async () => {
+    // Refresh accounts to show the newly added account
+    await onRefreshAccounts();
   };
 
   return (
@@ -154,7 +195,7 @@ export function AccountManager({
 
                 {canAddMore && (
                   <button
-                    onClick={() => onAddAccount(platform.id)}
+                    onClick={() => handleAddAccount(platform)}
                     disabled={isAddingThis || addingPlatform !== null}
                     className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50"
                   >
@@ -175,7 +216,7 @@ export function AccountManager({
                     No {platform.name} accounts connected
                   </p>
                   <button
-                    onClick={() => onAddAccount(platform.id)}
+                    onClick={() => handleAddAccount(platform)}
                     disabled={isAddingThis || addingPlatform !== null}
                     className="mt-2 text-sm text-primary hover:underline disabled:opacity-50"
                   >
@@ -290,15 +331,13 @@ export function AccountManager({
                               </button>
 
                               {/* Open Dashboard */}
-                              <a
-                                href={platform.dashboardUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                onClick={() => shellOpen(platform.dashboardUrl)}
                                 className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                                 title="Open dashboard"
                               >
                                 <ExternalLink className="h-4 w-4" />
-                              </a>
+                              </button>
 
                               {/* Remove */}
                               <button
@@ -332,9 +371,24 @@ export function AccountManager({
         onOpenChange={(open) => !open && setConfirmRemove(null)}
         variant="destructive"
         title="Remove Account"
-        description={`This account is currently used by ${confirmRemove?.affectedProjects.length ?? 0} project(s). Removing it will unbind all associated projects.`}
-        confirmText="Remove Anyway"
+        description={
+          (confirmRemove?.affectedProjects?.length ?? 0) > 0
+            ? `This account is currently used by ${confirmRemove?.affectedProjects.length} project(s). Removing it will unbind all associated projects.`
+            : 'Are you sure you want to remove this account? This action cannot be undone.'
+        }
+        confirmText={
+          (confirmRemove?.affectedProjects?.length ?? 0) > 0
+            ? 'Remove Anyway'
+            : 'Yes, Remove Account'
+        }
         onConfirm={handleConfirmRemove}
+      />
+
+      {/* Cloudflare Token Dialog */}
+      <CloudflareTokenDialog
+        isOpen={showCloudflareDialog}
+        onClose={() => setShowCloudflareDialog(false)}
+        onSuccess={handleCloudflareSuccess}
       />
     </div>
   );

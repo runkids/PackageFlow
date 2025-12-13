@@ -1,15 +1,87 @@
 // Deploy commands
 // One-Click Deploy feature (015-one-click-deploy)
 // Extended with Multi Deploy Accounts (016-multi-deploy-accounts)
+// Secure token storage with AES-256-GCM encryption
 
 use crate::models::deploy::{
-    ConnectedPlatform, DeployAccount, DeployPreferences, Deployment, DeploymentConfig,
-    DeploymentStatus, DeploymentStatusEvent, OAuthFlowResult, PlatformType, RemoveAccountResult,
+    CloudflareValidationResult, ConnectedPlatform, DeployAccount, DeployPreferences, Deployment,
+    DeploymentConfig, DeploymentStatus, DeploymentStatusEvent, GitHubWorkflowResult,
+    OAuthFlowResult, PlatformType, RemoveAccountResult,
 };
+use crate::services::crypto::{self, EncryptedData};
+use crate::utils::store::DEPLOYMENT_HISTORY_FILE;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
+
+/// Encrypted version of DeployAccount for secure storage
+/// The access_token is encrypted using AES-256-GCM with a master key stored in OS Keychain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EncryptedDeployAccount {
+    pub id: String,
+    pub platform: PlatformType,
+    pub platform_user_id: String,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    /// Encrypted access token (AES-256-GCM)
+    pub encrypted_token: Option<EncryptedData>,
+    pub connected_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+impl EncryptedDeployAccount {
+    /// Convert from DeployAccount, encrypting the token
+    fn from_account(account: &DeployAccount) -> Result<Self, String> {
+        let encrypted_token = if account.access_token.is_empty() {
+            None
+        } else {
+            Some(crypto::encrypt(&account.access_token).map_err(|e| e.to_string())?)
+        };
+
+        Ok(Self {
+            id: account.id.clone(),
+            platform: account.platform.clone(),
+            platform_user_id: account.platform_user_id.clone(),
+            username: account.username.clone(),
+            display_name: account.display_name.clone(),
+            avatar_url: account.avatar_url.clone(),
+            encrypted_token,
+            connected_at: account.connected_at,
+            expires_at: account.expires_at,
+        })
+    }
+
+    /// Convert to DeployAccount, decrypting the token
+    fn to_account(&self) -> Result<DeployAccount, String> {
+        let access_token = match &self.encrypted_token {
+            Some(encrypted) => crypto::decrypt(encrypted).map_err(|e| e.to_string())?,
+            None => String::new(),
+        };
+
+        Ok(DeployAccount {
+            id: self.id.clone(),
+            platform: self.platform.clone(),
+            platform_user_id: self.platform_user_id.clone(),
+            username: self.username.clone(),
+            display_name: self.display_name.clone(),
+            avatar_url: self.avatar_url.clone(),
+            access_token,
+            connected_at: self.connected_at,
+            expires_at: self.expires_at,
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct CheckAccountResult {
+    in_use: bool,
+    affected_projects: Vec<String>,
+}
 
 // OAuth client configuration
 //
@@ -131,22 +203,6 @@ const OAUTH_SUCCESS_HTML: &str = r##"<!DOCTYPE html>
 </head>
 <body>
     <div class="card">
-        <div class="logo">
-            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" style="stop-color:#4db6ac"/>
-                        <stop offset="100%" style="stop-color:#26a69a"/>
-                    </linearGradient>
-                </defs>
-                <rect width="100" height="100" rx="20" fill="url(#bg)"/>
-                <text x="50" y="42" font-family="-apple-system, sans-serif" font-size="32" font-weight="300" fill="rgba(255,255,255,0.7)" text-anchor="middle">&lt;/&gt;</text>
-                <rect x="22" y="55" width="24" height="22" rx="3" fill="white"/>
-                <rect x="26" y="62" width="10" height="2" rx="1" fill="#4db6ac"/>
-                <rect x="26" y="67" width="14" height="2" rx="1" fill="#4db6ac"/>
-                <rect x="54" y="55" width="24" height="22" rx="3" fill="white"/>
-            </svg>
-        </div>
         <div class="success-icon">
             <svg viewBox="0 0 24 24">
                 <path d="M5 13l4 4L19 7"/>
@@ -200,6 +256,9 @@ fn get_oauth_client_config(platform: &PlatformType) -> Result<OAuthClientConfig,
             })?;
             Ok(OAuthClientConfig::Netlify { client_id })
         }
+        PlatformType::CloudflarePages => {
+            Err("Cloudflare Pages uses API Token authentication, not OAuth.".to_string())
+        }
     }
 }
 
@@ -208,8 +267,14 @@ const NETLIFY_AUTH_URL: &str = "https://app.netlify.com/authorize";
 const NETLIFY_USER_URL: &str = "https://api.netlify.com/api/v1/user";
 const NETLIFY_SITES_URL: &str = "https://api.netlify.com/api/v1/sites";
 
+// Cloudflare API endpoints (Phase 3)
+const CLOUDFLARE_API_BASE: &str = "https://api.cloudflare.com/client/v4";
+const CLOUDFLARE_VERIFY_URL: &str = "https://api.cloudflare.com/client/v4/user/tokens/verify";
+
 // Store keys
-const STORE_CONNECTED_PLATFORMS: &str = "connected_platforms";
+const STORE_CONNECTED_PLATFORMS: &str = "connected_platforms"; // Very old: ConnectedPlatform format
+const STORE_ENCRYPTED_ACCOUNTS: &str = "encrypted_accounts";   // New: encrypted tokens (preferred)
+const STORE_DEPLOY_ACCOUNTS: &str = "deploy_accounts";         // Fallback: plain-text when encryption fails
 const STORE_DEPLOYMENT_CONFIGS: &str = "deployment_configs";
 const STORE_DEPLOYMENT_HISTORY: &str = "deployment_history";
 // T008: Deploy preferences store key (016-multi-deploy-accounts)
@@ -219,6 +284,19 @@ const STORE_DEPLOY_PREFERENCES: &str = "deploy_preferences";
 const MAX_HISTORY_PER_PROJECT: usize = 50;
 // T015: Maximum accounts per platform
 const MAX_ACCOUNTS_PER_PLATFORM: usize = 5;
+
+/// Deployment result with optional platform-specific metadata
+#[derive(Debug, Clone, Default)]
+struct DeployResult {
+    url: String,
+    deploy_id: String,
+    // Platform-specific fields (mainly Netlify)
+    admin_url: Option<String>,
+    deploy_time: Option<u64>,
+    site_name: Option<String>,
+    preview_url: Option<String>,
+    branch: Option<String>,
+}
 
 // ============================================================================
 // Helper Functions
@@ -256,22 +334,69 @@ fn save_platforms_to_store(app: &AppHandle, platforms: &[ConnectedPlatform]) -> 
 // T006, T007: Deploy Account Helper Functions (016-multi-deploy-accounts)
 // ============================================================================
 
-/// Get deploy accounts from store with automatic migration from legacy ConnectedPlatform
+/// Get deploy accounts from store with automatic migration from legacy formats
+/// Priority: 1. Encrypted accounts, 2. Plain-text DeployAccounts, 3. ConnectedPlatform (very old)
 fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String> {
     let store = get_store(app)?;
 
-    // First try to load as DeployAccount
+    // 1. Try to load encrypted accounts (preferred format)
+    if let Some(value) = store.get(STORE_ENCRYPTED_ACCOUNTS) {
+        if let Ok(encrypted_accounts) =
+            serde_json::from_value::<Vec<EncryptedDeployAccount>>(value.clone())
+        {
+            if !encrypted_accounts.is_empty() {
+                let accounts: Result<Vec<DeployAccount>, String> = encrypted_accounts
+                    .iter()
+                    .map(|e| e.to_account())
+                    .collect();
+
+                match accounts {
+                    Ok(accts) if !accts.is_empty() => {
+                        log::info!("Loaded {} encrypted accounts", accts.len());
+                        return Ok(accts);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to decrypt accounts: {}. Will try fallback formats.", e);
+                        // Clear corrupted encrypted data
+                        store.delete(STORE_ENCRYPTED_ACCOUNTS);
+                        let _ = store.save();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // 2. Try to load plain-text DeployAccounts (fallback)
+    if let Some(value) = store.get(STORE_DEPLOY_ACCOUNTS) {
+        if let Ok(accounts) = serde_json::from_value::<Vec<DeployAccount>>(value.clone()) {
+            if !accounts.is_empty() {
+                log::info!("Migrating {} plain-text accounts to encrypted storage", accounts.len());
+                // Migrate to encrypted storage
+                let _ = save_accounts_to_store(app, &accounts);
+                return Ok(accounts);
+            }
+        }
+    }
+
+    // 3. Try to load very old legacy format and migrate
     if let Some(value) = store.get(STORE_CONNECTED_PLATFORMS) {
         // Try parsing as Vec<DeployAccount> first
         if let Ok(accounts) = serde_json::from_value::<Vec<DeployAccount>>(value.clone()) {
             // Check if migration is needed (accounts without id field)
             let needs_migration = accounts.iter().any(|a| a.id.is_empty());
-            if !needs_migration {
+            if !needs_migration && !accounts.is_empty() {
+                // Migrate to encrypted storage
+                log::info!("Migrating {} plain-text accounts to encrypted storage", accounts.len());
+                let _ = save_accounts_to_store(app, &accounts);
+                // Clear legacy storage after successful migration
+                store.delete(STORE_CONNECTED_PLATFORMS);
+                let _ = store.save();
                 return Ok(accounts);
             }
         }
 
-        // Try parsing as legacy Vec<ConnectedPlatform> and migrate
+        // 3. Try parsing as legacy Vec<ConnectedPlatform> and migrate
         if let Ok(legacy_platforms) =
             serde_json::from_value::<Vec<ConnectedPlatform>>(value.clone())
         {
@@ -280,9 +405,13 @@ fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String
                 .map(DeployAccount::from_connected_platform)
                 .collect();
 
-            // Save migrated data back to store
+            // Save migrated data to encrypted store
             if !migrated.is_empty() {
+                log::info!("Migrating {} legacy ConnectedPlatform to encrypted storage", migrated.len());
                 let _ = save_accounts_to_store(app, &migrated);
+                // Clear legacy storage after successful migration
+                store.delete(STORE_CONNECTED_PLATFORMS);
+                let _ = store.save();
             }
             return Ok(migrated);
         }
@@ -291,13 +420,35 @@ fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String
     Ok(Vec::new())
 }
 
-/// Save deploy accounts to store
+/// Save deploy accounts to store with encryption
+/// Uses machine-derived key (no Keychain dependency) for stable encryption across restarts
 fn save_accounts_to_store(app: &AppHandle, accounts: &[DeployAccount]) -> Result<(), String> {
     let store = get_store(app)?;
-    store.set(
-        STORE_CONNECTED_PLATFORMS,
-        serde_json::to_value(accounts).map_err(|e| e.to_string())?,
-    );
+
+    // Encrypt all accounts using machine-derived key
+    let encrypted: Result<Vec<EncryptedDeployAccount>, String> = accounts
+        .iter()
+        .map(EncryptedDeployAccount::from_account)
+        .collect();
+
+    match encrypted {
+        Ok(encrypted_accounts) => {
+            // Success - save encrypted accounts
+            store.set(
+                STORE_ENCRYPTED_ACCOUNTS,
+                serde_json::to_value(&encrypted_accounts).map_err(|e| e.to_string())?,
+            );
+            // Clear any plain-text fallback
+            store.delete(STORE_DEPLOY_ACCOUNTS);
+            log::info!("Saved {} accounts with encryption", accounts.len());
+        }
+        Err(e) => {
+            // Encryption failed (shouldn't happen with machine-derived key)
+            log::error!("Encryption failed unexpectedly: {}", e);
+            return Err(format!("Failed to encrypt accounts: {}", e));
+        }
+    }
+
     store
         .save()
         .map_err(|e| format!("Failed to save store: {}", e))
@@ -370,6 +521,11 @@ fn get_deployment_access_token(
     app: &AppHandle,
     config: &DeploymentConfig,
 ) -> Result<String, String> {
+    // GitHub Pages doesn't require OAuth - it uses git credentials
+    if config.platform == PlatformType::GithubPages {
+        return Ok(String::new());
+    }
+
     let accounts = get_accounts_from_store(app)?;
     let prefs = get_preferences_from_store(app)?;
 
@@ -431,11 +587,27 @@ fn save_configs_to_store(
         .map_err(|e| format!("Failed to save store: {}", e))
 }
 
+/// Save Netlify site ID to config for reuse across deployments
+fn save_netlify_site_id(app: &AppHandle, project_id: &str, site_id: &str) -> Result<(), String> {
+    let mut configs = get_configs_from_store(app)?;
+    if let Some(config) = configs.get_mut(project_id) {
+        config.netlify_site_id = Some(site_id.to_string());
+        save_configs_to_store(app, &configs)?;
+    }
+    Ok(())
+}
+
+/// Get the history store instance (separate file for deployment history)
+fn get_history_store(app: &AppHandle) -> Result<Arc<tauri_plugin_store::Store<tauri::Wry>>, String> {
+    app.store(DEPLOYMENT_HISTORY_FILE)
+        .map_err(|e| format!("Failed to access deployment history store: {}", e))
+}
+
 /// Get deployment history from store
 fn get_history_from_store(
     app: &AppHandle,
 ) -> Result<std::collections::HashMap<String, Vec<Deployment>>, String> {
-    let store = get_store(app)?;
+    let store = get_history_store(app)?;
     let history: std::collections::HashMap<String, Vec<Deployment>> = store
         .get(STORE_DEPLOYMENT_HISTORY)
         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -448,14 +620,14 @@ fn save_history_to_store(
     app: &AppHandle,
     history: &std::collections::HashMap<String, Vec<Deployment>>,
 ) -> Result<(), String> {
-    let store = get_store(app)?;
+    let store = get_history_store(app)?;
     store.set(
         STORE_DEPLOYMENT_HISTORY,
         serde_json::to_value(history).map_err(|e| e.to_string())?,
     );
     store
         .save()
-        .map_err(|e| format!("Failed to save store: {}", e))
+        .map_err(|e| format!("Failed to save deployment history store: {}", e))
 }
 
 /// Save a single deployment to history
@@ -728,10 +900,16 @@ pub async fn start_deployment(
         if let Some(project_history) = history.get_mut(&config_clone.project_id) {
             if let Some(dep) = project_history.iter_mut().find(|d| d.id == deployment_id) {
                 match result {
-                    Ok((url, _)) => {
+                    Ok(deploy_result) => {
                         dep.status = DeploymentStatus::Ready;
-                        dep.url = Some(url.clone());
+                        dep.url = Some(deploy_result.url.clone());
                         dep.completed_at = Some(chrono::Utc::now());
+                        // Store Netlify-specific info
+                        dep.admin_url = deploy_result.admin_url;
+                        dep.deploy_time = deploy_result.deploy_time;
+                        dep.site_name = deploy_result.site_name;
+                        dep.preview_url = deploy_result.preview_url;
+                        dep.branch = deploy_result.branch;
 
                         // Emit success event
                         let _ = app_clone.emit(
@@ -739,7 +917,7 @@ pub async fn start_deployment(
                             DeploymentStatusEvent {
                                 deployment_id: deployment_id.clone(),
                                 status: DeploymentStatus::Ready,
-                                url: Some(url),
+                                url: Some(deploy_result.url),
                                 error_message: None,
                             },
                         );
@@ -777,7 +955,7 @@ async fn execute_deployment(
     access_token: &str,
     config: &DeploymentConfig,
     project_path: &str,
-) -> Result<(String, String), String> {
+) -> Result<DeployResult, String> {
     // Emit building status
     let _ = app.emit(
         "deployment:status",
@@ -808,8 +986,16 @@ async fn execute_deployment(
     }
 
     match config.platform {
-        PlatformType::GithubPages => deploy_to_github_pages(app, deployment_id, project_path, config, &full_build_path).await,
+        PlatformType::GithubPages => {
+            let (url, deploy_id) = deploy_to_github_pages(app, deployment_id, project_path, config, &full_build_path).await?;
+            Ok(DeployResult {
+                url,
+                deploy_id,
+                ..Default::default()
+            })
+        },
         PlatformType::Netlify => deploy_to_netlify(app, deployment_id, access_token, config, &full_build_path).await,
+        PlatformType::CloudflarePages => deploy_to_cloudflare_pages(app, deployment_id, access_token, config, &full_build_path).await,
     }
 }
 
@@ -899,6 +1085,17 @@ fn calculate_sha1(content: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(content);
     format!("{:x}", hasher.finalize())
+}
+
+/// Calculate SHA-256 hash of content and return first 32 hex characters
+/// This is used for Cloudflare Pages file manifest
+fn calculate_sha256_short(content: &[u8]) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(content);
+    let result = format!("{:x}", hasher.finalize());
+    // Cloudflare uses first 32 hex characters
+    result[..32].to_string()
 }
 
 /// Deploy to GitHub Pages by pushing to gh-pages branch
@@ -1040,29 +1237,53 @@ async fn deploy_to_github_pages(
         }
     }
 
-    // Git push
+    // Git push with timeout
     let push_args = if is_new_branch {
         vec!["push", "-u", "origin", "gh-pages"]
     } else {
         vec!["push", "origin", "gh-pages"]
     };
 
-    let push_output = Command::new("git")
+    println!("[Deploy] Starting git push to gh-pages branch...");
+
+    let push_future = Command::new("git")
         .args(&push_args)
         .current_dir(&temp_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to git push: {}", e))?;
+        // Disable interactive prompts
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o StrictHostKeyChecking=no")
+        .output();
+
+    // Add timeout of 60 seconds
+    let push_output = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        push_future
+    )
+    .await
+    .map_err(|_| {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        "Git push timed out after 60 seconds. Please check your git credentials and network connection.".to_string()
+    })?
+    .map_err(|e| {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        format!("Failed to git push: {}", e)
+    })?;
+
+    println!("[Deploy] Git push completed with status: {}", push_output.status);
 
     // Clean up temp directory
     let _ = std::fs::remove_dir_all(&temp_dir);
 
     if !push_output.status.success() {
         let stderr = String::from_utf8_lossy(&push_output.stderr);
-        return Err(format!("Git push failed: {}", stderr));
+        let stdout = String::from_utf8_lossy(&push_output.stdout);
+        println!("[Deploy] Git push failed - stdout: {}, stderr: {}", stdout, stderr);
+        return Err(format!("Git push failed: {}. Make sure you have push access and valid credentials.", stderr));
     }
+
+    println!("[Deploy] GitHub Pages deployment successful!");
 
     // Construct GitHub Pages URL
     let pages_url = format!("https://{}.github.io/{}/", username, repo);
@@ -1082,10 +1303,18 @@ fn parse_github_remote(url: &str) -> Result<(String, String), String> {
         }
     }
 
-    // Handle HTTPS format: https://github.com/username/repo.git
+    // Handle HTTPS format, potentially with embedded username
     if url.contains("github.com") {
-        let url = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
-        let path = url.path().trim_start_matches('/');
+        let mut clean_url = url.to_string();
+        if let Some(schema_end) = clean_url.find("://") {
+            if let Some(at_pos) = clean_url[(schema_end + 3)..].find('@') {
+                let end_of_user = (schema_end + 3) + at_pos + 1;
+                clean_url.replace_range((schema_end + 3)..end_of_user, "");
+            }
+        }
+
+        let parsed_url = url::Url::parse(&clean_url).map_err(|e| format!("Invalid URL: {}", e))?;
+        let path = parsed_url.path().trim_start_matches('/');
         let path = path.strip_suffix(".git").unwrap_or(path);
         let parts: Vec<&str> = path.split('/').collect();
         if parts.len() >= 2 {
@@ -1124,11 +1353,26 @@ async fn deploy_to_netlify(
     access_token: &str,
     config: &DeploymentConfig,
     build_path: &std::path::Path,
-) -> Result<(String, String), String> {
+) -> Result<DeployResult, String> {
     let client = reqwest::Client::new();
 
-    // Step 1: Get or create site
-    let site_id = get_or_create_netlify_site(&client, access_token, config).await?;
+    // Step 1: Get site_id - use saved one or create new
+    let site_id = if let Some(existing_id) = &config.netlify_site_id {
+        // Verify the site still exists
+        let check_url = format!("{}/{}", NETLIFY_SITES_URL, existing_id);
+        let check = client.get(&check_url).bearer_auth(access_token).send().await;
+        if check.map(|r| r.status().is_success()).unwrap_or(false) {
+            existing_id.clone()
+        } else {
+            // Site no longer exists, create new one
+            get_or_create_netlify_site(&client, access_token, config).await?
+        }
+    } else {
+        get_or_create_netlify_site(&client, access_token, config).await?
+    };
+
+    // Save site_id to config for future deployments
+    save_netlify_site_id(app, &config.project_id, &site_id)?;
 
     // Emit deploying status
     let _ = app.emit(
@@ -1193,10 +1437,10 @@ async fn deploy_to_netlify(
         }
     }
 
-    // Step 5: Poll for deployment status
-    let url = poll_netlify_deployment(app, deployment_id, access_token, &site_id, &netlify_deploy_id).await?;
+    // Step 5: Poll for deployment status and get extended info
+    let result = poll_netlify_deployment(app, deployment_id, access_token, &site_id, &netlify_deploy_id).await?;
 
-    Ok((url, netlify_deploy_id))
+    Ok(result)
 }
 
 /// Upload a single file to Netlify deploy
@@ -1232,6 +1476,13 @@ async fn get_or_create_netlify_site(
     access_token: &str,
     config: &DeploymentConfig,
 ) -> Result<String, String> {
+    // Use custom site name if provided, otherwise sanitize project_id
+    let site_name = config
+        .netlify_site_name
+        .as_ref()
+        .map(|n| sanitize_site_name(n))
+        .unwrap_or_else(|| sanitize_site_name(&config.project_id));
+
     // First, try to find an existing site with matching name
     let response = client
         .get(NETLIFY_SITES_URL)
@@ -1246,8 +1497,7 @@ async fn get_or_create_netlify_site(
             .await
             .map_err(|e| format!("Failed to parse Netlify sites: {}", e))?;
 
-        // Look for a site matching the project name
-        let site_name = sanitize_site_name(&config.project_id);
+        // Look for a site matching the site name
         if let Some(site) = sites.iter().find(|s| {
             s["name"].as_str().map(|n| n == site_name).unwrap_or(false)
         }) {
@@ -1259,7 +1509,7 @@ async fn get_or_create_netlify_site(
 
     // Create a new site if not found
     let create_payload = serde_json::json!({
-        "name": sanitize_site_name(&config.project_id),
+        "name": site_name,
     });
 
     let create_response = client
@@ -1296,14 +1546,14 @@ fn sanitize_site_name(name: &str) -> String {
         .to_string()
 }
 
-/// Poll Netlify deployment status and return the deployment URL
+/// Poll Netlify deployment status and return extended deployment info
 async fn poll_netlify_deployment(
     app: &AppHandle,
     deployment_id: &str,
     access_token: &str,
     site_id: &str,
     netlify_deploy_id: &str,
-) -> Result<String, String> {
+) -> Result<DeployResult, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/{}/deploys/{}", NETLIFY_SITES_URL, site_id, netlify_deploy_id);
 
@@ -1329,12 +1579,30 @@ async fn poll_netlify_deployment(
 
         match status["state"].as_str() {
             Some("ready") => {
+                // Extract all available info from the response
                 let deploy_url = status["ssl_url"]
                     .as_str()
                     .or_else(|| status["url"].as_str())
                     .unwrap_or("")
                     .to_string();
-                return Ok(deploy_url);
+
+                let admin_url = status["admin_url"].as_str().map(|s| s.to_string());
+                let deploy_time = status["deploy_time"].as_u64();
+                let site_name = status["name"].as_str().map(|s| s.to_string());
+                let preview_url = status["deploy_ssl_url"]
+                    .as_str()
+                    .or_else(|| status["deploy_url"].as_str())
+                    .map(|s| s.to_string());
+
+                return Ok(DeployResult {
+                    url: deploy_url,
+                    deploy_id: netlify_deploy_id.to_string(),
+                    admin_url,
+                    deploy_time,
+                    site_name,
+                    preview_url,
+                    branch: None, // Netlify doesn't return branch in deploy status
+                });
             }
             Some("error") => {
                 let error = status["error_message"]
@@ -1380,6 +1648,32 @@ pub async fn get_deployment_history(
 ) -> Result<Vec<Deployment>, String> {
     let history = get_history_from_store(&app)?;
     Ok(history.get(&project_id).cloned().unwrap_or_default())
+}
+
+/// Delete a single deployment from history
+#[tauri::command]
+pub async fn delete_deployment_history_item(
+    app: AppHandle,
+    project_id: String,
+    deployment_id: String,
+) -> Result<(), String> {
+    let mut history = get_history_from_store(&app)?;
+    if let Some(deployments) = history.get_mut(&project_id) {
+        deployments.retain(|d| d.id != deployment_id);
+        save_history_to_store(&app, &history)?;
+    }
+    Ok(())
+}
+
+/// Clear all deployment history for a project
+#[tauri::command]
+pub async fn clear_deployment_history(
+    app: AppHandle,
+    project_id: String,
+) -> Result<(), String> {
+    let mut history = get_history_from_store(&app)?;
+    history.remove(&project_id);
+    save_history_to_store(&app, &history)
 }
 
 /// Get deployment config for a project
@@ -1704,8 +1998,13 @@ pub async fn bind_project_account(
         framework_preset: None,
         env_variables: Vec::new(),
         root_directory: None,
+        install_command: None,
         build_command: None,
         output_directory: None,
+        netlify_site_id: None,
+        netlify_site_name: None,
+        cloudflare_account_id: None,
+        cloudflare_project_name: None,
     });
 
     // Verify platform matches
@@ -1787,4 +2086,1032 @@ pub async fn set_default_account(
     save_preferences_to_store(&app, &prefs)?;
 
     Ok(prefs)
+}
+
+// ============================================================================
+// GitHub Pages Workflow Generation (Phase 2)
+// ============================================================================
+
+/// GitHub Actions workflow template for GitHub Pages deployment
+const GITHUB_PAGES_WORKFLOW_TEMPLATE: &str = r#"# Deploy to GitHub Pages
+# Generated by PackageFlow - https://github.com/runkids/packageflow
+#
+# This workflow builds your site and deploys it to GitHub Pages.
+# Make sure GitHub Pages is enabled in your repository settings:
+# Settings → Pages → Source: "GitHub Actions"
+
+name: Deploy to GitHub Pages
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["{{BRANCH}}"]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # Build job
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+{{BUN_SETUP}}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: {{INSTALL_COMMAND}}
+
+      - name: Build
+        run: {{BUILD_COMMAND}}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "{{OUTPUT_DIRECTORY}}"
+
+  # Deployment job
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+"#;
+
+/// Detect package manager from project
+fn detect_package_manager(project_path: &str) -> (&'static str, &'static str) {
+    let path = std::path::Path::new(project_path);
+
+    // Check for lock files in order of preference
+    if path.join("pnpm-lock.yaml").exists() {
+        ("pnpm", "pnpm install --frozen-lockfile")
+    } else if path.join("yarn.lock").exists() {
+        ("yarn", "yarn install --frozen-lockfile")
+    } else if path.join("bun.lockb").exists() {
+        ("bun", "bun install --frozen-lockfile")
+    } else {
+        ("npm", "npm ci")
+    }
+}
+
+/// Detect default branch from git
+async fn detect_default_branch(project_path: &str) -> String {
+    use std::process::Stdio;
+    use tokio::process::Command;
+
+    // Try to get the default branch from remote
+    let output = Command::new("git")
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
+        .current_dir(project_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let branch = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .replace("refs/remotes/origin/", "");
+            if !branch.is_empty() {
+                return branch;
+            }
+        }
+    }
+
+    // Fall back to checking current branch
+    let output = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(project_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !branch.is_empty() {
+                return branch;
+            }
+        }
+    }
+
+    // Default to "main"
+    "main".to_string()
+}
+
+/// Generate GitHub Actions workflow content
+fn generate_workflow_content(
+    branch: &str,
+    bun_setup: &str,
+    install_command: &str,
+    build_command: &str,
+    output_directory: &str,
+) -> String {
+    GITHUB_PAGES_WORKFLOW_TEMPLATE
+        .replace("{{BRANCH}}", branch)
+        .replace("{{BUN_SETUP}}", bun_setup)
+        .replace("{{INSTALL_COMMAND}}", install_command)
+        .replace("{{BUILD_COMMAND}}", build_command)
+        .replace("{{OUTPUT_DIRECTORY}}", output_directory)
+}
+
+fn normalize_install_command(project_path: &str, install_command: &str) -> String {
+    use std::path::Path;
+
+    let trimmed = install_command.trim();
+    let lower = trimmed.to_lowercase();
+    let path = Path::new(project_path);
+
+    match lower.as_str() {
+        "npm" => {
+            let has_package_lock = path.join("package-lock.json").exists()
+                || path.join("npm-shrinkwrap.json").exists();
+            if has_package_lock {
+                "npm ci".to_string()
+            } else {
+                "npm install".to_string()
+            }
+        }
+        "pnpm" => {
+            if path.join("pnpm-lock.yaml").exists() {
+                "pnpm install --frozen-lockfile".to_string()
+            } else {
+                "pnpm install".to_string()
+            }
+        }
+        "yarn" => {
+            if path.join("yarn.lock").exists() {
+                "yarn install --frozen-lockfile".to_string()
+            } else {
+                "yarn install".to_string()
+            }
+        }
+        "bun" => {
+            if path.join("bun.lockb").exists() {
+                "bun install --frozen-lockfile".to_string()
+            } else {
+                "bun install".to_string()
+            }
+        }
+        _ => trimmed.to_string(),
+    }
+}
+
+fn needs_bun_setup(command: &str) -> bool {
+    let lower = command.trim_start().to_lowercase();
+    lower == "bun" || lower.starts_with("bun ")
+}
+
+#[tauri::command]
+pub async fn generate_github_actions_workflow(
+    project_path: String,
+    config: DeploymentConfig,
+) -> Result<GitHubWorkflowResult, String> {
+    use std::fs;
+    use std::process::Stdio;
+    use tokio::process::Command;
+
+    // --- Get GitHub repo info for URL generation ---
+    let (username_str, repo_str) = match Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(&project_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+    {
+        Ok(remote_output) if remote_output.status.success() => {
+            let remote_url = String::from_utf8_lossy(&remote_output.stdout).trim().to_string();
+            parse_github_remote(&remote_url).unwrap_or(("<username>".to_string(), "<repo>".to_string()))
+        }
+        _ => ("<username>".to_string(), "<repo>".to_string()),
+    };
+    let username = if username_str == "<username>" { None } else { Some(username_str.clone()) };
+    let repo = if repo_str == "<repo>" { None } else { Some(repo_str.clone()) };
+
+    // Detect package manager
+    let (package_manager, install_command) = detect_package_manager(&project_path);
+
+    // Detect default branch
+    let branch = detect_default_branch(&project_path).await;
+
+    // Determine build command and output directory
+    let build_command = config
+        .build_command
+        .as_deref()
+        .unwrap_or("npm run build")
+        .to_string();
+
+    let output_directory = config
+        .output_directory
+        .clone()
+        .unwrap_or_else(|| get_build_output_dir(config.framework_preset.as_deref()));
+
+    // Generate workflow content
+    let workflow_content = generate_workflow_content(
+        &branch,
+        package_manager,
+        install_command,
+        &build_command,
+        &output_directory,
+    );
+
+    // Create .github/workflows directory
+    let workflows_dir = std::path::Path::new(&project_path).join(".github").join("workflows");
+    fs::create_dir_all(&workflows_dir)
+        .map_err(|e| format!("Failed to create workflows directory: {}", e))?;
+
+    // Write workflow file
+    let workflow_path = workflows_dir.join("deploy-pages.yml");
+    fs::write(&workflow_path, &workflow_content)
+        .map_err(|e| format!("Failed to write workflow file: {}", e))?;
+
+    // Generate setup instructions
+    let setup_instructions = vec![
+        "1. Commit and push the generated workflow file to your repository.".to_string(),
+        format!("2. Go to your repository Settings → Pages"),
+        "3. Under 'Build and deployment', set Source to 'GitHub Actions' (not 'Deploy from a branch').".to_string(),
+        "   - Important: If GitHub Pages is not yet enabled or configured correctly, the deployment might fail with a 404 error when 'configure-pages' tries to access the site.".to_string(),
+        format!("4. Push changes to the '{}' branch to trigger a deployment", branch),
+        format!("5. Your site will be available at https://{}.github.io/{}/", username_str, repo_str),
+    ];
+
+    // Return relative path for display
+    let relative_path = format!(".github/workflows/deploy-pages.yml");
+
+    Ok(GitHubWorkflowResult {
+        success: true,
+        workflow_path: relative_path,
+        setup_instructions,
+        username,
+        repo,
+    })
+}
+
+// ============================================================================
+// Cloudflare Pages Integration (Phase 3)
+// ============================================================================
+
+/// Validate Cloudflare API token and get account info
+#[tauri::command]
+pub async fn validate_cloudflare_token(api_token: String) -> Result<CloudflareValidationResult, String> {
+    let client = reqwest::Client::new();
+
+    // First, verify the token is valid
+    let verify_response = client
+        .get(CLOUDFLARE_VERIFY_URL)
+        .bearer_auth(&api_token)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to verify token: {}", e))?;
+
+    if !verify_response.status().is_success() {
+        return Ok(CloudflareValidationResult {
+            valid: false,
+            account_id: None,
+            account_name: None,
+            error: Some("Invalid API token".to_string()),
+        });
+    }
+
+    let verify_data: serde_json::Value = verify_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse verify response: {}", e))?;
+
+    if !verify_data["success"].as_bool().unwrap_or(false) {
+        return Ok(CloudflareValidationResult {
+            valid: false,
+            account_id: None,
+            account_name: None,
+            error: Some("Token verification failed".to_string()),
+        });
+    }
+
+    // Get accounts list to find the account ID
+    let accounts_url = format!("{}/accounts", CLOUDFLARE_API_BASE);
+    let accounts_response = client
+        .get(&accounts_url)
+        .bearer_auth(&api_token)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get accounts: {}", e))?;
+
+    if !accounts_response.status().is_success() {
+        return Ok(CloudflareValidationResult {
+            valid: true, // Token is valid but can't get accounts
+            account_id: None,
+            account_name: None,
+            error: Some("Could not retrieve account information".to_string()),
+        });
+    }
+
+    let accounts_data: serde_json::Value = accounts_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse accounts response: {}", e))?;
+
+    // Get the first account (most users have one account)
+    if let Some(accounts) = accounts_data["result"].as_array() {
+        if let Some(account) = accounts.first() {
+            return Ok(CloudflareValidationResult {
+                valid: true,
+                account_id: account["id"].as_str().map(|s| s.to_string()),
+                account_name: account["name"].as_str().map(|s| s.to_string()),
+                error: None,
+            });
+        }
+    }
+
+    Ok(CloudflareValidationResult {
+        valid: true,
+        account_id: None,
+        account_name: None,
+        error: Some("No accounts found".to_string()),
+    })
+}
+
+/// Add Cloudflare Pages account via API token
+#[tauri::command]
+pub async fn add_cloudflare_account(
+    app: AppHandle,
+    api_token: String,
+    display_name: Option<String>,
+) -> Result<DeployAccount, String> {
+    // Validate token first
+    let validation = validate_cloudflare_token(api_token.clone()).await?;
+
+    if !validation.valid {
+        return Err(validation.error.unwrap_or_else(|| "Invalid token".to_string()));
+    }
+
+    let account_id = validation
+        .account_id
+        .ok_or("Could not retrieve Cloudflare account ID")?;
+    let account_name = validation.account_name.unwrap_or_else(|| "Cloudflare Account".to_string());
+
+    // Check for duplicate
+    let accounts = get_accounts_from_store(&app)?;
+    if accounts.iter().any(|a| {
+        a.platform == PlatformType::CloudflarePages && a.platform_user_id == account_id
+    }) {
+        return Err("This Cloudflare account is already connected".to_string());
+    }
+
+    // Create new account
+    let new_account = DeployAccount {
+        id: uuid::Uuid::new_v4().to_string(),
+        platform: PlatformType::CloudflarePages,
+        platform_user_id: account_id,
+        username: account_name,
+        display_name,
+        avatar_url: None,
+        access_token: api_token,
+        connected_at: chrono::Utc::now(),
+        expires_at: None, // API tokens don't expire
+    };
+
+    // Save account
+    let mut accounts = accounts;
+    accounts.push(new_account.clone());
+    save_accounts_to_store(&app, &accounts)?;
+
+    Ok(new_account.sanitized())
+}
+
+/// Deploy to Cloudflare Pages using Direct Upload API
+/// This follows the multi-step process:
+/// 1. Create/verify project exists
+/// 2. Get JWT upload token
+/// 3. Check which files are missing
+/// 4. Upload missing files
+/// 5. Upsert all hashes
+/// 6. Create deployment with manifest
+async fn deploy_to_cloudflare_pages(
+    app: &AppHandle,
+    deployment_id: &str,
+    access_token: &str,
+    config: &DeploymentConfig,
+    build_path: &std::path::Path,
+) -> Result<DeployResult, String> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+    let client = reqwest::Client::new();
+
+    // Get the internal account UUID from the config
+    let internal_account_id = config
+        .account_id
+        .as_ref()
+        .ok_or("No deploy account is bound to this project")?;
+
+    // Get all accounts from the store
+    let accounts = get_accounts_from_store(app)?;
+
+    // Find the correct account using the internal UUID
+    let account = find_account_by_id(&accounts, internal_account_id)
+        .ok_or("Bound deploy account not found")?;
+
+    // Get the REAL Cloudflare Account ID (the hex string)
+    let cf_account_id = &account.platform_user_id;
+
+    // Use configured project name or generate from project ID
+    let project_name = config
+        .cloudflare_project_name
+        .clone()
+        .unwrap_or_else(|| sanitize_site_name(&config.project_id));
+
+    // Emit deploying status
+    let _ = app.emit(
+        "deployment:status",
+        DeploymentStatusEvent {
+            deployment_id: deployment_id.to_string(),
+            status: DeploymentStatus::Deploying,
+            url: None,
+            error_message: None,
+        },
+    );
+
+    // Step 1: Create or verify project exists
+    let project_url = format!(
+        "{}/accounts/{}/pages/projects/{}",
+        CLOUDFLARE_API_BASE, cf_account_id, project_name
+    );
+
+    let project_check = client
+        .get(&project_url)
+        .bearer_auth(access_token)
+        .send()
+        .await;
+
+    // Create project if it doesn't exist
+    if let Ok(response) = project_check {
+        if response.status().as_u16() == 404 {
+            // Create new project
+            let create_url = format!(
+                "{}/accounts/{}/pages/projects",
+                CLOUDFLARE_API_BASE, cf_account_id
+            );
+
+            let create_payload = serde_json::json!({
+                "name": project_name,
+                "production_branch": "main"
+            });
+
+            let create_response = client
+                .post(&create_url)
+                .bearer_auth(access_token)
+                .json(&create_payload)
+                .send()
+                .await
+                .map_err(|e| format!("Failed to create Cloudflare Pages project: {}", e))?;
+
+            if !create_response.status().is_success() {
+                let error_text = create_response.text().await.unwrap_or_default();
+                return Err(format!("Failed to create Cloudflare Pages project: {}", error_text));
+            }
+        }
+    }
+
+    // Step 2: Collect files for upload and build manifest
+    let files = collect_files_for_upload(build_path)?;
+
+    // Build file data with hashes and content types
+    struct FileData {
+        path: String,
+        hash: String,
+        content: Vec<u8>,
+        content_type: String,
+    }
+
+    let mut file_data_list: Vec<FileData> = Vec::new();
+    let mut manifest = serde_json::Map::new();
+
+    for (path, content) in files {
+        // Calculate hash for each file (SHA-256, first 32 hex chars)
+        let hash = calculate_sha256_short(&content);
+        // Cloudflare expects paths with leading slash
+        let manifest_path = if path.starts_with('/') {
+            path.clone()
+        } else {
+            format!("/{}", path)
+        };
+
+        // Determine content type based on file extension
+        let content_type = get_mime_type(&path);
+
+        manifest.insert(manifest_path.clone(), serde_json::Value::String(hash.clone()));
+        file_data_list.push(FileData {
+            path: manifest_path,
+            hash,
+            content,
+            content_type,
+        });
+    }
+
+    log::info!("Cloudflare Pages: {} files to process", file_data_list.len());
+
+    // Step 3: Get JWT upload token
+    let jwt_url = format!(
+        "{}/accounts/{}/pages/projects/{}/upload-token",
+        CLOUDFLARE_API_BASE, cf_account_id, project_name
+    );
+
+    let jwt_response = client
+        .get(&jwt_url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get upload token: {}", e))?;
+
+    if !jwt_response.status().is_success() {
+        let error_text = jwt_response.text().await.unwrap_or_default();
+        return Err(format!("Failed to get upload token: {}", error_text));
+    }
+
+    let jwt_data: serde_json::Value = jwt_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse upload token response: {}", e))?;
+
+    let upload_jwt = jwt_data["result"]["jwt"]
+        .as_str()
+        .ok_or("No JWT in upload token response")?
+        .to_string();
+
+    log::info!("Cloudflare Pages: Got upload JWT token");
+
+    // Step 4: Check which files are missing
+    let all_hashes: Vec<String> = file_data_list.iter().map(|f| f.hash.clone()).collect();
+
+    let check_missing_url = format!("{}/pages/assets/check-missing", CLOUDFLARE_API_BASE);
+    let check_missing_response = client
+        .post(&check_missing_url)
+        .bearer_auth(&upload_jwt)
+        .json(&serde_json::json!({ "hashes": all_hashes }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to check missing files: {}", e))?;
+
+    if !check_missing_response.status().is_success() {
+        let error_text = check_missing_response.text().await.unwrap_or_default();
+        return Err(format!("Failed to check missing files: {}", error_text));
+    }
+
+    let missing_data: serde_json::Value = check_missing_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse check-missing response: {}", e))?;
+
+    let missing_hashes: std::collections::HashSet<String> = missing_data["result"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    log::info!("Cloudflare Pages: {} files missing, need to upload", missing_hashes.len());
+
+    // Step 5: Upload missing files
+    if !missing_hashes.is_empty() {
+        let upload_url = format!("{}/pages/assets/upload", CLOUDFLARE_API_BASE);
+
+        // Upload files in batches
+        let files_to_upload: Vec<&FileData> = file_data_list
+            .iter()
+            .filter(|f| missing_hashes.contains(&f.hash))
+            .collect();
+
+        // Upload in batches of 100 files
+        for chunk in files_to_upload.chunks(100) {
+            let upload_payload: Vec<serde_json::Value> = chunk
+                .iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "key": f.hash,
+                        "value": BASE64.encode(&f.content),
+                        "metadata": { "contentType": f.content_type },
+                        "base64": true
+                    })
+                })
+                .collect();
+
+            let upload_response = client
+                .post(&upload_url)
+                .bearer_auth(&upload_jwt)
+                .json(&upload_payload)
+                .send()
+                .await
+                .map_err(|e| format!("Failed to upload files: {}", e))?;
+
+            if !upload_response.status().is_success() {
+                let error_text = upload_response.text().await.unwrap_or_default();
+                return Err(format!("Failed to upload files: {}", error_text));
+            }
+
+            log::info!("Cloudflare Pages: Uploaded batch of {} files", chunk.len());
+        }
+    }
+
+    // Step 6: Upsert all hashes to register them
+    let upsert_url = format!("{}/pages/assets/upsert-hashes", CLOUDFLARE_API_BASE);
+    let upsert_response = client
+        .post(&upsert_url)
+        .bearer_auth(&upload_jwt)
+        .json(&serde_json::json!({ "hashes": all_hashes }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to upsert hashes: {}", e))?;
+
+    if !upsert_response.status().is_success() {
+        let error_text = upsert_response.text().await.unwrap_or_default();
+        return Err(format!("Failed to upsert hashes: {}", error_text));
+    }
+
+    log::info!("Cloudflare Pages: All hashes registered");
+
+    // Step 7: Create deployment with manifest
+    let deploy_url = format!(
+        "{}/accounts/{}/pages/projects/{}/deployments",
+        CLOUDFLARE_API_BASE, cf_account_id, project_name
+    );
+
+    // Build multipart form for deployment
+    let manifest_json = serde_json::Value::Object(manifest).to_string();
+    let form = reqwest::multipart::Form::new()
+        .text("manifest", manifest_json)
+        .text("branch", "main");
+
+    let deploy_response = client
+        .post(&deploy_url)
+        .bearer_auth(access_token)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Cloudflare deployment failed: {}", e))?;
+
+    if !deploy_response.status().is_success() {
+        let error_text = deploy_response.text().await.unwrap_or_default();
+        return Err(format!("Cloudflare deployment failed: {}", error_text));
+    }
+
+    let deploy_data: serde_json::Value = deploy_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse deployment response: {}", e))?;
+
+    // Extract deployment info
+    let cf_deploy_id = deploy_data["result"]["id"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    log::info!("Cloudflare Pages: Deployment created with ID {}", cf_deploy_id);
+
+    // Step 8: Poll for deployment completion
+    poll_cloudflare_deployment(
+        app,
+        deployment_id,
+        access_token,
+        cf_account_id,
+        &project_name,
+        &cf_deploy_id,
+    )
+    .await
+}
+
+/// Get MIME type from file extension
+fn get_mime_type(path: &str) -> String {
+    let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" | "mjs" => "application/javascript",
+        "json" => "application/json",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "eot" => "application/vnd.ms-fontobject",
+        "xml" => "application/xml",
+        "txt" => "text/plain",
+        "pdf" => "application/pdf",
+        "webp" => "image/webp",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "wasm" => "application/wasm",
+        _ => "application/octet-stream",
+    }.to_string()
+}
+
+/// Poll Cloudflare deployment status
+async fn poll_cloudflare_deployment(
+    app: &AppHandle,
+    deployment_id: &str,
+    access_token: &str,
+    account_id: &str,
+    project_name: &str,
+    cf_deploy_id: &str,
+) -> Result<DeployResult, String> {
+    let client = reqwest::Client::new();
+    let status_url = format!(
+        "{}/accounts/{}/pages/projects/{}/deployments/{}",
+        CLOUDFLARE_API_BASE, account_id, project_name, cf_deploy_id
+    );
+
+    for _ in 0..60 {
+        // Max 5 minutes polling
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        let response = client
+            .get(&status_url)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to check deployment status: {}", e))?;
+
+        if !response.status().is_success() {
+            continue;
+        }
+
+        let status: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse status response: {}", e))?;
+
+        let stage = status["result"]["latest_stage"]["name"]
+            .as_str()
+            .unwrap_or("");
+        let stage_status = status["result"]["latest_stage"]["status"]
+            .as_str()
+            .unwrap_or("");
+
+        match (stage, stage_status) {
+            (_, "success") if stage == "deploy" => {
+                // Deployment complete
+                let deploy_url = status["result"]["url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+
+                return Ok(DeployResult {
+                    url: deploy_url,
+                    deploy_id: cf_deploy_id.to_string(),
+                    site_name: Some(project_name.to_string()),
+                    preview_url: status["result"]["aliases"]
+                        .as_array()
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    ..Default::default()
+                });
+            }
+            (_, "failure") => {
+                let message = status["result"]["latest_stage"]["message"]
+                    .as_str()
+                    .unwrap_or("Deployment failed")
+                    .to_string();
+                return Err(message);
+            }
+            ("build", _) => {
+                let _ = app.emit(
+                    "deployment:status",
+                    DeploymentStatusEvent {
+                        deployment_id: deployment_id.to_string(),
+                        status: DeploymentStatus::Building,
+                        url: None,
+                        error_message: None,
+                    },
+                );
+            }
+            ("deploy", _) => {
+                let _ = app.emit(
+                    "deployment:status",
+                    DeploymentStatusEvent {
+                        deployment_id: deployment_id.to_string(),
+                        status: DeploymentStatus::Deploying,
+                        url: None,
+                        error_message: None,
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+
+    Err("Cloudflare deployment timed out".to_string())
+}
+
+
+/// Check if an account is in use by any projects
+#[tauri::command]
+pub async fn check_account_usage(
+    app: AppHandle,
+    account_id: String,
+) -> Result<CheckAccountResult, String> {
+    let affected_projects = find_projects_using_account(&app, &account_id)?;
+    Ok(CheckAccountResult {
+        in_use: !affected_projects.is_empty(),
+        affected_projects,
+    })
+}
+
+// ============================================================================
+// Secure Backup Commands (Token Encryption)
+// ============================================================================
+
+/// Result of backup export operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupExportResult {
+    /// Encrypted backup data (can be saved to file)
+    pub encrypted_data: EncryptedData,
+    /// Number of accounts included in backup
+    pub account_count: usize,
+}
+
+/// Result of backup import operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupImportResult {
+    pub success: bool,
+    /// Number of accounts restored
+    pub accounts_restored: usize,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+/// Export encrypted backup of deploy accounts
+/// The backup is encrypted with the user's password for portability
+#[tauri::command]
+pub async fn export_deploy_backup(
+    app: AppHandle,
+    password: String,
+) -> Result<BackupExportResult, String> {
+    if password.len() < 8 {
+        return Err("Password must be at least 8 characters".to_string());
+    }
+
+    // Get all accounts (with decrypted tokens)
+    let accounts = get_accounts_from_store(&app)?;
+    let account_count = accounts.len();
+
+    // Serialize accounts to JSON
+    let accounts_json = serde_json::to_string(&accounts)
+        .map_err(|e| format!("Failed to serialize accounts: {}", e))?;
+
+    // Encrypt the accounts data with user's password
+    let password_key = derive_password_key(&password);
+    let cipher = aes_gcm::Aes256Gcm::new_from_slice(&password_key)
+        .map_err(|e| format!("Failed to create cipher: {}", e))?;
+
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::Nonce;
+    use rand::RngCore;
+
+    let mut nonce_bytes = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let ciphertext = cipher
+        .encrypt(nonce, accounts_json.as_bytes())
+        .map_err(|e| format!("Encryption failed: {}", e))?;
+
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+    let backup_data = EncryptedData {
+        nonce: BASE64.encode(nonce_bytes),
+        ciphertext: BASE64.encode(ciphertext),
+    };
+
+    Ok(BackupExportResult {
+        encrypted_data: backup_data,
+        account_count,
+    })
+}
+
+/// Import encrypted backup of deploy accounts
+/// The backup is decrypted with the user's password
+#[tauri::command]
+pub async fn import_deploy_backup(
+    app: AppHandle,
+    encrypted_data: EncryptedData,
+    password: String,
+) -> Result<BackupImportResult, String> {
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::Nonce;
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+
+    // Derive key from password
+    let password_key = derive_password_key(&password);
+    let cipher = aes_gcm::Aes256Gcm::new_from_slice(&password_key)
+        .map_err(|_| "Invalid encryption setup".to_string())?;
+
+    // Decode and decrypt
+    let nonce_bytes = BASE64.decode(&encrypted_data.nonce)
+        .map_err(|_| "Invalid backup format".to_string())?;
+
+    if nonce_bytes.len() != 12 {
+        return Ok(BackupImportResult {
+            success: false,
+            accounts_restored: 0,
+            error: Some("Invalid backup format".to_string()),
+        });
+    }
+
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let ciphertext = BASE64.decode(&encrypted_data.ciphertext)
+        .map_err(|_| "Invalid backup format".to_string())?;
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext.as_ref())
+        .map_err(|_| "Wrong password or corrupted backup".to_string())?;
+
+    let accounts_json = String::from_utf8(plaintext)
+        .map_err(|_| "Corrupted backup data".to_string())?;
+
+    // Parse accounts
+    let imported_accounts: Vec<DeployAccount> = serde_json::from_str(&accounts_json)
+        .map_err(|e| format!("Failed to parse backup: {}", e))?;
+
+    let accounts_restored = imported_accounts.len();
+
+    // Merge with existing accounts (avoid duplicates based on platform + platform_user_id)
+    let mut existing = get_accounts_from_store(&app)?;
+
+    for imported in imported_accounts {
+        let is_duplicate = existing.iter().any(|a| {
+            a.platform == imported.platform && a.platform_user_id == imported.platform_user_id
+        });
+
+        if !is_duplicate {
+            existing.push(imported);
+        }
+    }
+
+    // Save merged accounts
+    save_accounts_to_store(&app, &existing)?;
+
+    Ok(BackupImportResult {
+        success: true,
+        accounts_restored,
+        error: None,
+    })
+}
+
+/// Derive encryption key from password (same algorithm as crypto.rs)
+fn derive_password_key(password: &str) -> [u8; 32] {
+    use sha2::Digest;
+
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(password.as_bytes());
+    hasher.update(b"packageflow-backup-salt-v1");
+
+    let mut result = hasher.finalize();
+
+    // Additional rounds for basic stretching
+    for _ in 0..10000 {
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&result);
+        hasher.update(password.as_bytes());
+        result = hasher.finalize();
+    }
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&result);
+    key
 }

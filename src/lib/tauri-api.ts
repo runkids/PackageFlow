@@ -1750,6 +1750,15 @@ import type {
   DeployAccount,
   DeployPreferences,
   RemoveAccountResult,
+  CheckAccountResult,
+  // GitHub Pages workflow generation
+  GitHubWorkflowResult,
+  // Cloudflare Pages
+  CloudflareValidationResult,
+  // Secure backup
+  EncryptedData,
+  BackupExportResult,
+  BackupImportResult,
 } from '../types/deploy';
 
 export type {
@@ -1766,6 +1775,14 @@ export type {
   DeployAccount,
   DeployPreferences,
   RemoveAccountResult,
+  // GitHub Pages workflow generation
+  GitHubWorkflowResult,
+  // Cloudflare Pages
+  CloudflareValidationResult,
+  // Secure backup
+  EncryptedData,
+  BackupExportResult,
+  BackupImportResult,
 };
 
 export const deployAPI = {
@@ -1785,6 +1802,12 @@ export const deployAPI = {
 
   getDeploymentHistory: (projectId: string): Promise<Deployment[]> =>
     invoke<Deployment[]>('get_deployment_history', { projectId }),
+
+  deleteDeploymentHistoryItem: (projectId: string, deploymentId: string): Promise<void> =>
+    invoke('delete_deployment_history_item', { projectId, deploymentId }),
+
+  clearDeploymentHistory: (projectId: string): Promise<void> =>
+    invoke('clear_deployment_history', { projectId }),
 
   getDeploymentConfig: (projectId: string): Promise<DeploymentConfig | null> =>
     invoke<DeploymentConfig | null>('get_deployment_config', { projectId }),
@@ -1844,6 +1867,42 @@ export const deployAPI = {
   /** Set default account for a platform */
   setDefaultAccount: (platform: PlatformType, accountId?: string): Promise<DeployPreferences> =>
     invoke<DeployPreferences>('set_default_account', { platform, accountId }),
+
+  // ============================================================================
+  // GitHub Pages Workflow Generation
+  // ============================================================================
+
+  /** Generate GitHub Actions workflow file for GitHub Pages deployment */
+  generateGitHubActionsWorkflow: (projectPath: string, config: DeploymentConfig): Promise<GitHubWorkflowResult> =>
+    invoke<GitHubWorkflowResult>('generate_github_actions_workflow', { projectPath, config }),
+
+  // ============================================================================
+  // Cloudflare Pages Integration
+  // ============================================================================
+
+  /** Validate Cloudflare API token and get account info */
+  validateCloudflareToken: (apiToken: string): Promise<CloudflareValidationResult> =>
+    invoke<CloudflareValidationResult>('validate_cloudflare_token', { apiToken }),
+
+  /** Add Cloudflare Pages account via API token */
+  addCloudflareAccount: (apiToken: string, displayName?: string): Promise<DeployAccount> =>
+    invoke<DeployAccount>('add_cloudflare_account', { apiToken, displayName }),
+
+  /** Check if a deploy account is in use */
+  checkAccountUsage: (accountId: string): Promise<CheckAccountResult> =>
+    invoke<CheckAccountResult>('check_account_usage', { accountId }),
+
+  // ============================================================================
+  // Secure Backup (Token Encryption)
+  // ============================================================================
+
+  /** Export encrypted backup of deploy accounts */
+  exportDeployBackup: (password: string): Promise<BackupExportResult> =>
+    invoke<BackupExportResult>('export_deploy_backup', { password }),
+
+  /** Import encrypted backup of deploy accounts */
+  importDeployBackup: (encryptedData: EncryptedData, password: string): Promise<BackupImportResult> =>
+    invoke<BackupImportResult>('import_deploy_backup', { encryptedData, password }),
 };
 
 export const deployEvents = {

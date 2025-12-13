@@ -1,16 +1,33 @@
 // DeployPanel Component
 // One-Click Deploy feature (015-one-click-deploy)
 // Main panel integrating deployment and history
-// Note: Deploy Accounts management moved to app Settings (016-multi-deploy-accounts)
+// Extended: GitHub Pages workflow generation (016-multi-deploy-accounts)
+// Note: Deploy Accounts management moved to app Settings
 
 import { useState, useEffect } from 'react';
 import { Rocket, Settings, History, AlertCircle } from 'lucide-react';
 import { useDeploy } from '../../../hooks/useDeploy';
 import { useDeployAccounts } from '../../../hooks/useDeployAccounts';
+import { deployAPI } from '../../../lib/tauri-api';
 import { DeployButton } from './DeployButton';
 import { DeploymentSettingsDialog } from './DeploymentSettingsDialog';
 import { DeploymentHistory } from './DeploymentHistory';
-import type { DeploymentConfig } from '../../../types/deploy';
+import { GitHubPagesSetupDialog } from './GitHubPagesSetupDialog';
+import type { DeploymentConfig, PlatformType, GitHubWorkflowResult } from '../../../types/deploy';
+
+// Format platform name for display
+const formatPlatformName = (platform: PlatformType): string => {
+  switch (platform) {
+    case 'github_pages':
+      return 'GitHub Pages';
+    case 'netlify':
+      return 'Netlify';
+    case 'cloudflare_pages':
+      return 'Cloudflare Pages';
+    default:
+      return platform;
+  }
+};
 
 interface DeployPanelProps {
   projectId: string;
@@ -21,6 +38,11 @@ interface DeployPanelProps {
 export function DeployPanel({ projectId, projectName, projectPath }: DeployPanelProps) {
   const [activeTab, setActiveTab] = useState<'deploy' | 'history'>('deploy');
   const [showSettings, setShowSettings] = useState(false);
+  // GitHub Pages workflow generation state
+  const [showSetupDialog, setShowSetupDialog] = useState(false);
+  const [isGeneratingWorkflow, setIsGeneratingWorkflow] = useState(false);
+  const [workflowResult, setWorkflowResult] = useState<GitHubWorkflowResult | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | undefined>(undefined);
 
   const {
     // State
@@ -34,7 +56,6 @@ export function DeployPanel({ projectId, projectName, projectPath }: DeployPanel
 
     // Actions
     deploy,
-    redeploy,
     loadHistory,
     loadConfig,
     saveConfig,
@@ -56,8 +77,21 @@ export function DeployPanel({ projectId, projectName, projectPath }: DeployPanel
     await deploy(_projectId, _projectPath, config);
   };
 
-  const handleRedeploy = async (_projectId: string, _projectPath: string) => {
-    await redeploy(_projectId, _projectPath);
+  // Handle GitHub Pages workflow generation
+  const handleGenerateWorkflow = async (_projectPath: string, config: DeploymentConfig) => {
+    setIsGeneratingWorkflow(true);
+    setWorkflowError(undefined);
+    setWorkflowResult(null);
+    setShowSetupDialog(true);
+
+    try {
+      const result = await deployAPI.generateGitHubActionsWorkflow(_projectPath, config);
+      setWorkflowResult(result);
+    } catch (err) {
+      setWorkflowError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsGeneratingWorkflow(false);
+    }
   };
 
   // GitHub Pages is always available, Netlify requires an account
@@ -79,11 +113,11 @@ export function DeployPanel({ projectId, projectName, projectPath }: DeployPanel
               projectPath={projectPath}
               projectName={projectName}
               deploymentConfig={deploymentConfig}
-              currentDeployment={currentDeployment}
               isDeploying={isDeploying}
+              isGeneratingWorkflow={isGeneratingWorkflow}
               isPlatformConnected={isPlatformConnected}
               onDeploy={handleDeploy}
-              onRedeploy={handleRedeploy}
+              onGenerateWorkflow={handleGenerateWorkflow}
               onOpenSettings={() => setShowSettings(true)}
             />
           )}
@@ -160,8 +194,8 @@ export function DeployPanel({ projectId, projectName, projectPath }: DeployPanel
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-medium capitalize">
-                              {deploymentConfig.platform}
+                            <span className="font-medium">
+                              {formatPlatformName(deploymentConfig.platform)}
                             </span>
                             <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
                               {deploymentConfig.environment === 'production'
@@ -248,6 +282,7 @@ export function DeployPanel({ projectId, projectName, projectPath }: DeployPanel
         {activeTab === 'history' && (
           <DeploymentHistory
             deployments={deploymentHistory}
+            projectId={projectId}
             isLoading={isLoadingHistory}
             onRefresh={() => loadHistory(projectId)}
           />
@@ -264,6 +299,20 @@ export function DeployPanel({ projectId, projectName, projectPath }: DeployPanel
         detectedFramework={detectedFramework}
         onSave={saveConfig}
         onDetectFramework={detectFramework}
+      />
+
+      {/* GitHub Pages Setup Dialog */}
+      <GitHubPagesSetupDialog
+        isOpen={showSetupDialog}
+        onClose={() => {
+          setShowSetupDialog(false);
+          // Clear state after closing
+          setWorkflowResult(null);
+          setWorkflowError(undefined);
+        }}
+        result={workflowResult}
+        error={workflowError}
+        isGenerating={isGeneratingWorkflow}
       />
     </div>
   );

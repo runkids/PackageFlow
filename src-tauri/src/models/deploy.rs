@@ -8,10 +8,11 @@ use uuid::Uuid;
 
 /// Supported deployment platforms
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum PlatformType {
     GithubPages,
     Netlify,
+    CloudflarePages,
 }
 
 impl std::fmt::Display for PlatformType {
@@ -19,6 +20,7 @@ impl std::fmt::Display for PlatformType {
         match self {
             PlatformType::GithubPages => write!(f, "github_pages"),
             PlatformType::Netlify => write!(f, "netlify"),
+            PlatformType::CloudflarePages => write!(f, "cloudflare_pages"),
         }
     }
 }
@@ -177,6 +179,8 @@ pub struct DeployPreferences {
     pub default_github_pages_account_id: Option<String>,
     /// Default Netlify account ID
     pub default_netlify_account_id: Option<String>,
+    /// Default Cloudflare Pages account ID
+    pub default_cloudflare_pages_account_id: Option<String>,
 }
 
 impl DeployPreferences {
@@ -185,6 +189,7 @@ impl DeployPreferences {
         match platform {
             PlatformType::GithubPages => self.default_github_pages_account_id.as_ref(),
             PlatformType::Netlify => self.default_netlify_account_id.as_ref(),
+            PlatformType::CloudflarePages => self.default_cloudflare_pages_account_id.as_ref(),
         }
     }
 
@@ -193,6 +198,7 @@ impl DeployPreferences {
         match platform {
             PlatformType::GithubPages => self.default_github_pages_account_id = account_id,
             PlatformType::Netlify => self.default_netlify_account_id = account_id,
+            PlatformType::CloudflarePages => self.default_cloudflare_pages_account_id = account_id,
         }
     }
 
@@ -203,6 +209,9 @@ impl DeployPreferences {
         }
         if self.default_netlify_account_id.as_deref() == Some(account_id) {
             self.default_netlify_account_id = None;
+        }
+        if self.default_cloudflare_pages_account_id.as_deref() == Some(account_id) {
+            self.default_cloudflare_pages_account_id = None;
         }
     }
 }
@@ -232,11 +241,25 @@ pub struct DeploymentConfig {
     #[serde(default)]
     pub env_variables: Vec<EnvVariable>,
     pub root_directory: Option<String>,
+    /// Custom install command (used for GitHub Actions workflow generation)
+    pub install_command: Option<String>,
     /// Custom build command (e.g., "pnpm build", "yarn build:prod")
     /// If not set, defaults to "npm run build"
     pub build_command: Option<String>,
     /// Custom output directory (overrides framework preset detection)
     pub output_directory: Option<String>,
+    /// Netlify site ID (for reusing existing site across deployments)
+    #[serde(default)]
+    pub netlify_site_id: Option<String>,
+    /// Custom Netlify site name (e.g., "my-awesome-app" for my-awesome-app.netlify.app)
+    #[serde(default)]
+    pub netlify_site_name: Option<String>,
+    /// Cloudflare account ID (required for Cloudflare Pages)
+    #[serde(default)]
+    pub cloudflare_account_id: Option<String>,
+    /// Cloudflare project name (e.g., "my-app" for my-app.pages.dev)
+    #[serde(default)]
+    pub cloudflare_project_name: Option<String>,
 }
 
 /// Single deployment record
@@ -253,6 +276,22 @@ pub struct Deployment {
     pub commit_hash: Option<String>,
     pub commit_message: Option<String>,
     pub error_message: Option<String>,
+    // Netlify-specific fields
+    /// Netlify admin dashboard URL
+    #[serde(default)]
+    pub admin_url: Option<String>,
+    /// Build time in seconds
+    #[serde(default)]
+    pub deploy_time: Option<u64>,
+    /// Branch that was deployed
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// Site name (e.g., "my-app" for my-app.netlify.app)
+    #[serde(default)]
+    pub site_name: Option<String>,
+    /// Unique preview URL for this specific deploy
+    #[serde(default)]
+    pub preview_url: Option<String>,
 }
 
 impl Deployment {
@@ -268,6 +307,11 @@ impl Deployment {
             commit_hash: None,
             commit_message: None,
             error_message: None,
+            admin_url: None,
+            deploy_time: None,
+            branch: None,
+            site_name: None,
+            preview_url: None,
         }
     }
 }
@@ -289,4 +333,31 @@ pub struct DeploymentStatusEvent {
     pub status: DeploymentStatus,
     pub url: Option<String>,
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubWorkflowResult {
+    /// Whether the workflow file was generated successfully
+    pub success: bool,
+    /// Path to the generated workflow file
+    pub workflow_path: String,
+    /// Setup instructions for the user
+    pub setup_instructions: Vec<String>,
+    /// GitHub username, if detected
+    pub username: Option<String>,
+    /// GitHub repository name, if detected
+    pub repo: Option<String>,
+}
+
+/// Result from Cloudflare API token validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudflareValidationResult {
+    pub valid: bool,
+    /// Cloudflare account ID
+    pub account_id: Option<String>,
+    /// Account name from Cloudflare
+    pub account_name: Option<String>,
+    pub error: Option<String>,
 }

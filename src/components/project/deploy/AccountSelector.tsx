@@ -2,58 +2,50 @@
 // Multi Deploy Accounts feature (016-multi-deploy-accounts)
 // T033: Dropdown component for selecting deploy account
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { ChevronDown, User, Star, Check, Loader2 } from 'lucide-react';
-import { deployAPI } from '../../../lib/tauri-api';
 import type { PlatformType, DeployAccount, DeployPreferences } from '../../../types/deploy';
 
 interface AccountSelectorProps {
   platform: PlatformType;
+  accounts: DeployAccount[];
+  preferences: DeployPreferences;
   selectedAccountId?: string;
   onAccountChange: (accountId: string | undefined) => void;
   disabled?: boolean;
+  isLoading?: boolean;
   className?: string;
 }
 
 export function AccountSelector({
   platform,
+  accounts,
+  preferences,
   selectedAccountId,
   onAccountChange,
   disabled = false,
+  isLoading = false,
   className = '',
 }: AccountSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [accounts, setAccounts] = useState<DeployAccount[]>([]);
-  const [preferences, setPreferences] = useState<DeployPreferences>({});
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Load accounts for the platform
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        const [accountsData, prefsData] = await Promise.all([
-          deployAPI.getAccountsByPlatform(platform),
-          deployAPI.getDeployPreferences(),
-        ]);
-        setAccounts(accountsData);
-        setPreferences(prefsData);
-      } catch (err) {
-        console.error('Failed to load accounts:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadData();
-  }, [platform]);
+  const selectedAccount = useMemo(() => accounts.find(a => a.id === selectedAccountId), [accounts, selectedAccountId]);
 
-  const selectedAccount = accounts.find(a => a.id === selectedAccountId);
-  const defaultAccountId = platform === 'github_pages'
-    ? preferences.defaultGithubPagesAccountId
-    : preferences.defaultNetlifyAccountId;
+  const getDefaultAccountId = (): string | undefined => {
+    switch (platform) {
+      case 'github_pages':
+        return preferences.defaultGithubPagesAccountId;
+      case 'netlify':
+        return preferences.defaultNetlifyAccountId;
+      case 'cloudflare_pages':
+        return preferences.defaultCloudflarePagesAccountId;
+      default:
+        return undefined;
+    }
+  };
+  const defaultAccountId = getDefaultAccountId();
 
   const getDisplayLabel = () => {
-    if (isLoading) return 'Loading...';
     if (!selectedAccount) {
       if (accounts.length === 0) return 'No accounts connected';
       return 'Select account...';
@@ -66,7 +58,16 @@ export function AccountSelector({
     setIsOpen(false);
   };
 
-  if (accounts.length === 0 && !isLoading) {
+  if (isLoading) {
+    return (
+      <div className={`flex items-center gap-2 text-sm text-muted-foreground ${className}`}>
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>Loading accounts...</span>
+      </div>
+    );
+  }
+
+  if (accounts.length === 0) {
     return (
       <div className={`flex items-center gap-2 text-sm text-muted-foreground ${className}`}>
         <User className="h-4 w-4" />

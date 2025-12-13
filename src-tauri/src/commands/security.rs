@@ -13,7 +13,10 @@ use crate::models::{
     WorkspaceVulnSummary,
 };
 use crate::utils::path_resolver;
-use crate::utils::store::STORE_FILE;
+use crate::utils::store::{SECURITY_SCANS_FILE, STORE_FILE};
+
+/// Store key for security scans data
+const SECURITY_SCANS_KEY: &str = "securityScans";
 
 // ============================================================================
 // Response Types
@@ -1316,10 +1319,10 @@ pub async fn get_security_scan(
     app: AppHandle,
     project_id: String,
 ) -> Result<GetSecurityScanResponse, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(SECURITY_SCANS_FILE).map_err(|e| e.to_string())?;
 
     let security_scans: std::collections::HashMap<String, SecurityScanData> = store
-        .get("securityScans")
+        .get(SECURITY_SCANS_KEY)
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
@@ -1335,17 +1338,18 @@ pub async fn get_security_scan(
 /// Get all security scans summary
 #[tauri::command]
 pub async fn get_all_security_scans(app: AppHandle) -> Result<GetAllSecurityScansResponse, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let main_store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let scan_store = app.store(SECURITY_SCANS_FILE).map_err(|e| e.to_string())?;
 
-    // Get projects
-    let projects: Vec<crate::models::Project> = store
+    // Get projects from main store
+    let projects: Vec<crate::models::Project> = main_store
         .get("projects")
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
-    // Get security scans
-    let security_scans: std::collections::HashMap<String, SecurityScanData> = store
-        .get("securityScans")
+    // Get security scans from scan store
+    let security_scans: std::collections::HashMap<String, SecurityScanData> = scan_store
+        .get(SECURITY_SCANS_KEY)
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
@@ -1390,11 +1394,11 @@ pub async fn save_security_scan(
     project_id: String,
     result: VulnScanResult,
 ) -> Result<SaveSecurityScanResponse, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(SECURITY_SCANS_FILE).map_err(|e| e.to_string())?;
 
     // Get existing security scans
     let mut security_scans: std::collections::HashMap<String, SecurityScanData> = store
-        .get("securityScans")
+        .get(SECURITY_SCANS_KEY)
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
@@ -1409,7 +1413,7 @@ pub async fn save_security_scan(
 
     // Save back to store
     let value = serde_json::to_value(&security_scans).map_err(|e| e.to_string())?;
-    store.set("securityScans", value);
+    store.set(SECURITY_SCANS_KEY, value);
     store.save().map_err(|e| e.to_string())?;
 
     Ok(SaveSecurityScanResponse {
@@ -1426,10 +1430,10 @@ pub async fn snooze_scan_reminder(
     project_id: String,
     snooze_duration_hours: u32,
 ) -> Result<SaveSecurityScanResponse, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(SECURITY_SCANS_FILE).map_err(|e| e.to_string())?;
 
     let mut security_scans: std::collections::HashMap<String, SecurityScanData> = store
-        .get("securityScans")
+        .get(SECURITY_SCANS_KEY)
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
@@ -1446,7 +1450,7 @@ pub async fn snooze_scan_reminder(
 
     // Save back to store
     let value = serde_json::to_value(&security_scans).map_err(|e| e.to_string())?;
-    store.set("securityScans", value);
+    store.set(SECURITY_SCANS_KEY, value);
     store.save().map_err(|e| e.to_string())?;
 
     Ok(SaveSecurityScanResponse {
@@ -1462,10 +1466,10 @@ pub async fn dismiss_scan_reminder(
     app: AppHandle,
     project_id: String,
 ) -> Result<SaveSecurityScanResponse, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(SECURITY_SCANS_FILE).map_err(|e| e.to_string())?;
 
     let mut security_scans: std::collections::HashMap<String, SecurityScanData> = store
-        .get("securityScans")
+        .get(SECURITY_SCANS_KEY)
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
@@ -1476,7 +1480,7 @@ pub async fn dismiss_scan_reminder(
 
     // Save back to store
     let value = serde_json::to_value(&security_scans).map_err(|e| e.to_string())?;
-    store.set("securityScans", value);
+    store.set(SECURITY_SCANS_KEY, value);
     store.save().map_err(|e| e.to_string())?;
 
     Ok(SaveSecurityScanResponse {

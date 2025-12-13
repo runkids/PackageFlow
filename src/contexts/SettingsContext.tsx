@@ -26,6 +26,10 @@ interface SettingsContextValue {
   pathDisplayFormat: PathDisplayFormat;
   setPathDisplayFormat: (format: PathDisplayFormat) => Promise<void>;
 
+  // Terminal height
+  terminalHeight: number;
+  setTerminalHeight: (height: number) => Promise<void>;
+
   // Helper function
   formatPath: (path: string) => string;
 
@@ -35,6 +39,7 @@ interface SettingsContextValue {
 
 const DEFAULT_SETTINGS: Partial<AppSettings> = {
   pathDisplayFormat: 'short',
+  terminalHeight: 200,
 };
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -89,6 +94,32 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     [settings]
   );
 
+  const terminalHeight = useMemo<number>(() => {
+    return settings?.terminalHeight ?? DEFAULT_SETTINGS.terminalHeight ?? 200;
+  }, [settings?.terminalHeight]);
+
+  const setTerminalHeight = useCallback(
+    async (height: number) => {
+      if (!settings) return;
+
+      const newSettings: AppSettings = {
+        ...settings,
+        terminalHeight: height,
+      };
+
+      try {
+        await settingsAPI.saveSettings(newSettings);
+        setSettings(newSettings);
+        setError(null);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        throw e;
+      }
+    },
+    [settings]
+  );
+
   // Path formatting function that respects the setting
   const formatPath = useCallback(
     (path: string): string => {
@@ -106,6 +137,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     error,
     pathDisplayFormat,
     setPathDisplayFormat,
+    terminalHeight,
+    setTerminalHeight,
     formatPath,
     reloadSettings: loadSettings,
   };
