@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown, Rocket, Search } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
-import { ipaAPI, apkAPI, worktreeAPI, type Worktree, type EditorDefinition } from '../../lib/tauri-api';
+import { ipaAPI, apkAPI, worktreeAPI, tauriEvents, type Worktree, type EditorDefinition } from '../../lib/tauri-api';
 import { TerminalSelector } from './TerminalSelector';
 import { ScriptCards } from './ScriptCards';
 import { MonorepoView } from './MonorepoView';
@@ -273,6 +273,30 @@ export function ProjectExplorer({
     loadWorktrees();
     loadEditors();
   }, [loadWorktrees, loadEditors]);
+
+  // Listen for package.json changes to refresh version badge and other info
+  useEffect(() => {
+    if (!project?.path) return;
+
+    let unlistenFn: (() => void) | null = null;
+
+    tauriEvents.onPackageJsonChanged((payload) => {
+      // Check if the changed file belongs to current project or its worktrees
+      if (
+        payload.project_path === project.path ||
+        allWorktrees.some((w) => w.path === payload.project_path)
+      ) {
+        // Trigger version badge refresh
+        setVersionRefreshKey(prev => prev + 1);
+      }
+    }).then((unlisten) => {
+      unlistenFn = unlisten;
+    });
+
+    return () => {
+      unlistenFn?.();
+    };
+  }, [project?.path, allWorktrees]);
 
   // Global keyboard shortcut for Quick Switcher (Cmd+K / Ctrl+K)
   useEffect(() => {
