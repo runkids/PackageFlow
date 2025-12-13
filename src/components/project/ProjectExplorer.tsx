@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown } from 'lucide-react';
+import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown, Rocket } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
 import { ipaAPI, apkAPI, worktreeAPI, type Worktree, type EditorDefinition } from '../../lib/tauri-api';
@@ -15,11 +15,14 @@ import { DependencyGraphView } from './monorepo/DependencyGraphView';
 import { ProjectWorkflows } from './ProjectWorkflows';
 import { MobileBuildsInspector } from './MobileBuildsInspector';
 import { WorktreeQuickSwitcher } from './WorktreeQuickSwitcher';
+import { WorktreeSessionDialog } from './WorktreeSessionDialog';
 import { SecurityTab } from '../security/SecurityTab';
+import { useWorktreeSessions } from '../../hooks/useWorktreeSessions';
 import type { MonorepoToolType } from '../../types/monorepo';
 import { SecurityReminderBanner } from '../security/SecurityReminderBanner';
 import { VersionBadge } from './VersionBadge';
 import { GitPanel } from './git';
+import { DeployPanel } from './deploy';
 import { useWorktreeScripts } from '../../hooks/useWorktreeScripts';
 import { useWorktreeStatuses } from '../../hooks/useWorktreeStatuses';
 import { useSecurity } from '../../hooks/useSecurity';
@@ -27,7 +30,7 @@ import { useScanReminder } from '../../hooks/useScanReminder';
 import { FRAMEWORK_CONFIG, UI_FRAMEWORK_CONFIG, shouldShowUIFrameworkBadge } from '../../lib/framework-detector';
 import { useSettings } from '../../contexts/SettingsContext';
 
-type TabType = 'scripts' | 'workspaces' | 'workflows' | 'builds' | 'security' | 'git';
+type TabType = 'scripts' | 'workspaces' | 'workflows' | 'builds' | 'security' | 'git' | 'deploy';
 
 interface ProjectExplorerProps {
   project: Project | null;
@@ -42,7 +45,10 @@ interface ProjectExplorerProps {
   selectedWorktreePath?: string;
   /** Callback when worktree selection changes */
   onWorktreeChange?: (worktreePath: string) => void;
+  /** Callback when worktrees list changes (add/remove from Git panel) */
+  onWorktreesChange?: () => void;
   onRefresh: () => void;
+  onUpdateProject?: (updater: (project: Project) => Project) => Promise<void>;
   onExecuteScript: (scriptName: string, cwd?: string) => void;
   onCancelScript: (scriptName: string, cwd?: string) => void;
   onExecuteCommand: (command: string) => void;
@@ -83,7 +89,9 @@ export function ProjectExplorer({
   worktrees: externalWorktrees,
   selectedWorktreePath,
   onWorktreeChange,
+  onWorktreesChange,
   onRefresh,
+  onUpdateProject,
   onExecuteScript,
   onCancelScript,
   onExecuteCommand,
@@ -105,6 +113,9 @@ export function ProjectExplorer({
   const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [availableEditors, setAvailableEditors] = useState<EditorDefinition[]>([]);
+
+  // Session Dialog state (for Quick Switcher integration)
+  const [sessionDialogWorktreePath, setSessionDialogWorktreePath] = useState<string | null>(null);
 
   // Dependency Graph state (008-monorepo-support)
   const [showDependencyGraph, setShowDependencyGraph] = useState(false);
@@ -150,6 +161,12 @@ export function ProjectExplorer({
     projectPath: project?.path || '',
     autoRefresh: true,
     refreshInterval: 30000,
+  });
+
+  // Worktree sessions hook (for Quick Switcher integration)
+  const { sessions: worktreeSessions } = useWorktreeSessions({
+    project: project as Project,
+    onUpdateProject: onUpdateProject || (async () => {}),
   });
 
   // Security audit hook
@@ -431,6 +448,15 @@ export function ProjectExplorer({
             )}
           </div>
           <div className="flex items-center gap-2 ml-4">
+            {/* Quick Switcher Button */}
+            <button
+              onClick={() => setIsQuickSwitcherOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/50 hover:bg-muted border border-border transition-colors group"
+              title="Quick Switcher (⌘K)"
+            >
+              <span className="text-xs text-muted-foreground group-hover:text-foreground">⌘K</span>
+            </button>
+
             {/* Open in Editor Dropdown */}
             <div className="relative">
               <button
@@ -620,6 +646,17 @@ export function ProjectExplorer({
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('deploy')}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'deploy'
+                ? 'text-blue-400 border-blue-400'
+                : 'text-muted-foreground border-transparent hover:text-foreground'
+            }`}
+          >
+            <Rocket className="w-4 h-4" />
+            Deploy
+          </button>
         </div>
       </div>
 
@@ -712,11 +749,18 @@ export function ProjectExplorer({
         )}
         {activeTab === 'git' && (
           <GitPanel
-            projectPath={project.path}
-            projectName={project.name}
-            packageManager={project.packageManager}
-            onSwitchWorkingDirectory={onWorktreeChange}
+            project={project}
+            onExecuteScript={onExecuteScript}
+            onUpdateProject={onUpdateProject}
+            onWorktreesChange={onWorktreesChange}
             className="h-full -m-4 -mb-4"
+          />
+        )}
+        {activeTab === 'deploy' && (
+          <DeployPanel
+            projectId={project.id}
+            projectName={project.name}
+            projectPath={project.path}
           />
         )}
       </div>
@@ -728,9 +772,29 @@ export function ProjectExplorer({
         worktrees={worktrees}
         availableEditors={availableEditors}
         scripts={categorizedScripts}
+        sessions={worktreeSessions}
         onOpenInEditor={handleQuickSwitcherOpenInEditor}
         onRunScript={handleQuickSwitcherRunScript}
+        onOpenSession={(worktreePath) => {
+          setIsQuickSwitcherOpen(false);
+          setSessionDialogWorktreePath(worktreePath);
+        }}
       />
+
+      {/* Session Dialog (for Quick Switcher) */}
+      {project && (
+        <WorktreeSessionDialog
+          isOpen={sessionDialogWorktreePath !== null}
+          onClose={() => setSessionDialogWorktreePath(null)}
+          project={project}
+          worktrees={allWorktrees}
+          availableEditors={availableEditors}
+          workflows={[]}
+          worktreePath={sessionDialogWorktreePath}
+          onUpdateProject={onUpdateProject || (async () => {})}
+          onExecuteScript={onExecuteScript}
+        />
+      )}
 
       {/* Dependency Graph Modal (008-monorepo-support) */}
       {showDependencyGraph && project && selectedMonorepoTool && (

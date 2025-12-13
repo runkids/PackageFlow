@@ -4,9 +4,10 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { GitBranch, Plus, Trash2, FolderOpen, AlertCircle, RefreshCw, Code2, ChevronDown, Layers, List, LayoutGrid, ArrowDownToLine, Loader2, Archive, Search, X } from 'lucide-react';
-import { worktreeAPI, scriptAPI, gitAPI, type Worktree, type EditorDefinition } from '../../../lib/tauri-api';
-import type { PackageManager } from '../../../types';
+import { GitBranch, Plus, Trash2, FolderOpen, AlertCircle, RefreshCw, Code2, ChevronDown, Layers, List, LayoutGrid, ArrowDownToLine, Loader2, Archive, Search, X, Bookmark } from 'lucide-react';
+import { worktreeAPI, scriptAPI, gitAPI, settingsAPI, type Worktree, type EditorDefinition } from '../../../lib/tauri-api';
+import type { Project } from '../../../types/project';
+import type { Workflow } from '../../../types/workflow';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
 import { Checkbox } from '../../ui/Checkbox';
@@ -14,6 +15,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { Dropdown, DropdownItem, DropdownSection, DropdownSeparator } from '../../ui/Dropdown';
 import { Select, type SelectOption } from '../../ui/Select';
 import { useWorktreeStatuses } from '../../../hooks/useWorktreeStatuses';
+import { useWorktreeSessions } from '../../../hooks/useWorktreeSessions';
 import { WorktreeStatusBadge } from '../WorktreeStatusBadge';
 import { WorktreeTemplateDialog } from '../WorktreeTemplateDialog';
 import { WorktreeCard } from '../WorktreeCard';
@@ -21,6 +23,8 @@ import { WorktreeHealthCheck } from '../WorktreeHealthCheck';
 import { WorktreeBatchActions } from '../WorktreeBatchActions';
 import { WorktreeSyncDialog } from '../WorktreeSyncDialog';
 import { WorktreeStashDialog } from '../WorktreeStashDialog';
+import { WorktreeSessionDialog } from '../WorktreeSessionDialog';
+import { WorktreeSessionListDialog } from '../WorktreeSessionListDialog';
 import { cn } from '../../../lib/utils';
 import { useSettings } from '../../../contexts/SettingsContext';
 import path from 'path-browserify';
@@ -29,14 +33,14 @@ type ViewMode = 'list' | 'grid';
 const VIEW_MODE_STORAGE_KEY = 'packageflow-worktree-view-mode';
 
 interface GitWorktreeListProps {
-  /** Project path for Git operations */
-  projectPath: string;
-  /** Project name for display */
-  projectName?: string;
-  /** Package manager for worktree scripts */
-  packageManager?: PackageManager;
+  project: Project;
+  workflows?: Workflow[];
+  onUpdateProject?: (updater: (project: Project) => Project) => Promise<void>;
+  onExecuteScript?: (scriptName: string, cwd?: string) => void;
   /** Callback when switching working directory (for worktrees) */
   onSwitchWorkingDirectory?: (path: string) => void;
+  /** Callback when worktrees list changes (add/remove) */
+  onWorktreesChange?: () => void;
 }
 
 // Sub-component: Branch Select for worktree creation
@@ -64,11 +68,17 @@ function BranchSelect({ branches, value, onValueChange }: BranchSelectProps) {
 }
 
 export function GitWorktreeList({
-  projectPath,
-  projectName,
-  packageManager = 'npm',
+  project,
+  workflows = [],
+  onUpdateProject,
+  onExecuteScript,
   onSwitchWorkingDirectory,
+  onWorktreesChange,
 }: GitWorktreeListProps) {
+  const projectPath = project.path;
+  const projectName = project.name;
+  const packageManager = project.packageManager;
+
   // Settings for path display format
   const { formatPath } = useSettings();
 
@@ -107,6 +117,35 @@ export function GitWorktreeList({
   // Search/filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+
+  const sessionsEnabled = !!onUpdateProject;
+  const [sessionDialogWorktreePath, setSessionDialogWorktreePath] = useState<string | null>(null);
+  const [showSessionListDialog, setShowSessionListDialog] = useState(false);
+
+  // Workflows state for session dialog - load if workflows prop is empty
+  const [loadedWorkflows, setLoadedWorkflows] = useState<Workflow[]>([]);
+  const effectiveWorkflows = workflows.length > 0 ? workflows : loadedWorkflows;
+
+  // Load workflows on mount if not provided via props
+  useEffect(() => {
+    if (workflows.length === 0 && sessionsEnabled) {
+      settingsAPI.loadWorkflows().then(setLoadedWorkflows).catch(console.error);
+    }
+  }, [workflows.length, sessionsEnabled]);
+
+  const { sessions: worktreeSessions, syncBrokenSessions } = useWorktreeSessions({
+    project,
+    onUpdateProject: onUpdateProject ?? (async () => {}),
+  });
+
+  const sessionsByWorktreePath = useMemo(() => {
+    return new Map(worktreeSessions.map((s) => [s.worktreePath, s]));
+  }, [worktreeSessions]);
+
+  useEffect(() => {
+    if (!sessionsEnabled) return;
+    void syncBrokenSessions(worktrees);
+  }, [sessionsEnabled, syncBrokenSessions, worktrees]);
 
   // Worktree statuses hook
   const {
@@ -237,9 +276,14 @@ export function GitWorktreeList({
     return worktrees.filter((w) => {
       const branchMatch = w.branch?.toLowerCase().includes(query);
       const pathMatch = w.path.toLowerCase().includes(query);
-      return branchMatch || pathMatch;
+      const session = sessionsByWorktreePath.get(w.path);
+      const sessionMatch = session
+        ? session.title.toLowerCase().includes(query) ||
+          session.tags.some((t) => t.toLowerCase().includes(query))
+        : false;
+      return branchMatch || pathMatch || sessionMatch;
     });
-  }, [worktrees, searchQuery]);
+  }, [worktrees, searchQuery, sessionsByWorktreePath]);
 
   const loadWorktrees = useCallback(async (showLoading = false) => {
     if (showLoading) {
@@ -306,6 +350,8 @@ export function GitWorktreeList({
       if (result.success) {
         setShowAddDialog(false);
         await loadWorktrees();
+        // Notify parent component to refresh worktrees list
+        onWorktreesChange?.();
         // Check gitignore after successful creation
         await checkAndPromptGitignore(fullWorktreePath);
       } else {
@@ -413,6 +459,8 @@ export function GitWorktreeList({
         setShowForceDeleteDialog(false);
         setWorktreeToRemove(null);
         await loadWorktrees();
+        // Notify parent component to refresh worktrees list
+        onWorktreesChange?.();
       } else if (result.error === 'HAS_UNCOMMITTED_CHANGES') {
         setShowForceDeleteDialog(true);
       } else {
@@ -499,6 +547,20 @@ export function GitWorktreeList({
               title="Search worktrees"
             >
               <Search className="w-4 h-4 text-muted-foreground" />
+            </button>
+          )}
+          {sessionsEnabled && (
+            <button
+              onClick={() => setShowSessionListDialog(true)}
+              className="flex items-center gap-1.5 p-1.5 rounded hover:bg-accent transition-colors"
+              title="Sessions"
+            >
+              <Bookmark className="w-4 h-4 text-muted-foreground" />
+              {worktreeSessions.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {worktreeSessions.length}
+                </span>
+              )}
             </button>
           )}
           {/* View mode toggle */}
@@ -622,26 +684,48 @@ export function GitWorktreeList({
           role="list"
           aria-label="Worktrees"
         >
-          {filteredWorktrees.map((worktree) => (
-            <WorktreeCard
-              key={worktree.path}
-              worktree={worktree}
-              status={worktreeStatuses[worktree.path]}
-              isLoadingStatus={isLoadingStatuses}
-              availableEditors={availableEditors}
-              onOpenInEditor={handleOpenInEditor}
-              onSwitchWorkingDirectory={onSwitchWorkingDirectory}
-              onRemove={handleOpenRemoveDialog}
-              onPull={handlePull}
-              onSync={handleSync}
-              onStash={handleStash}
-            />
-          ))}
+          {filteredWorktrees.map((worktree) => {
+            const session = sessionsByWorktreePath.get(worktree.path);
+            return (
+              <WorktreeCard
+                key={worktree.path}
+                worktree={worktree}
+                status={worktreeStatuses[worktree.path]}
+                sessionStatus={session?.status}
+                isLoadingStatus={isLoadingStatuses}
+                availableEditors={availableEditors}
+                onOpenInEditor={handleOpenInEditor}
+                onOpenSession={
+                  sessionsEnabled ? (wt) => setSessionDialogWorktreePath(wt.path) : undefined
+                }
+                onSwitchWorkingDirectory={onSwitchWorkingDirectory}
+                onRemove={handleOpenRemoveDialog}
+                onPull={handlePull}
+                onSync={handleSync}
+                onStash={handleStash}
+              />
+            );
+          })}
         </div>
       ) : (
         /* List View */
         <div className="space-y-1">
-          {filteredWorktrees.map((worktree) => (
+          {filteredWorktrees.map((worktree) => {
+            const session = sessionsByWorktreePath.get(worktree.path);
+            const sessionBadgeClass = session?.status === 'broken'
+              ? 'bg-red-500/20 text-red-400'
+              : session?.status === 'archived'
+                ? 'bg-muted text-muted-foreground'
+                : 'bg-green-500/20 text-green-400';
+            const sessionIconClass = session?.status === 'broken'
+              ? 'text-red-400'
+              : session?.status === 'archived'
+                ? 'text-muted-foreground'
+                : session
+                  ? 'text-green-400'
+                  : 'text-muted-foreground';
+
+            return (
               <div
                 key={worktree.path}
                 className={`group flex items-center gap-2 py-2 px-2 rounded transition-colors ${
@@ -671,6 +755,15 @@ export function GitWorktreeList({
                         Detached
                       </span>
                     )}
+                    {session && (
+                      <span className={cn('px-1.5 py-0.5 text-xs rounded', sessionBadgeClass)}>
+                        {session.status === 'active'
+                          ? 'Session'
+                          : session.status === 'archived'
+                            ? 'Session (Archived)'
+                            : 'Session (Broken)'}
+                      </span>
+                    )}
                   </div>
                   <p
                     className="text-xs text-muted-foreground mt-0.5 truncate"
@@ -692,6 +785,15 @@ export function GitWorktreeList({
 
                 {/* Actions */}
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {sessionsEnabled && (
+                    <button
+                      onClick={() => setSessionDialogWorktreePath(worktree.path)}
+                      className="p-1.5 rounded hover:bg-accent"
+                      title={session ? 'Open session' : 'Create session'}
+                    >
+                      <Bookmark className={cn('w-3.5 h-3.5', sessionIconClass)} />
+                    </button>
+                  )}
                   {/* Open in Editor */}
                   {availableEditors.length > 0 && (
                     availableEditors.length === 1 ? (
@@ -782,8 +884,33 @@ export function GitWorktreeList({
                   )}
                 </div>
               </div>
-          ))}
+            );
+          })}
         </div>
+      )}
+
+      {sessionsEnabled && (
+        <WorktreeSessionListDialog
+          isOpen={showSessionListDialog}
+          onClose={() => setShowSessionListDialog(false)}
+          sessions={worktreeSessions}
+          onOpenSession={(path) => setSessionDialogWorktreePath(path)}
+        />
+      )}
+
+      {sessionsEnabled && sessionDialogWorktreePath && onUpdateProject && (
+        <WorktreeSessionDialog
+          isOpen={!!sessionDialogWorktreePath}
+          onClose={() => setSessionDialogWorktreePath(null)}
+          project={project}
+          worktrees={worktrees}
+          availableEditors={availableEditors}
+          workflows={effectiveWorkflows}
+          worktreePath={sessionDialogWorktreePath}
+          onUpdateProject={onUpdateProject}
+          onExecuteScript={onExecuteScript}
+          onSwitchWorkingDirectory={onSwitchWorkingDirectory}
+        />
       )}
 
       {/* Add worktree dialog */}
@@ -905,6 +1032,8 @@ export function GitWorktreeList({
         branches={branches}
         onWorktreeCreated={async (worktreePath) => {
           await loadWorktrees();
+          // Notify parent component to refresh worktrees list
+          onWorktreesChange?.();
           if (worktreePath) {
             await checkAndPromptGitignore(worktreePath);
           }

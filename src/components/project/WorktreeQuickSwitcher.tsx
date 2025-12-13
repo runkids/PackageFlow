@@ -5,10 +5,11 @@
  */
 
 import { useMemo } from 'react';
-import { GitBranch, Code2, Play, FolderOpen } from 'lucide-react';
+import { GitBranch, Code2, Play, FolderOpen, Bookmark } from 'lucide-react';
 import { QuickSwitcher, type QuickSwitcherItem } from '../ui/QuickSwitcher';
 import type { Worktree, EditorDefinition } from '../../lib/tauri-api';
 import type { CategorizedScript } from '../../types';
+import type { WorktreeSession } from '../../types/worktree-sessions';
 import { useSettings } from '../../contexts/SettingsContext';
 
 interface WorktreeQuickSwitcherProps {
@@ -17,9 +18,11 @@ interface WorktreeQuickSwitcherProps {
   worktrees: Worktree[];
   availableEditors: EditorDefinition[];
   scripts: CategorizedScript[];
+  sessions?: WorktreeSession[];
   onOpenInEditor: (worktreePath: string, editorId?: string) => void;
   onRunScript: (worktreePath: string, scriptName: string) => void;
   onSwitchDirectory?: (worktreePath: string) => void;
+  onOpenSession?: (worktreePath: string) => void;
 }
 
 export function WorktreeQuickSwitcher({
@@ -28,9 +31,11 @@ export function WorktreeQuickSwitcher({
   worktrees,
   availableEditors,
   scripts,
+  sessions = [],
   onOpenInEditor,
   onRunScript,
   onSwitchDirectory,
+  onOpenSession,
 }: WorktreeQuickSwitcherProps) {
   // Settings for path display format
   const { formatPath } = useSettings();
@@ -38,6 +43,31 @@ export function WorktreeQuickSwitcher({
   // Build quick switcher items
   const items = useMemo((): QuickSwitcherItem[] => {
     const result: QuickSwitcherItem[] = [];
+
+    // Add Sessions category first (for quick access)
+    if (onOpenSession && sessions.length > 0) {
+      for (const session of sessions) {
+        const worktree = worktrees.find(w => w.path === session.worktreePath);
+        const statusLabel = session.status === 'broken' ? ' (Broken)' : session.status === 'archived' ? ' (Archived)' : '';
+        const displayTitle = (session.title || session.branchSnapshot || 'Session') + statusLabel;
+
+        result.push({
+          id: `session-${session.id}`,
+          title: displayTitle,
+          subtitle: worktree ? formatPath(worktree.path) : session.worktreePath,
+          icon: <Bookmark className={`w-4 h-4 ${session.status === 'broken' ? 'text-red-400' : session.status === 'archived' ? 'text-muted-foreground' : 'text-blue-400'}`} />,
+          category: 'Sessions',
+          keywords: [
+            session.title,
+            session.branchSnapshot || '',
+            session.goal || '',
+            ...session.tags,
+            'session', 'notes',
+          ].filter(Boolean),
+          onSelect: () => onOpenSession(session.worktreePath),
+        });
+      }
+    }
 
     for (const worktree of worktrees) {
       const worktreeName = worktree.branch || worktree.path.split('/').pop() || 'worktree';
@@ -106,7 +136,7 @@ export function WorktreeQuickSwitcher({
     }
 
     return result;
-  }, [worktrees, availableEditors, scripts, onOpenInEditor, onRunScript, onSwitchDirectory, formatPath]);
+  }, [worktrees, availableEditors, scripts, sessions, onOpenInEditor, onRunScript, onSwitchDirectory, onOpenSession, formatPath]);
 
   return (
     <QuickSwitcher
@@ -114,7 +144,7 @@ export function WorktreeQuickSwitcher({
       onClose={onClose}
       items={items}
       title="Quick Switcher"
-      placeholder="Search worktrees, actions..."
+      placeholder="Search worktrees, sessions, actions..."
       emptyMessage="No matching worktrees or actions"
     />
   );

@@ -6,6 +6,7 @@
 import * as React from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { isTopModal, registerModal, unregisterModal } from './modalStack';
 
 interface DialogProps {
   open: boolean;
@@ -14,23 +15,27 @@ interface DialogProps {
 }
 
 const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
+  const modalId = React.useId();
+
   React.useEffect(() => {
+    if (!open) return;
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onOpenChange(false);
-      }
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      onOpenChange(false);
     };
 
-    if (open) {
-      document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden';
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [open, onOpenChange]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalId, onOpenChange, open]);
 
   if (!open) return null;
 

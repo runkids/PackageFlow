@@ -66,6 +66,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
 interface DropdownItemProps {
   onClick: () => void;
   disabled?: boolean;
+  destructive?: boolean;
   children: React.ReactNode;
   icon?: React.ReactNode;
   className?: string;
@@ -74,6 +75,7 @@ interface DropdownItemProps {
 export const DropdownItem: React.FC<DropdownItemProps> = ({
   onClick,
   disabled,
+  destructive,
   children,
   icon,
   className,
@@ -84,7 +86,9 @@ export const DropdownItem: React.FC<DropdownItemProps> = ({
         'w-full px-3 py-2 text-sm text-left flex items-center gap-2 transition-colors',
         disabled
           ? 'text-muted-foreground cursor-not-allowed'
-          : 'text-foreground hover:bg-accent',
+          : destructive
+            ? 'text-red-400 hover:bg-red-500/10'
+            : 'text-foreground hover:bg-accent',
         className
       )}
       onClick={disabled ? undefined : onClick}

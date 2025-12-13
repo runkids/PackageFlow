@@ -17,6 +17,7 @@
 import * as React from 'react';
 import { AlertTriangle, Trash2, Info, AlertCircle, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { isTopModal, registerModal, unregisterModal } from './modalStack';
 
 type DialogVariant = 'destructive' | 'warning' | 'info' | 'default';
 
@@ -89,6 +90,7 @@ export function ConfirmDialog({
   onConfirm,
   isLoading = false,
 }: ConfirmDialogProps) {
+  const modalId = React.useId();
   const confirmButtonRef = React.useRef<HTMLButtonElement>(null);
   const cancelButtonRef = React.useRef<HTMLButtonElement>(null);
 
@@ -96,18 +98,24 @@ export function ConfirmDialog({
   const IconComponent = config.icon;
 
   React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open) return;
+    if (!open) return;
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId, open]);
 
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onOpenChange(false);
-      }
+  React.useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      onOpenChange(false);
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onOpenChange]);
+  }, [modalId, onOpenChange, open]);
 
   React.useEffect(() => {
     if (open) {
@@ -116,15 +124,6 @@ export function ConfirmDialog({
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [open]);
-
-  React.useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [open]);
 
   const handleConfirm = () => {

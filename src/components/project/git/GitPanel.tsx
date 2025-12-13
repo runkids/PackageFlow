@@ -28,30 +28,31 @@ import { GitWorktreeList } from './GitWorktreeList';
 import { GitDiffViewer } from './GitDiffViewer';
 import { cn } from '../../../lib/utils';
 import type { GitFile } from '../../../types/git';
-import type { PackageManager } from '../../../types';
+import type { Project } from '../../../types/project';
+import type { Workflow } from '../../../types/workflow';
 
 type GitTab = 'status' | 'branches' | 'history' | 'stash' | 'worktrees' | 'settings';
 
 interface GitPanelProps {
-  /** Project path for Git operations */
-  projectPath: string;
-  /** Project name for display */
-  projectName?: string;
-  /** Package manager for worktree scripts */
-  packageManager?: PackageManager;
-  /** Callback when switching working directory (for worktrees) */
-  onSwitchWorkingDirectory?: (path: string) => void;
+  project: Project;
+  workflows?: Workflow[];
+  onExecuteScript?: (scriptName: string, cwd?: string) => void;
+  onUpdateProject?: (updater: (project: Project) => Project) => Promise<void>;
+  /** Callback when worktrees list changes (add/remove) */
+  onWorktreesChange?: () => void;
   /** Additional CSS classes */
   className?: string;
 }
 
 export function GitPanel({
-  projectPath,
-  projectName,
-  packageManager = 'npm',
-  onSwitchWorkingDirectory,
+  project,
+  workflows = [],
+  onExecuteScript,
+  onUpdateProject,
+  onWorktreesChange,
   className = '',
 }: GitPanelProps) {
+  const projectPath = project.path;
   const [activeTab, setActiveTab] = useState<GitTab>('status');
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -405,10 +406,13 @@ export function GitPanel({
 
         {activeTab === 'worktrees' && (
           <GitWorktreeList
-            projectPath={projectPath}
-            projectName={projectName}
-            packageManager={packageManager}
-            onSwitchWorkingDirectory={onSwitchWorkingDirectory}
+            project={project}
+            workflows={workflows}
+            onUpdateProject={onUpdateProject}
+            onExecuteScript={onExecuteScript}
+            onWorktreesChange={onWorktreesChange}
+            // Note: onSwitchWorkingDirectory is intentionally not passed here
+            // Worktree switching should only be done from Scripts tab
           />
         )}
 

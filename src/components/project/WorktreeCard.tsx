@@ -4,10 +4,11 @@
  */
 
 import { useState, useMemo } from 'react';
-import { GitBranch, Code2, FolderOpen, Trash2, ChevronDown, ArrowDownToLine, RefreshCw, Archive } from 'lucide-react';
+import { GitBranch, Code2, FolderOpen, Trash2, ChevronDown, ArrowDownToLine, RefreshCw, Archive, Bookmark, MoreHorizontal } from 'lucide-react';
 import type { Worktree, WorktreeStatus, EditorDefinition } from '../../lib/tauri-api';
+import type { WorktreeSessionStatus } from '../../types/worktree-sessions';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '../ui/ContextMenu';
-import { Dropdown, DropdownItem, DropdownSection } from '../ui/Dropdown';
+import { Dropdown, DropdownItem, DropdownSection, DropdownSeparator } from '../ui/Dropdown';
 import { WorktreeStatusBadge } from './WorktreeStatusBadge';
 import { cn } from '../../lib/utils';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -15,9 +16,11 @@ import { useSettings } from '../../contexts/SettingsContext';
 interface WorktreeCardProps {
   worktree: Worktree;
   status: WorktreeStatus | undefined;
+  sessionStatus?: WorktreeSessionStatus;
   isLoadingStatus: boolean;
   availableEditors: EditorDefinition[];
   onOpenInEditor: (path: string, editorId?: string) => void;
+  onOpenSession?: (worktree: Worktree) => void;
   onSwitchWorkingDirectory?: (path: string) => void;
   onRemove: (worktree: Worktree) => void;
   onPull?: (worktree: Worktree) => void;
@@ -28,9 +31,11 @@ interface WorktreeCardProps {
 export function WorktreeCard({
   worktree,
   status,
+  sessionStatus,
   isLoadingStatus,
   availableEditors,
   onOpenInEditor,
+  onOpenSession,
   onSwitchWorkingDirectory,
   onRemove,
   onPull,
@@ -113,6 +118,24 @@ export function WorktreeCard({
                 Detached
               </span>
             )}
+            {sessionStatus && (
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 text-xs rounded',
+                  sessionStatus === 'broken'
+                    ? 'bg-red-500/20 text-red-400'
+                    : sessionStatus === 'archived'
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-green-500/20 text-green-400'
+                )}
+              >
+                {sessionStatus === 'active'
+                  ? 'Session'
+                  : sessionStatus === 'archived'
+                    ? 'Archived'
+                    : 'Broken'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -136,12 +159,53 @@ export function WorktreeCard({
           />
         </div>
 
-        {/* Hover Actions - matching list view style */}
+        {/* Session Entry - Always Visible */}
+        {onOpenSession && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSession(worktree);
+            }}
+            className={cn(
+              'w-full mt-3 px-2 py-1.5 rounded text-xs text-left transition-colors flex items-center gap-2',
+              sessionStatus
+                ? 'bg-muted/50 hover:bg-muted'
+                : 'border border-dashed border-border hover:border-muted-foreground hover:bg-muted/30'
+            )}
+          >
+            <Bookmark
+              className={cn(
+                'w-3.5 h-3.5 flex-shrink-0',
+                sessionStatus === 'broken'
+                  ? 'text-red-400'
+                  : sessionStatus === 'archived'
+                    ? 'text-muted-foreground'
+                    : sessionStatus
+                      ? 'text-blue-400'
+                      : 'text-muted-foreground'
+              )}
+            />
+            <span className={cn(
+              'truncate',
+              sessionStatus ? 'text-foreground' : 'text-muted-foreground'
+            )}>
+              {sessionStatus
+                ? sessionStatus === 'broken'
+                  ? 'Session (Broken)'
+                  : sessionStatus === 'archived'
+                    ? 'Session (Archived)'
+                    : 'View Session'
+                : '+ Start Session'}
+            </span>
+          </button>
+        )}
+
+        {/* Hover Actions - Progressive Disclosure Pattern */}
         <div
-          className="flex items-center justify-end gap-0.5 mt-3 pt-3 border-t border-border opacity-0 group-hover:opacity-100 transition-opacity"
+          className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-border opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Open in Editor */}
+          {/* Primary Action: Open in Editor */}
           {availableEditors.length > 0 && (
             availableEditors.length === 1 ? (
               <button
@@ -155,7 +219,7 @@ export function WorktreeCard({
               <Dropdown
                 trigger={
                   <button
-                    className="flex items-center gap-1.5 p-1.5 rounded hover:bg-accent transition-colors"
+                    className="flex items-center gap-0.5 p-1.5 rounded hover:bg-accent transition-colors"
                     title="Open in Editor"
                   >
                     <Code2 className="w-3.5 h-3.5 text-blue-400" />
@@ -178,7 +242,8 @@ export function WorktreeCard({
               </Dropdown>
             )
           )}
-          {/* Pull button */}
+
+          {/* Primary Action: Pull (if applicable) */}
           {onPull && !worktree.isDetached && (
             <button
               onClick={() => onPull(worktree)}
@@ -188,54 +253,77 @@ export function WorktreeCard({
               <ArrowDownToLine className="w-3.5 h-3.5 text-blue-400" />
             </button>
           )}
-          {/* Sync button */}
-          {onSync && !worktree.isMain && !worktree.isDetached && (
-            <button
-              onClick={() => onSync(worktree)}
-              className="p-1.5 rounded hover:bg-accent transition-colors"
-              title="Sync with main"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-orange-400" />
-            </button>
-          )}
-          {/* Stash button */}
-          {onStash && (
-            <button
-              onClick={() => onStash(worktree)}
-              className="p-1.5 rounded hover:bg-accent transition-colors"
-              title="Stash"
-            >
-              <Archive className="w-3.5 h-3.5 text-purple-400" />
-            </button>
-          )}
-          {onSwitchWorkingDirectory && !worktree.isMain && (
-            <button
-              onClick={() => onSwitchWorkingDirectory(worktree.path)}
-              className="p-1.5 rounded hover:bg-accent transition-colors"
-              title="Switch working directory"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-muted-foreground" />
-            </button>
-          )}
-          {!worktree.isMain && (
-            <button
-              onClick={() => onRemove(worktree)}
-              className="p-1.5 rounded hover:bg-red-500/20 transition-colors"
-              title="Remove"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-            </button>
-          )}
+
+          {/* More Menu - Secondary Actions */}
+          <Dropdown
+            trigger={
+              <button
+                className="p-1.5 rounded hover:bg-accent transition-colors"
+                title="More actions"
+              >
+                <MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+            }
+            align="right"
+          >
+            {/* Git Operations Section */}
+            <DropdownSection title="Git">
+              {onSync && !worktree.isMain && !worktree.isDetached && (
+                <DropdownItem
+                  onClick={() => onSync(worktree)}
+                  icon={<RefreshCw className="w-4 h-4 text-orange-400" />}
+                >
+                  Sync with Main
+                </DropdownItem>
+              )}
+              {onStash && (
+                <DropdownItem
+                  onClick={() => onStash(worktree)}
+                  icon={<Archive className="w-4 h-4 text-purple-400" />}
+                >
+                  Stash Changes
+                </DropdownItem>
+              )}
+            </DropdownSection>
+
+            {/* Navigation Section */}
+            {onSwitchWorkingDirectory && !worktree.isMain && (
+              <>
+                <DropdownSeparator />
+                <DropdownItem
+                  onClick={() => onSwitchWorkingDirectory(worktree.path)}
+                  icon={<FolderOpen className="w-4 h-4" />}
+                >
+                  Switch Directory
+                </DropdownItem>
+              </>
+            )}
+
+            {/* Danger Zone */}
+            {!worktree.isMain && (
+              <>
+                <DropdownSeparator />
+                <DropdownItem
+                  onClick={() => onRemove(worktree)}
+                  icon={<Trash2 className="w-4 h-4" />}
+                  destructive
+                >
+                  Remove Worktree
+                </DropdownItem>
+              </>
+            )}
+          </Dropdown>
         </div>
       </div>
 
-      {/* Context Menu */}
+      {/* Context Menu - Simplified for power users */}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
         >
+          {/* Open in Editor */}
           {availableEditors.map((editor) => (
             <ContextMenuItem
               key={editor.id}
@@ -248,51 +336,24 @@ export function WorktreeCard({
               Open in {editor.name}
             </ContextMenuItem>
           ))}
-          {availableEditors.length > 0 && <ContextMenuSeparator />}
+
+          {/* Pull */}
           {onPull && !worktree.isDetached && (
-            <ContextMenuItem
-              onClick={() => {
-                onPull(worktree);
-                setContextMenu(null);
-              }}
-              icon={<ArrowDownToLine className="w-4 h-4" />}
-            >
-              Pull
-            </ContextMenuItem>
+            <>
+              {availableEditors.length > 0 && <ContextMenuSeparator />}
+              <ContextMenuItem
+                onClick={() => {
+                  onPull(worktree);
+                  setContextMenu(null);
+                }}
+                icon={<ArrowDownToLine className="w-4 h-4" />}
+              >
+                Pull
+              </ContextMenuItem>
+            </>
           )}
-          {onSync && !worktree.isMain && !worktree.isDetached && (
-            <ContextMenuItem
-              onClick={() => {
-                onSync(worktree);
-                setContextMenu(null);
-              }}
-              icon={<RefreshCw className="w-4 h-4" />}
-            >
-              Sync with Main
-            </ContextMenuItem>
-          )}
-          {onStash && (
-            <ContextMenuItem
-              onClick={() => {
-                onStash(worktree);
-                setContextMenu(null);
-              }}
-              icon={<Archive className="w-4 h-4" />}
-            >
-              Stash
-            </ContextMenuItem>
-          )}
-          {onSwitchWorkingDirectory && !worktree.isMain && (
-            <ContextMenuItem
-              onClick={() => {
-                onSwitchWorkingDirectory(worktree.path);
-                setContextMenu(null);
-              }}
-              icon={<FolderOpen className="w-4 h-4" />}
-            >
-              Switch Working Directory
-            </ContextMenuItem>
-          )}
+
+          {/* Remove */}
           {!worktree.isMain && (
             <>
               <ContextMenuSeparator />

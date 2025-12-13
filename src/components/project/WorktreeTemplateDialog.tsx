@@ -123,6 +123,7 @@ export function WorktreeTemplateDialog({
   const [featureName, setFeatureName] = useState('');
   const [baseBranch, setBaseBranch] = useState('main');
   const [isCreating, setIsCreating] = useState(false);
+  const [nextFeatureNumber, setNextFeatureNumber] = useState<string | null>(null);
 
   // Custom template editing state
   const [editingTemplate, setEditingTemplate] = useState<Partial<WorktreeTemplate> | null>(null);
@@ -170,8 +171,41 @@ export function WorktreeTemplateDialog({
       setSelectedTemplate(null);
       setFeatureName('');
       setBaseBranch(branches.includes('main') ? 'main' : branches[0] || 'main');
+      setNextFeatureNumber(null);
     }
   }, [isOpen, loadTemplates, branches]);
+
+  const isNumberedTemplate = Boolean(
+    selectedTemplate
+      && (selectedTemplate.branchPattern.includes('{num}') || selectedTemplate.pathPattern.includes('{num}'))
+  );
+
+  useEffect(() => {
+    if (!isOpen || view !== 'create' || !selectedTemplate) return;
+    if (!isNumberedTemplate) {
+      setNextFeatureNumber(null);
+      return;
+    }
+
+    let cancelled = false;
+    worktreeTemplateAPI
+      .getNextFeatureNumber(projectPath)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.success && res.featureNumber) {
+          setNextFeatureNumber(res.featureNumber);
+          return;
+        }
+        setNextFeatureNumber(null);
+      })
+      .catch(() => {
+        if (!cancelled) setNextFeatureNumber(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, view, selectedTemplate, isNumberedTemplate, projectPath]);
 
   // Get all available templates (defaults + custom)
   const allTemplates = [...defaultTemplates, ...templates.filter(
@@ -179,12 +213,14 @@ export function WorktreeTemplateDialog({
   )];
 
   // Preview the generated branch and path names
+  const previewNum = nextFeatureNumber || '###';
   const previewBranchName = selectedTemplate && featureName
     ? selectedTemplate.branchPattern
         .replace('{name}', featureName)
         .replace('{repo}', projectName)
         .replace('{date}', new Date().toISOString().slice(0, 10).replace(/-/g, ''))
         .replace('{user}', 'user')
+        .replace('{num}', previewNum)
     : '';
 
   const previewWorktreePath = selectedTemplate && featureName
@@ -193,6 +229,7 @@ export function WorktreeTemplateDialog({
         .replace('{repo}', projectName)
         .replace('{date}', new Date().toISOString().slice(0, 10).replace(/-/g, ''))
         .replace('{user}', 'user')
+        .replace('{num}', previewNum)
     : '';
 
   // Create worktree from template
@@ -231,6 +268,7 @@ export function WorktreeTemplateDialog({
         const errorMessages: Record<string, string> = {
           NOT_GIT_REPO: 'Not a Git repository',
           TEMPLATE_NOT_FOUND: 'Template not found',
+          INVALID_NAME: 'Invalid feature name',
           PATH_EXISTS: 'Worktree path already exists',
           BRANCH_EXISTS: 'Branch already exists',
           GIT_ERROR: 'Git error occurred',
@@ -325,8 +363,9 @@ export function WorktreeTemplateDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="bg-card border-border max-w-lg">
-        <DialogHeader>
+      <DialogContent className="bg-card border-border max-w-lg max-h-[85vh] flex flex-col">
+        {/* Fixed Header */}
+        <DialogHeader className="shrink-0 pb-4">
           <DialogTitle className="text-foreground flex items-center gap-2">
             <Layers className="w-5 h-5" />
             {view === 'select' && 'Create Worktree from Template'}
@@ -336,7 +375,7 @@ export function WorktreeTemplateDialog({
         </DialogHeader>
 
         {error && (
-          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400 flex items-center gap-2">
+          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400 flex items-center gap-2 shrink-0">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
@@ -344,12 +383,13 @@ export function WorktreeTemplateDialog({
 
         {/* Template Selection View */}
         {view === 'select' && (
-          <div className="space-y-4 mt-4">
+          <div className="flex flex-col min-h-0 flex-1">
             {isLoading ? (
               <div className="text-center py-8 text-muted-foreground">Loading templates...</div>
             ) : (
               <>
-                <div className="space-y-2">
+                {/* Scrollable Body */}
+                <div className="flex-1 overflow-y-auto min-h-0 space-y-2 pr-1">
                   {allTemplates.map((template) => (
                     <div
                       key={template.id}
@@ -403,7 +443,8 @@ export function WorktreeTemplateDialog({
                   ))}
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-border">
+                {/* Fixed Footer */}
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-border shrink-0">
                   <button
                     onClick={handleStartCreateTemplate}
                     className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"
@@ -422,16 +463,18 @@ export function WorktreeTemplateDialog({
 
         {/* Create Worktree View */}
         {view === 'create' && selectedTemplate && (
-          <div className="space-y-4 mt-4">
-            <div className="p-3 bg-background/50 border border-border rounded-lg">
-              <div className="flex items-center gap-2 text-sm">
-                <GitBranch className="w-4 h-4 text-blue-400" />
-                <span className="font-medium text-foreground">{selectedTemplate.name}</span>
+          <div className="flex flex-col min-h-0 flex-1">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4 pr-1">
+              <div className="p-3 bg-background/50 border border-border rounded-lg">
+                <div className="flex items-center gap-2 text-sm">
+                  <GitBranch className="w-4 h-4 text-blue-400" />
+                  <span className="font-medium text-foreground">{selectedTemplate.name}</span>
+                </div>
+                {selectedTemplate.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{selectedTemplate.description}</p>
+                )}
               </div>
-              {selectedTemplate.description && (
-                <p className="text-xs text-muted-foreground mt-1">{selectedTemplate.description}</p>
-              )}
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -449,44 +492,51 @@ export function WorktreeTemplateDialog({
                 spellCheck={false}
                 className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
               />
+              {isNumberedTemplate && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  This template will auto-assign the next available 3-digit number (e.g., {previewNum}-...).
+                </p>
+              )}
             </div>
 
-            <BaseBranchSelect
-              branches={branches}
-              value={baseBranch}
-              onValueChange={setBaseBranch}
-            />
+              <BaseBranchSelect
+                branches={branches}
+                value={baseBranch}
+                onValueChange={setBaseBranch}
+              />
 
-            {featureName && (
-              <div className="p-3 bg-muted/30 rounded-lg space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Branch:</span>
-                  <span className="font-mono text-foreground">{previewBranchName}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Path:</span>
-                  <span className="font-mono text-foreground truncate ml-4" title={previewWorktreePath}>
-                    {previewWorktreePath}
-                  </span>
-                </div>
-                {selectedTemplate.postCreateScripts && selectedTemplate.postCreateScripts.length > 0 && (
+              {featureName && (
+                <div className="p-3 bg-muted/30 rounded-lg space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Will run:</span>
-                    <span className="text-foreground">
-                      {selectedTemplate.postCreateScripts.join(', ')}
+                    <span className="text-muted-foreground">Branch:</span>
+                    <span className="font-mono text-foreground">{previewBranchName}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Path:</span>
+                    <span className="font-mono text-foreground truncate ml-4" title={previewWorktreePath}>
+                      {previewWorktreePath}
                     </span>
                   </div>
-                )}
-                {selectedTemplate.openInEditor && (
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Code2 className="w-3.5 h-3.5" />
-                    Will open in editor
-                  </div>
-                )}
-              </div>
-            )}
+                  {selectedTemplate.postCreateScripts && selectedTemplate.postCreateScripts.length > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Will run:</span>
+                      <span className="text-foreground">
+                        {selectedTemplate.postCreateScripts.join(', ')}
+                      </span>
+                    </div>
+                  )}
+                  {selectedTemplate.openInEditor && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Code2 className="w-3.5 h-3.5" />
+                      Will open in editor
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
-            <div className="flex justify-between gap-2 pt-2">
+            {/* Fixed Footer */}
+            <div className="flex justify-between gap-2 pt-4 mt-4 border-t border-border shrink-0">
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -515,132 +565,136 @@ export function WorktreeTemplateDialog({
 
         {/* Manage Template View */}
         {view === 'manage' && editingTemplate && (
-          <div className="space-y-4 mt-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Template Name
-              </label>
-              <input
-                type="text"
-                value={editingTemplate.name || ''}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
-                placeholder="My Custom Template"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
+          <div className="flex flex-col min-h-0 flex-1">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4 pr-1">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Template Name
+                </label>
+                <input
+                  type="text"
+                  value={editingTemplate.name || ''}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
+                  placeholder="My Custom Template"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Description (optional)
+                </label>
+                <input
+                  type="text"
+                  value={editingTemplate.description || ''}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, description: e.target.value })}
+                  placeholder="Brief description of this template"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Branch Pattern
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    Variables: {'{name}'}, {'{repo}'}, {'{date}'}, {'{user}'}
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={editingTemplate.branchPattern || ''}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, branchPattern: e.target.value })}
+                  placeholder="feature/{name}"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Path Pattern
+                </label>
+                <input
+                  type="text"
+                  value={editingTemplate.pathPattern || ''}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, pathPattern: e.target.value })}
+                  placeholder="../{repo}-{name}"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Default Base Branch
+                </label>
+                <input
+                  type="text"
+                  value={editingTemplate.baseBranch || ''}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, baseBranch: e.target.value })}
+                  placeholder="main"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Post-Create Scripts (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={(editingTemplate.postCreateScripts || []).join(', ')}
+                  onChange={(e) => setEditingTemplate({
+                    ...editingTemplate,
+                    postCreateScripts: e.target.value.split(',').map(s => s.trim()).filter(Boolean),
+                  })}
+                  placeholder="install, build"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <Checkbox
+                checked={editingTemplate.openInEditor ?? true}
+                onCheckedChange={(checked) => setEditingTemplate({ ...editingTemplate, openInEditor: checked })}
+                label="Open in editor after creation"
               />
+
+              {editingTemplate.openInEditor && availableEditors.length > 1 && (
+                <PreferredEditorSelect
+                  editors={availableEditors}
+                  value={editingTemplate.preferredEditor || ''}
+                  onValueChange={(value) =>
+                    setEditingTemplate({ ...editingTemplate, preferredEditor: value || undefined })
+                  }
+                />
+              )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Description (optional)
-              </label>
-              <input
-                type="text"
-                value={editingTemplate.description || ''}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, description: e.target.value })}
-                placeholder="Brief description of this template"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Branch Pattern
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  Variables: {'{name}'}, {'{repo}'}, {'{date}'}, {'{user}'}
-                </span>
-              </label>
-              <input
-                type="text"
-                value={editingTemplate.branchPattern || ''}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, branchPattern: e.target.value })}
-                placeholder="feature/{name}"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Path Pattern
-              </label>
-              <input
-                type="text"
-                value={editingTemplate.pathPattern || ''}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, pathPattern: e.target.value })}
-                placeholder="../{repo}-{name}"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Default Base Branch
-              </label>
-              <input
-                type="text"
-                value={editingTemplate.baseBranch || ''}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, baseBranch: e.target.value })}
-                placeholder="main"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Post-Create Scripts (comma-separated)
-              </label>
-              <input
-                type="text"
-                value={(editingTemplate.postCreateScripts || []).join(', ')}
-                onChange={(e) => setEditingTemplate({
-                  ...editingTemplate,
-                  postCreateScripts: e.target.value.split(',').map(s => s.trim()).filter(Boolean),
-                })}
-                placeholder="install, build"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <Checkbox
-              checked={editingTemplate.openInEditor ?? true}
-              onCheckedChange={(checked) => setEditingTemplate({ ...editingTemplate, openInEditor: checked })}
-              label="Open in editor after creation"
-            />
-
-            {editingTemplate.openInEditor && availableEditors.length > 1 && (
-              <PreferredEditorSelect
-                editors={availableEditors}
-                value={editingTemplate.preferredEditor || ''}
-                onValueChange={(value) =>
-                  setEditingTemplate({ ...editingTemplate, preferredEditor: value || undefined })
-                }
-              />
-            )}
-
-            <div className="flex justify-between gap-2 pt-2">
+            {/* Fixed Footer */}
+            <div className="flex justify-between gap-2 pt-4 mt-4 border-t border-border shrink-0">
               <div>
                 {editingTemplate.id && !editingTemplate.isDefault && (
                   <Button

@@ -302,7 +302,10 @@ pub async fn get_merged_worktrees(
     });
 
     // Get list of merged branches
-    let merged_output = match exec_git(path, &["branch", "--merged", &base, "--format=%(refname:short)"]) {
+    let merged_output = match exec_git(
+        path,
+        &["branch", "--merged", &base, "--format=%(refname:short)"],
+    ) {
         Ok(output) => output,
         Err(e) => {
             return Ok(GetMergedWorktreesResponse {
@@ -436,22 +439,20 @@ pub async fn get_behind_commits(
     let range = format!("HEAD..{}", base);
 
     let commits = match exec_git(path, &["log", format, &format!("-{}", max_commits), &range]) {
-        Ok(output) => {
-            output
-                .lines()
-                .filter(|line| !line.is_empty())
-                .map(|line| {
-                    let parts: Vec<&str> = line.splitn(5, '|').collect();
-                    CommitInfo {
-                        hash: parts.get(0).unwrap_or(&"").to_string(),
-                        short_hash: parts.get(1).unwrap_or(&"").to_string(),
-                        message: parts.get(2).unwrap_or(&"").to_string(),
-                        author: parts.get(3).unwrap_or(&"").to_string(),
-                        date: parts.get(4).unwrap_or(&"").to_string(),
-                    }
-                })
-                .collect()
-        }
+        Ok(output) => output
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                let parts: Vec<&str> = line.splitn(5, '|').collect();
+                CommitInfo {
+                    hash: parts.get(0).unwrap_or(&"").to_string(),
+                    short_hash: parts.get(1).unwrap_or(&"").to_string(),
+                    message: parts.get(2).unwrap_or(&"").to_string(),
+                    author: parts.get(3).unwrap_or(&"").to_string(),
+                    date: parts.get(4).unwrap_or(&"").to_string(),
+                }
+            })
+            .collect(),
         Err(e) => {
             return Ok(GetBehindCommitsResponse {
                 success: false,
@@ -541,8 +542,12 @@ pub async fn sync_worktree(
             // If there are conflicts, abort the operation
             if has_conflicts {
                 match method.as_str() {
-                    "rebase" => { let _ = exec_git(path, &["rebase", "--abort"]); }
-                    "merge" => { let _ = exec_git(path, &["merge", "--abort"]); }
+                    "rebase" => {
+                        let _ = exec_git(path, &["rebase", "--abort"]);
+                    }
+                    "merge" => {
+                        let _ = exec_git(path, &["merge", "--abort"]);
+                    }
                     _ => {}
                 }
             }
@@ -1463,6 +1468,8 @@ pub struct CreateWorktreeFromTemplateResponse {
     pub success: bool,
     pub worktree: Option<Worktree>,
     pub executed_scripts: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_file_path: Option<String>,
     pub error: Option<String>,
 }
 
@@ -1579,11 +1586,107 @@ pub async fn get_default_worktree_templates() -> Result<ListTemplatesResponse, S
         WorktreeTemplate::feature_template(),
         WorktreeTemplate::bugfix_template(),
         WorktreeTemplate::release_template(),
+        WorktreeTemplate::speckit_feature_template(),
     ];
 
     Ok(ListTemplatesResponse {
         success: true,
         templates: Some(templates),
+        error: None,
+    })
+}
+
+fn extract_feature_number(candidate: &str) -> Option<u32> {
+    let leaf = candidate.rsplit('/').next().unwrap_or(candidate).trim();
+    if leaf.len() < 4 {
+        return None;
+    }
+    let bytes = leaf.as_bytes();
+    if !bytes[0].is_ascii_digit()
+        || !bytes[1].is_ascii_digit()
+        || !bytes[2].is_ascii_digit()
+        || bytes[3] != b'-'
+    {
+        return None;
+    }
+    let num_str = &leaf[0..3];
+    num_str.parse::<u32>().ok()
+}
+
+fn get_highest_feature_number_from_specs(specs_dir: &Path) -> u32 {
+    let mut highest = 0u32;
+    let entries = match std::fs::read_dir(specs_dir) {
+        Ok(entries) => entries,
+        Err(_) => return 0,
+    };
+
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if let Some(num) = extract_feature_number(name_str) {
+            highest = highest.max(num);
+        }
+    }
+
+    highest
+}
+
+fn compute_next_feature_number(repo_path: &Path) -> u32 {
+    let mut highest = 0u32;
+
+    if let Ok(output) = exec_git(repo_path, &["branch", "-a", "--format=%(refname:short)"]) {
+        for line in output.lines() {
+            if let Some(num) = extract_feature_number(line) {
+                highest = highest.max(num);
+            }
+        }
+    }
+
+    let specs_dir = repo_path.join("specs");
+    if specs_dir.exists() {
+        highest = highest.max(get_highest_feature_number_from_specs(&specs_dir));
+    }
+
+    highest + 1
+}
+
+/// Response for get_next_feature_number command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetNextFeatureNumberResponse {
+    pub success: bool,
+    pub feature_number: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Get the next available SpecKit-style feature number (e.g. "015")
+#[tauri::command]
+pub async fn get_next_feature_number(
+    project_path: String,
+) -> Result<GetNextFeatureNumberResponse, String> {
+    let path = Path::new(&project_path);
+
+    // Check if git repo
+    if !is_git_repo(project_path.clone()).await? {
+        return Ok(GetNextFeatureNumberResponse {
+            success: false,
+            feature_number: None,
+            error: Some("NOT_GIT_REPO".to_string()),
+        });
+    }
+
+    let next = compute_next_feature_number(path);
+    Ok(GetNextFeatureNumberResponse {
+        success: true,
+        feature_number: Some(format!("{:03}", next)),
         error: None,
     })
 }
@@ -1713,6 +1816,76 @@ pub async fn create_worktree_from_template(
     name: String,
     custom_base_branch: Option<String>,
 ) -> Result<CreateWorktreeFromTemplateResponse, String> {
+    fn clean_branch_suffix(input: &str) -> String {
+        let trimmed = input.trim();
+        let stripped = if trimmed.len() >= 4 {
+            let bytes = trimmed.as_bytes();
+            if bytes[0].is_ascii_digit()
+                && bytes[1].is_ascii_digit()
+                && bytes[2].is_ascii_digit()
+                && bytes[3] == b'-'
+            {
+                &trimmed[4..]
+            } else {
+                trimmed
+            }
+        } else {
+            trimmed
+        };
+
+        let lower = stripped.to_lowercase();
+        let mut out = String::with_capacity(lower.len());
+        let mut prev_dash = false;
+        for ch in lower.chars() {
+            let is_alnum = ch.is_ascii_alphanumeric();
+            if is_alnum {
+                out.push(ch);
+                prev_dash = false;
+            } else if !prev_dash {
+                out.push('-');
+                prev_dash = true;
+            }
+        }
+        out.trim_matches('-').to_string()
+    }
+
+    fn scaffold_speckit_spec(
+        worktree_root: &Path,
+        branch_name: &str,
+        raw_name: &str,
+    ) -> Option<String> {
+        let specs_dir = worktree_root.join("specs").join(branch_name);
+        if std::fs::create_dir_all(&specs_dir).is_err() {
+            return None;
+        }
+
+        let spec_file = specs_dir.join("spec.md");
+        if spec_file.exists() {
+            return Some(spec_file.to_string_lossy().to_string());
+        }
+
+        let template_path = worktree_root.join(".specify/templates/spec-template.md");
+        let created_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+        let content = match std::fs::read_to_string(&template_path) {
+            Ok(template) => template
+                .replace("[FEATURE NAME]", raw_name)
+                .replace("[###-feature-name]", branch_name)
+                .replace("[DATE]", &created_date)
+                .replace("$ARGUMENTS", raw_name),
+            Err(_) => format!(
+                "# Feature Specification: {}\n\n**Feature Branch**: `{}`  \n**Created**: {}  \n**Status**: Draft  \n**Input**: User description: \"{}\"\n",
+                raw_name, branch_name, created_date, raw_name
+            ),
+        };
+
+        if std::fs::write(&spec_file, content).is_err() {
+            return None;
+        }
+
+        Some(spec_file.to_string_lossy().to_string())
+    }
+
     let path = Path::new(&project_path);
 
     // Check if git repo
@@ -1721,6 +1894,7 @@ pub async fn create_worktree_from_template(
             success: false,
             worktree: None,
             executed_scripts: None,
+            spec_file_path: None,
             error: Some("NOT_GIT_REPO".to_string()),
         });
     }
@@ -1740,6 +1914,7 @@ pub async fn create_worktree_from_template(
         WorktreeTemplate::feature_template(),
         WorktreeTemplate::bugfix_template(),
         WorktreeTemplate::release_template(),
+        WorktreeTemplate::speckit_feature_template(),
     ];
 
     for default in default_templates {
@@ -1757,10 +1932,37 @@ pub async fn create_worktree_from_template(
                 success: false,
                 worktree: None,
                 executed_scripts: None,
+                spec_file_path: None,
                 error: Some("TEMPLATE_NOT_FOUND".to_string()),
             });
         }
     };
+
+    let is_speckit_template = template.id.starts_with("speckit-");
+    let raw_name = name.trim();
+    if raw_name.is_empty() {
+        return Ok(CreateWorktreeFromTemplateResponse {
+            success: false,
+            worktree: None,
+            executed_scripts: None,
+            spec_file_path: None,
+            error: Some("INVALID_NAME".to_string()),
+        });
+    }
+    let cleaned_name = if is_speckit_template {
+        clean_branch_suffix(raw_name)
+    } else {
+        raw_name.to_string()
+    };
+    if cleaned_name.is_empty() {
+        return Ok(CreateWorktreeFromTemplateResponse {
+            success: false,
+            worktree: None,
+            executed_scripts: None,
+            spec_file_path: None,
+            error: Some("INVALID_NAME".to_string()),
+        });
+    }
 
     // Get repo name for pattern substitution
     let repo_name = path
@@ -1770,9 +1972,26 @@ pub async fn create_worktree_from_template(
         .to_string();
 
     // Apply patterns
-    let branch_name = WorktreeTemplate::apply_pattern(&template.branch_pattern, &name, &repo_name);
+    let feature_num =
+        if template.branch_pattern.contains("{num}") || template.path_pattern.contains("{num}") {
+            Some(format!("{:03}", compute_next_feature_number(path)))
+        } else {
+            None
+        };
+
+    let branch_name =
+        WorktreeTemplate::apply_pattern(&template.branch_pattern, &cleaned_name, &repo_name);
+    let branch_name = match &feature_num {
+        Some(n) => branch_name.replace("{num}", n),
+        None => branch_name,
+    };
+
     let worktree_path_pattern =
-        WorktreeTemplate::apply_pattern(&template.path_pattern, &name, &repo_name);
+        WorktreeTemplate::apply_pattern(&template.path_pattern, &cleaned_name, &repo_name);
+    let worktree_path_pattern = match &feature_num {
+        Some(n) => worktree_path_pattern.replace("{num}", n),
+        None => worktree_path_pattern,
+    };
 
     // Resolve worktree path relative to project path
     let worktree_path = if worktree_path_pattern.starts_with("../") {
@@ -1812,9 +2031,16 @@ pub async fn create_worktree_from_template(
             success: false,
             worktree: None,
             executed_scripts: None,
+            spec_file_path: None,
             error: add_result.error,
         });
     }
+
+    let spec_file_path = if is_speckit_template {
+        scaffold_speckit_spec(Path::new(&worktree_path_str), &branch_name, raw_name)
+    } else {
+        None
+    };
 
     // Execute post-create scripts if any
     let mut executed_scripts: Vec<String> = Vec::new();
@@ -1852,6 +2078,7 @@ pub async fn create_worktree_from_template(
         success: true,
         worktree: add_result.worktree,
         executed_scripts: Some(executed_scripts),
+        spec_file_path,
         error: None,
     })
 }
