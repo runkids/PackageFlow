@@ -46,6 +46,13 @@ tauri-plugin-global-shortcut = "2"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 url = "2"
 tauri-plugin-process = "2"
+tauri-plugin-oauth = "2"
+urlencoding = "2"
+opener = "0.7"
+sha1 = "0.10"
+notify = "7"
+notify-debouncer-mini = "0.5"
+dotenvy = "0.15.7"
 
 # Unix-specific: process signal handling for cancellation
 [target.'cfg(unix)'.dependencies]

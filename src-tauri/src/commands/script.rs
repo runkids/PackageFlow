@@ -314,10 +314,29 @@ pub async fn execute_script(
     // Check if project has Volta config and Volta is available
     let path = Path::new(&working_dir);
     let volta_config = match parse_package_json(path) {
-        Ok(pj) => pj.volta.clone(),
-        Err(_) => None,
+        Ok(pj) => {
+            println!(
+                "[execute_script] package.json volta config: {:?}",
+                pj.volta
+            );
+            pj.volta.clone()
+        }
+        Err(e) => {
+            println!("[execute_script] Failed to parse package.json: {}", e);
+            None
+        }
     };
     let volta_status = detect_volta();
+    println!(
+        "[execute_script] Volta status: available={}, path={:?}",
+        volta_status.available,
+        volta_status.path
+    );
+    println!(
+        "[execute_script] volta_config.is_some()={}, volta_status.available={}",
+        volta_config.is_some(),
+        volta_status.available
+    );
 
     // Determine final command and args (with or without Volta wrapper)
     let (cmd, args): (String, Vec<String>) = if volta_config.is_some() && volta_status.available {
@@ -1375,4 +1394,85 @@ pub async fn write_to_script(
 #[tauri::command]
 pub async fn get_pty_env() -> Result<std::collections::HashMap<String, String>, String> {
     Ok(path_resolver::build_env_for_child())
+}
+
+// ============================================================================
+// Volta-wrapped command for PTY execution
+// ============================================================================
+
+/// Response for get_volta_wrapped_command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoltaWrappedCommand {
+    pub command: String,
+    pub args: Vec<String>,
+    pub use_volta: bool,
+}
+
+/// Get command wrapped with Volta if project has volta config
+/// This ensures PTY terminal uses the correct Node.js version
+#[tauri::command]
+pub async fn get_volta_wrapped_command(
+    command: String,
+    args: Vec<String>,
+    cwd: String,
+) -> Result<VoltaWrappedCommand, String> {
+    let path = Path::new(&cwd);
+    let volta_config = match parse_package_json(path) {
+        Ok(pj) => pj.volta.clone(),
+        Err(_) => None,
+    };
+    let volta_status = detect_volta();
+
+    if volta_config.is_some() && volta_status.available {
+        let volta_cmd = volta_status.path.unwrap_or_else(|| "volta".to_string());
+        let mut volta_args = vec!["run".to_string()];
+
+        // Add all configured volta versions
+        if let Some(ref config) = volta_config {
+            // Node.js version
+            if let Some(ref node_version) = config.node {
+                volta_args.push("--node".to_string());
+                volta_args.push(node_version.clone());
+            }
+            // npm version (only when running npm)
+            if command == "npm" {
+                if let Some(ref npm_version) = config.npm {
+                    volta_args.push("--npm".to_string());
+                    volta_args.push(npm_version.clone());
+                }
+            }
+            // yarn version (only when running yarn)
+            if command == "yarn" {
+                if let Some(ref yarn_version) = config.yarn {
+                    volta_args.push("--yarn".to_string());
+                    volta_args.push(yarn_version.clone());
+                }
+            }
+        }
+
+        volta_args.push(command);
+        volta_args.extend(args);
+
+        println!(
+            "[get_volta_wrapped_command] Wrapping with Volta: {} {:?}",
+            volta_cmd, volta_args
+        );
+
+        Ok(VoltaWrappedCommand {
+            command: volta_cmd,
+            args: volta_args,
+            use_volta: true,
+        })
+    } else {
+        println!(
+            "[get_volta_wrapped_command] No Volta wrap needed: {} {:?}",
+            command, args
+        );
+        Ok(VoltaWrappedCommand {
+            command,
+            args,
+            use_volta: false,
+        })
+    }
 }

@@ -17,6 +17,7 @@ import {
 import { gitAPI } from '../../../lib/tauri-api';
 import type { GitRemote } from '../../../types/git';
 import { GitAuthPanel } from './GitAuthPanel';
+import { Button } from '../../ui/Button';
 
 interface GitSettingsPanelProps {
   /** Project path for Git operations */
@@ -170,26 +171,28 @@ export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPa
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium text-muted-foreground">Remote Repositories</h4>
             <div className="flex items-center gap-2">
-              <button
+              <Button
+                size="sm"
+                variant="secondary"
                 onClick={() => handleFetch()}
                 disabled={isFetching || remotes.length === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-muted hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors"
                 title="Fetch from all remotes"
               >
                 {isFetching ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                 ) : (
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className="w-4 h-4 mr-1.5" />
                 )}
                 Fetch All
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => setShowAddRemote(!showAddRemote)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm transition-colors"
+                className="bg-blue-600 hover:bg-blue-500 text-white"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4 mr-1.5" />
                 Add Remote
-              </button>
+              </Button>
             </div>
           </div>
 

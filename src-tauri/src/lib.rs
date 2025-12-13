@@ -78,6 +78,8 @@ pub fn run() {
             script::write_to_script,
             // Feature 008: PTY environment variables
             script::get_pty_env,
+            // Volta-wrapped command for PTY execution
+            script::get_volta_wrapped_command,
             // Workflow commands (US4)
             // Note: load_workflows is provided by settings module
             workflow::save_workflow,

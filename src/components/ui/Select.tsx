@@ -343,7 +343,7 @@ export function Select({
             className={cn(
               'absolute z-50 mt-1 w-full',
               'max-h-60 overflow-auto rounded-md',
-              'bg-card border border-border shadow-lg',
+              'bg-white dark:bg-zinc-900 border border-border shadow-xl',
               'py-1',
               // Animation
               'animate-in fade-in-0 zoom-in-95 slide-in-from-top-2',

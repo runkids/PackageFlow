@@ -3,6 +3,8 @@
  * @see specs/002-frontend-project-manager/data-model.md
  */
 
+import type { WorktreeSession } from './worktree-sessions';
+
 export type MonorepoTool = 'nx' | 'turbo' | 'lerna' | 'workspaces' | null;
 
 export type ProjectFramework =
@@ -42,6 +44,7 @@ export interface Project {
   uiFramework?: UIFramework;
   packageManager: PackageManager;
   scripts: Record<string, string>;
+  worktreeSessions?: WorktreeSession[];
   createdAt: string;
   lastOpenedAt: string;
 }

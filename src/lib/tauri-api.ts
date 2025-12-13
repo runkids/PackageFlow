@@ -168,7 +168,22 @@ export const scriptAPI = {
   // Feature 008: Get PTY environment variables (for proper PATH, VOLTA_HOME, etc.)
   getPtyEnv: (): Promise<Record<string, string>> =>
     invoke<Record<string, string>>('get_pty_env'),
+
+  // Get Volta-wrapped command for PTY execution
+  getVoltaWrappedCommand: (
+    command: string,
+    args: string[],
+    cwd: string
+  ): Promise<VoltaWrappedCommand> =>
+    invoke<VoltaWrappedCommand>('get_volta_wrapped_command', { command, args, cwd }),
 };
+
+// Volta-wrapped command response
+export interface VoltaWrappedCommand {
+  command: string;
+  args: string[];
+  useVolta: boolean;
+}
 
 // ============================================================================
 // Workflow Commands (Phase 7 - US4)

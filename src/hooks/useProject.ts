@@ -63,6 +63,7 @@ interface UseProjectReturn {
   setActiveProject: (id: string | null) => void;
   refreshProject: (id: string) => Promise<boolean>;
   updateLastOpenedAt: (id: string) => Promise<void>;
+  updateProject: (id: string, updater: (project: Project) => Project) => Promise<Project | null>;
 
   setSortMode: (mode: ProjectSortMode) => Promise<void>;
   updateProjectOrder: (order: string[]) => Promise<void>;
@@ -370,6 +371,27 @@ export function useProject(): UseProjectReturn {
     }
   }, [projects]);
 
+  const updateProject = useCallback(async (id: string, updater: (project: Project) => Project): Promise<Project | null> => {
+    const current = projects.find(p => p.id === id);
+    if (!current) return null;
+
+    const updated = updater(current);
+
+    try {
+      await projectAPI.saveProject(updated);
+      setProjects(prev => {
+        const next = prev.map(p => p.id === id ? updated : p);
+        cachedProjects = next;
+        return next;
+      });
+      return updated;
+    } catch (err) {
+      console.error('Failed to update project:', err);
+      setErrorWithAutoDismiss('Failed to save project');
+      return null;
+    }
+  }, [projects, setErrorWithAutoDismiss]);
+
   const refreshProject = useCallback(async (id: string): Promise<boolean> => {
     setIsRevalidating(true);
     setErrorWithAutoDismiss(null);
@@ -517,6 +539,7 @@ export function useProject(): UseProjectReturn {
     setActiveProject,
     refreshProject,
     updateLastOpenedAt,
+    updateProject,
 
     setSortMode,
     updateProjectOrder,

@@ -37,8 +37,14 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching directories that shouldn't trigger HMR
+      ignored: [
+        "**/src-tauri/**",
+        "**/.worktrees/**",
+        "**/.trees/**",
+        "**/specs/**",
+        "**/.specify/**",
+      ],
     },
   },
 }));

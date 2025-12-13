@@ -60,6 +60,18 @@ export type {
 } from './project';
 
 export type {
+  WorktreeSession,
+  WorktreeSessionStatus,
+  SessionChecklistItem,
+  ResumeAction,
+  ResumeActionType,
+  ResumeActionResult,
+  ResumeActionResultStatus,
+  ResumeSessionResult,
+  ResumeSessionStatus,
+} from './worktree-sessions';
+
+export type {
   AppSettings,
   StoreData,
   ScriptOutputPayload,

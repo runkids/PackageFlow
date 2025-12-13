@@ -4,11 +4,12 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings, Download, Upload, FolderOpen, RotateCcw, ExternalLink, Keyboard, Sun, Moon, FolderTree, TextCursorInput } from 'lucide-react';
+import { Settings, Download, Upload, FolderOpen, RotateCcw, ExternalLink, Keyboard, Sun, Moon, FolderTree, TextCursorInput, Users } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSection, DropdownSeparator } from '../ui/Dropdown';
 import { settingsAPI, open } from '../../lib/tauri-api';
 import type { StorePathInfo } from '../../types/tauri';
 import { useSettings } from '../../contexts/SettingsContext';
+import { DeployAccountsDialog } from './DeployAccountsDialog';
 
 interface SettingsDropdownProps {
   onExport: () => void;
@@ -23,6 +24,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
 }) => {
   const [storePathInfo, setStorePathInfo] = useState<StorePathInfo | null>(null);
   const [isChangingPath, setIsChangingPath] = useState(false);
+  const [showDeployAccounts, setShowDeployAccounts] = useState(false);
 
   // Path display format from settings context
   const { pathDisplayFormat, setPathDisplayFormat } = useSettings();
@@ -136,6 +138,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
   }, []);
 
   return (
+    <>
     <Dropdown
       align="right"
       trigger={
@@ -148,34 +151,37 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
         </button>
       }
     >
-      {/* Keyboard Shortcuts */}
-      {onKeyboardShortcuts && (
+      {/* Appearance */}
+      <DropdownSection title="Appearance">
         <DropdownItem
-          onClick={onKeyboardShortcuts}
-          icon={<Keyboard className="w-4 h-4" />}
+          onClick={toggleTheme}
+          icon={theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         >
-          Keyboard Shortcuts
+          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </DropdownItem>
-      )}
-
-      {/* Theme Toggle */}
-      <DropdownItem
-        onClick={toggleTheme}
-        icon={theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-      >
-        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-      </DropdownItem>
-
-      {/* Path Display Format Toggle */}
-      <DropdownItem
-        onClick={togglePathFormat}
-        icon={pathDisplayFormat === 'short' ? <FolderTree className="w-4 h-4" /> : <TextCursorInput className="w-4 h-4" />}
-      >
-        {pathDisplayFormat === 'short' ? 'Show Full Paths' : 'Show Short Paths'}
-      </DropdownItem>
+        <DropdownItem
+          onClick={togglePathFormat}
+          icon={pathDisplayFormat === 'short' ? <FolderTree className="w-4 h-4" /> : <TextCursorInput className="w-4 h-4" />}
+        >
+          {pathDisplayFormat === 'short' ? 'Show Full Paths' : 'Show Short Paths'}
+        </DropdownItem>
+      </DropdownSection>
 
       <DropdownSeparator />
 
+      {/* Accounts */}
+      <DropdownSection title="Accounts">
+        <DropdownItem
+          onClick={() => setShowDeployAccounts(true)}
+          icon={<Users className="w-4 h-4" />}
+        >
+          Deploy Accounts
+        </DropdownItem>
+      </DropdownSection>
+
+      <DropdownSeparator />
+
+      {/* Data */}
       <DropdownSection title="Data">
         <DropdownItem
           onClick={onExport}
@@ -193,6 +199,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
 
       <DropdownSeparator />
 
+      {/* Storage */}
       <DropdownSection title="Storage">
         <DropdownItem
           onClick={handleChangeStorePath}
@@ -201,7 +208,6 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
         >
           {isChangingPath ? 'Changing...' : 'Change Location'}
         </DropdownItem>
-
         {storePathInfo?.isCustom && (
           <DropdownItem
             onClick={handleResetPath}
@@ -211,7 +217,6 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
             Reset to Default
           </DropdownItem>
         )}
-
         <DropdownItem
           onClick={handleOpenLocation}
           icon={<ExternalLink className="w-4 h-4" />}
@@ -219,6 +224,28 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
           Open in Finder
         </DropdownItem>
       </DropdownSection>
+
+      {/* Help */}
+      {onKeyboardShortcuts && (
+        <>
+          <DropdownSeparator />
+          <DropdownSection title="Help">
+            <DropdownItem
+              onClick={onKeyboardShortcuts}
+              icon={<Keyboard className="w-4 h-4" />}
+            >
+              Keyboard Shortcuts
+            </DropdownItem>
+          </DropdownSection>
+        </>
+      )}
     </Dropdown>
+
+    {/* Deploy Accounts Dialog - Must be outside Dropdown to persist when dropdown closes */}
+    <DeployAccountsDialog
+      isOpen={showDeployAccounts}
+      onClose={() => setShowDeployAccounts(false)}
+    />
+  </>
   );
 };

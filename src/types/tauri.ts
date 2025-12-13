@@ -1,6 +1,8 @@
 // TypeScript types matching Rust models
 // These types are used for Tauri IPC communication
 
+import type { WorktreeSession } from './worktree-sessions';
+
 // ============================================================================
 // Package Manager
 // ============================================================================
@@ -20,6 +22,7 @@ export interface Project {
   isMonorepo: boolean;
   packageManager: PackageManager;
   scripts: Record<string, string>;
+  worktreeSessions?: WorktreeSession[];
   createdAt: string;
   lastOpenedAt: string;
 }

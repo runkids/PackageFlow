@@ -2,6 +2,7 @@
 // Rust structs that map to TypeScript interfaces
 
 pub mod apk;
+pub mod deploy;
 pub mod execution;
 pub mod git;
 pub mod incoming_webhook;
@@ -14,6 +15,7 @@ pub mod version;
 pub mod webhook;
 pub mod workflow;
 pub mod worktree;
+pub mod worktree_sessions;
 
 // Re-export all models for convenience
 pub use apk::*;
@@ -22,6 +24,7 @@ pub use ipa::*;
 pub use project::*;
 pub use workflow::*;
 pub use worktree::*;
+pub use worktree_sessions::*;
 // Re-export security types except PackageManager (already exported from project)
 pub use git::*;
 pub use incoming_webhook::*;

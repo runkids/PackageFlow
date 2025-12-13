@@ -146,6 +146,10 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # OAuth credentials for deploy feature
+          PACKAGEFLOW_VERCEL_CLIENT_ID: ${{ secrets.PACKAGEFLOW_VERCEL_CLIENT_ID }}
+          PACKAGEFLOW_VERCEL_CLIENT_SECRET: ${{ secrets.PACKAGEFLOW_VERCEL_CLIENT_SECRET }}
+          PACKAGEFLOW_NETLIFY_CLIENT_ID: ${{ secrets.PACKAGEFLOW_NETLIFY_CLIENT_ID }}
         with:
           tagName: v__VERSION__
           releaseName: 'PackageFlow v__VERSION__'

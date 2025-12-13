@@ -3,15 +3,23 @@
  * @see specs/002-frontend-project-manager/spec.md
  */
 
-import { useState, useMemo, useCallback, useEffect, type RefObject } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, type RefObject } from 'react';
 import { useProject } from '../../hooks/useProject';
 import { useScriptExecutionContext } from '../../contexts/ScriptExecutionContext';
-import { open as openDialog, scriptAPI, worktreeAPI, type Worktree } from '../../lib/tauri-api';
+import {
+  open as openDialog,
+  scriptAPI,
+  worktreeAPI,
+  fileWatcherAPI,
+  tauriEvents,
+  type Worktree,
+} from '../../lib/tauri-api';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { ProjectSidebar } from './ProjectSidebar';
 import { ProjectExplorer } from './ProjectExplorer';
 import type { ScriptPtyTerminalRef } from '../terminal';
 import type { Workflow } from '../../types/workflow';
+import type { Project } from '../../types/project';
 
 interface ProjectManagerPageProps {
   onNavigateToWorkflow?: (workflow: Workflow, projectPath: string) => void;
@@ -45,6 +53,7 @@ export function ProjectManagerPage({
     removeProject,
     setActiveProject,
     refreshProject,
+    updateProject,
     setSortMode,
     updateProjectOrder,
     getActiveProject,
@@ -138,6 +147,104 @@ export function ProjectManagerPage({
     }
   }, [activeProjectId]);
 
+  // Track previous running scripts state to detect completion
+  const prevRunningScriptsRef = useRef<Map<string, string>>(new Map());
+
+  // Auto-refresh project when scripts complete (to update package.json changes)
+  useEffect(() => {
+    if (!activeProjectId) return;
+
+    const prevStates = prevRunningScriptsRef.current;
+    let shouldRefresh = false;
+
+    // Check if any script transitioned from 'running' to 'completed' or 'failed'
+    for (const [id, script] of runningScripts) {
+      const prevStatus = prevStates.get(id);
+      if (
+        prevStatus === 'running' &&
+        (script.status === 'completed' || script.status === 'failed')
+      ) {
+        // Script just completed - check if it's related to current project
+        if (script.projectPath === activeProject?.path ||
+            script.projectPath === selectedWorktreePath ||
+            worktrees.some(w => w.path === script.projectPath)) {
+          shouldRefresh = true;
+          break;
+        }
+      }
+    }
+
+    // Update prev states ref
+    const newStates = new Map<string, string>();
+    for (const [id, script] of runningScripts) {
+      newStates.set(id, script.status);
+    }
+    prevRunningScriptsRef.current = newStates;
+
+    // Debounce refresh to avoid rapid successive calls
+    if (shouldRefresh) {
+      const timeoutId = setTimeout(() => {
+        refreshProject(activeProjectId);
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [runningScripts, activeProjectId, activeProject?.path, selectedWorktreePath, worktrees, refreshProject]);
+
+  // Watch package.json for changes (file watcher)
+  useEffect(() => {
+    if (!activeProject?.path) return;
+
+    // Start watching the project's package.json
+    fileWatcherAPI.watchProject(activeProject.path).then((response) => {
+      if (!response.success) {
+        console.warn('[FileWatcher] Failed to watch project:', response.error);
+      }
+    });
+
+    // Also watch worktrees
+    for (const worktree of worktrees) {
+      if (worktree.path !== activeProject.path) {
+        fileWatcherAPI.watchProject(worktree.path).catch((err) => {
+          console.warn('[FileWatcher] Failed to watch worktree:', err);
+        });
+      }
+    }
+
+    // Cleanup: unwatch when project changes
+    return () => {
+      fileWatcherAPI.unwatchProject(activeProject.path).catch(() => {});
+      for (const worktree of worktrees) {
+        if (worktree.path !== activeProject.path) {
+          fileWatcherAPI.unwatchProject(worktree.path).catch(() => {});
+        }
+      }
+    };
+  }, [activeProject?.path, worktrees]);
+
+  // Listen for package.json changes and refresh project
+  useEffect(() => {
+    if (!activeProjectId) return;
+
+    let unlistenFn: (() => void) | null = null;
+
+    tauriEvents.onPackageJsonChanged((payload) => {
+      // Check if the changed file belongs to current project or its worktrees
+      if (
+        payload.project_path === activeProject?.path ||
+        worktrees.some((w) => w.path === payload.project_path)
+      ) {
+        console.log('[FileWatcher] package.json changed, refreshing project:', payload.project_path);
+        refreshProject(activeProjectId);
+      }
+    }).then((unlisten) => {
+      unlistenFn = unlisten;
+    });
+
+    return () => {
+      unlistenFn?.();
+    };
+  }, [activeProjectId, activeProject?.path, worktrees, refreshProject]);
+
   // Handle add project
   const handleAddProject = useCallback(async () => {
     // Use Tauri's directory selection dialog
@@ -170,12 +277,15 @@ export function ProjectManagerPage({
 
     const projectPath = cwd || activeProject.path;
     const pm = activeProject.packageManager;
-    const command = pm === 'yarn' ? 'yarn' : pm === 'pnpm' ? 'pnpm' : 'npm';
-    const args = pm === 'npm' ? ['run', scriptName] : [scriptName];
+    const baseCommand = pm === 'yarn' ? 'yarn' : pm === 'pnpm' ? 'pnpm' : 'npm';
+    const baseArgs = pm === 'npm' ? ['run', scriptName] : [scriptName];
+
+    // Get Volta-wrapped command if project has volta config
+    const wrapped = await scriptAPI.getVoltaWrappedCommand(baseCommand, baseArgs, projectPath);
 
     await ptyTerminalRef.current.spawnSession(
-      command,
-      args,
+      wrapped.command,
+      wrapped.args,
       projectPath,
       scriptName,
       activeProject.name
@@ -265,6 +375,11 @@ export function ProjectManagerPage({
     await refreshProject(activeProjectId);
   }, [activeProjectId, refreshProject]);
 
+  const handleUpdateActiveProject = useCallback(async (updater: (project: Project) => Project) => {
+    if (!activeProjectId) return;
+    await updateProject(activeProjectId, updater);
+  }, [activeProjectId, updateProject]);
+
   // Handle open in Finder
   const handleOpenInFinder = useCallback(async () => {
     if (!activeProject) return;
@@ -349,7 +464,9 @@ export function ProjectManagerPage({
             worktrees={worktrees}
             selectedWorktreePath={selectedWorktreePath}
             onWorktreeChange={setSelectedWorktreePath}
+            onWorktreesChange={loadWorktrees}
             onRefresh={handleRefreshProject}
+            onUpdateProject={handleUpdateActiveProject}
             onExecuteScript={handleExecuteScript}
             onCancelScript={handleCancelScript}
             onExecuteCommand={handleExecuteCommand}

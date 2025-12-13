@@ -614,11 +614,11 @@ export function GitWorktreeList({
           </button>
           <Dropdown
             trigger={
-              <button className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs transition-colors">
-                <Plus className="w-3.5 h-3.5" />
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-500 text-white">
+                <Plus className="w-4 h-4 mr-1.5" />
                 New
-                <ChevronDown className="w-3 h-3 ml-0.5" />
-              </button>
+                <ChevronDown className="w-3 h-3 ml-1" />
+              </Button>
             }
             align="right"
           >

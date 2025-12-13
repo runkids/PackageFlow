@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::worktree_sessions::WorktreeSession;
+
 /// Package manager type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -46,6 +48,8 @@ pub struct Project {
     pub is_monorepo: bool,
     pub package_manager: PackageManager,
     pub scripts: HashMap<String, String>,
+    #[serde(default)]
+    pub worktree_sessions: Vec<WorktreeSession>,
     pub created_at: String,
     pub last_opened_at: String,
 }
@@ -62,6 +66,7 @@ impl Project {
             is_monorepo: false,
             package_manager: PackageManager::Unknown,
             scripts: HashMap::new(),
+            worktree_sessions: Vec::new(),
             created_at: now.clone(),
             last_opened_at: now,
         }

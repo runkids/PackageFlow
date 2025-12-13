@@ -2,6 +2,8 @@
 // Each submodule contains commands for a specific feature
 
 pub mod apk;
+pub mod deploy;
+pub mod file_watcher;
 pub mod git;
 pub mod incoming_webhook;
 pub mod ipa;

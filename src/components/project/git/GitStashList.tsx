@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { gitAPI } from '../../../lib/tauri-api';
 import type { Stash } from '../../../types/git';
+import { Button } from '../../ui/Button';
 
 interface GitStashListProps {
   /** Project path for Git operations */
@@ -204,14 +205,15 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
           >
             <RefreshCw className={`w-4 h-4 text-muted-foreground ${isLoading ? 'animate-spin' : ''}`} />
           </button>
-          <button
+          <Button
+            size="sm"
             onClick={() => setShowCreateInput(true)}
-            className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs transition-colors"
+            className="bg-blue-600 hover:bg-blue-500 text-white"
             title="Create new stash"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4 mr-1.5" />
             Stash
-          </button>
+          </Button>
         </div>
       </div>
 

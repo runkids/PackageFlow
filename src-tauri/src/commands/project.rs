@@ -284,6 +284,7 @@ pub async fn scan_project(
         is_monorepo: is_mono,
         package_manager,
         scripts: package_json.scripts.unwrap_or_default(),
+        worktree_sessions: Vec::new(),
         created_at: now.clone(),
         last_opened_at: now,
     };
@@ -386,6 +387,7 @@ pub async fn refresh_project(
     let project_id = projects[idx].id.clone();
     let project_path_str = projects[idx].path.clone();
     let project_created_at = projects[idx].created_at.clone();
+    let project_worktree_sessions = projects[idx].worktree_sessions.clone();
     let project_path = Path::new(&project_path_str);
 
     // Check path still exists
@@ -432,6 +434,7 @@ pub async fn refresh_project(
         is_monorepo: is_mono,
         package_manager,
         scripts: package_json.scripts.unwrap_or_default(),
+        worktree_sessions: project_worktree_sessions,
         created_at: project_created_at,
         last_opened_at: now,
     };
