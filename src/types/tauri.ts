@@ -130,6 +130,8 @@ export interface IpaMetadata {
 
 export type ProjectSortMode = 'name' | 'lastOpened' | 'created' | 'custom';
 export type WorkflowSortMode = 'name' | 'updated' | 'created' | 'custom';
+/** Path display format: "short" shows ~/..., "full" shows complete path */
+export type PathDisplayFormat = 'short' | 'full';
 
 export interface AppSettings {
   defaultTimeout: number;
@@ -148,6 +150,8 @@ export interface AppSettings {
   customStorePath?: string;
   /** Keyboard shortcuts settings (for export/import) */
   keyboardShortcuts?: import('./shortcuts').KeyboardShortcutsSettings;
+  /** Path display format: "short" (default, shows ~/) or "full" (complete path) */
+  pathDisplayFormat?: PathDisplayFormat;
 }
 
 export interface StoreData {

@@ -6,6 +6,7 @@ import { ScriptExecutionProvider } from './contexts/ScriptExecutionContext';
 import { ShortcutsProvider } from './contexts/ShortcutsContext';
 import { WorkflowExecutionProvider } from './contexts/WorkflowExecutionContext';
 import { ExecutionHistoryProvider } from './contexts/ExecutionHistoryContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import './styles.css';
 
 const savedTheme = localStorage.getItem('theme');
@@ -31,14 +32,16 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ScriptExecutionProvider>
-      <WorkflowExecutionProvider>
-        <ExecutionHistoryProvider>
-          <ShortcutsProvider>
-            <Root />
-          </ShortcutsProvider>
-        </ExecutionHistoryProvider>
-      </WorkflowExecutionProvider>
-    </ScriptExecutionProvider>
+    <SettingsProvider>
+      <ScriptExecutionProvider>
+        <WorkflowExecutionProvider>
+          <ExecutionHistoryProvider>
+            <ShortcutsProvider>
+              <Root />
+            </ShortcutsProvider>
+          </ExecutionHistoryProvider>
+        </WorkflowExecutionProvider>
+      </ScriptExecutionProvider>
+    </SettingsProvider>
   </React.StrictMode>
 );

@@ -9,6 +9,7 @@ import { GitBranch, Code2, Play, FolderOpen } from 'lucide-react';
 import { QuickSwitcher, type QuickSwitcherItem } from '../ui/QuickSwitcher';
 import type { Worktree, EditorDefinition } from '../../lib/tauri-api';
 import type { CategorizedScript } from '../../types';
+import { useSettings } from '../../contexts/SettingsContext';
 
 interface WorktreeQuickSwitcherProps {
   isOpen: boolean;
@@ -31,6 +32,9 @@ export function WorktreeQuickSwitcher({
   onRunScript,
   onSwitchDirectory,
 }: WorktreeQuickSwitcherProps) {
+  // Settings for path display format
+  const { formatPath } = useSettings();
+
   // Build quick switcher items
   const items = useMemo((): QuickSwitcherItem[] => {
     const result: QuickSwitcherItem[] = [];
@@ -44,7 +48,7 @@ export function WorktreeQuickSwitcher({
         result.push({
           id: `${worktree.path}-editor-${editor.id}`,
           title: `Open ${worktreeName} in ${editor.name}`,
-          subtitle: worktree.path,
+          subtitle: formatPath(worktree.path),
           icon: <Code2 className="w-4 h-4" />,
           category: 'Open in Editor',
           keywords: [worktreeName, editor.name, worktree.branch || '', 'open', 'editor', 'ide'],
@@ -74,7 +78,7 @@ export function WorktreeQuickSwitcher({
         result.push({
           id: `${worktree.path}-switch`,
           title: `Switch to ${worktreeName}`,
-          subtitle: worktree.path,
+          subtitle: formatPath(worktree.path),
           icon: <FolderOpen className="w-4 h-4" />,
           category: 'Switch Directory',
           keywords: [worktreeName, worktree.branch || '', 'switch', 'directory', 'folder'],
@@ -86,7 +90,7 @@ export function WorktreeQuickSwitcher({
       result.push({
         id: worktree.path,
         title: worktreeName,
-        subtitle: `${worktree.path} • ${worktree.head?.substring(0, 7) || ''}`,
+        subtitle: `${formatPath(worktree.path)} • ${worktree.head?.substring(0, 7) || ''}`,
         icon: <GitBranch className={`w-4 h-4 ${isMain ? 'text-blue-400' : ''}`} />,
         category: 'Worktrees',
         keywords: [worktreeName, worktree.branch || '', worktree.head?.substring(0, 7) || ''],
@@ -102,7 +106,7 @@ export function WorktreeQuickSwitcher({
     }
 
     return result;
-  }, [worktrees, availableEditors, scripts, onOpenInEditor, onRunScript, onSwitchDirectory]);
+  }, [worktrees, availableEditors, scripts, onOpenInEditor, onRunScript, onSwitchDirectory, formatPath]);
 
   return (
     <QuickSwitcher

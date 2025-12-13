@@ -4,7 +4,7 @@
  * @see specs/001-worktree-enhancements/tasks.md - T045-T046
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
@@ -25,7 +25,7 @@ import { useWorktreeStatuses } from '../../hooks/useWorktreeStatuses';
 import { useSecurity } from '../../hooks/useSecurity';
 import { useScanReminder } from '../../hooks/useScanReminder';
 import { FRAMEWORK_CONFIG, UI_FRAMEWORK_CONFIG, shouldShowUIFrameworkBadge } from '../../lib/framework-detector';
-import { formatPath } from '../../lib/utils';
+import { useSettings } from '../../contexts/SettingsContext';
 
 type TabType = 'scripts' | 'workspaces' | 'workflows' | 'builds' | 'security' | 'git';
 
@@ -112,6 +112,31 @@ export function ProjectExplorer({
 
   // Editor dropdown state
   const [isEditorDropdownOpen, setIsEditorDropdownOpen] = useState(false);
+
+
+  // Get all worktrees (prefer external if provided)
+  const allWorktrees = useMemo(() => {
+    return externalWorktrees.length > 0 ? externalWorktrees : worktrees;
+  }, [externalWorktrees, worktrees]);
+
+  // Current worktree info
+  const currentWorktree = useMemo(() => {
+    if (!selectedWorktreePath) {
+      return allWorktrees.find(w => w.isMain) || null;
+    }
+    return allWorktrees.find(w => w.path === selectedWorktreePath) || null;
+  }, [allWorktrees, selectedWorktreePath]);
+
+  // Display path (show selected worktree path if different from project path)
+  const displayPath = useMemo(() => {
+    if (selectedWorktreePath && selectedWorktreePath !== project?.path) {
+      return selectedWorktreePath;
+    }
+    return project?.path || '';
+  }, [selectedWorktreePath, project?.path]);
+
+  // Settings context for path formatting
+  const { formatPath } = useSettings();
 
   // Worktree scripts hook
   const { executeScriptInWorktree, getCategorizedScripts } = useWorktreeScripts();
@@ -379,9 +404,28 @@ export function ProjectExplorer({
                 })()
               )}
             </div>
-            <p className="text-sm text-muted-foreground mt-1 truncate" title={project.path}>
-              {formatPath(project.path)}
-            </p>
+            {/* Path and Worktree Indicator */}
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-sm text-muted-foreground truncate" title={displayPath}>
+                {formatPath(displayPath)}
+              </p>
+              {/* Worktree badge (read-only indicator) */}
+              {allWorktrees.length > 1 && currentWorktree && (
+                <span
+                  className={`flex items-center gap-1.5 px-2 py-0.5 text-xs rounded border ${
+                    currentWorktree.isMain
+                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                      : 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+                  }`}
+                  title={`Current worktree: ${currentWorktree.path}`}
+                >
+                  <GitBranch className="w-3 h-3" />
+                  <span className="max-w-[120px] truncate">
+                    {currentWorktree.branch || 'detached'}
+                  </span>
+                </span>
+              )}
+            </div>
             {project.description && (
               <p className="text-sm text-muted-foreground mt-2">{project.description}</p>
             )}
@@ -588,7 +632,7 @@ export function ProjectExplorer({
             runningCommands={runningCommands}
             packageManager={project.packageManager}
             projectPath={project.path}
-            worktrees={externalWorktrees.length > 0 ? externalWorktrees : worktrees}
+            worktrees={allWorktrees}
             selectedWorktreePath={selectedWorktreePath}
             worktreeStatuses={worktreeStatuses}
             isLoadingStatuses={isLoadingStatuses}

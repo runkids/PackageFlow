@@ -4,8 +4,8 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { GitBranch, Plus, Trash2, FolderOpen, AlertCircle, RefreshCw, Code2, ChevronDown, Layers } from 'lucide-react';
-import { worktreeAPI, scriptAPI, type Worktree, type EditorDefinition } from '../../../lib/tauri-api';
+import { GitBranch, Plus, Trash2, FolderOpen, AlertCircle, RefreshCw, Code2, ChevronDown, Layers, List, LayoutGrid, ArrowDownToLine, Loader2, Archive, Search, X } from 'lucide-react';
+import { worktreeAPI, scriptAPI, gitAPI, type Worktree, type EditorDefinition } from '../../../lib/tauri-api';
 import type { PackageManager } from '../../../types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
@@ -16,7 +16,17 @@ import { Select, type SelectOption } from '../../ui/Select';
 import { useWorktreeStatuses } from '../../../hooks/useWorktreeStatuses';
 import { WorktreeStatusBadge } from '../WorktreeStatusBadge';
 import { WorktreeTemplateDialog } from '../WorktreeTemplateDialog';
+import { WorktreeCard } from '../WorktreeCard';
+import { WorktreeHealthCheck } from '../WorktreeHealthCheck';
+import { WorktreeBatchActions } from '../WorktreeBatchActions';
+import { WorktreeSyncDialog } from '../WorktreeSyncDialog';
+import { WorktreeStashDialog } from '../WorktreeStashDialog';
+import { cn } from '../../../lib/utils';
+import { useSettings } from '../../../contexts/SettingsContext';
 import path from 'path-browserify';
+
+type ViewMode = 'list' | 'grid';
+const VIEW_MODE_STORAGE_KEY = 'packageflow-worktree-view-mode';
 
 interface GitWorktreeListProps {
   /** Project path for Git operations */
@@ -59,12 +69,44 @@ export function GitWorktreeList({
   packageManager = 'npm',
   onSwitchWorkingDirectory,
 }: GitWorktreeListProps) {
+  // Settings for path display format
+  const { formatPath } = useSettings();
+
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
   const [isGitRepo, setIsGitRepo] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // View mode state - default to grid
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    return saved === 'list' ? 'list' : 'grid';
+  });
+
+  // Persist view mode preference
+  useEffect(() => {
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+  }, [viewMode]);
+
+  // Health check collapsed state
+  const [isHealthCheckCollapsed, setIsHealthCheckCollapsed] = useState(false);
+
+  // Pull state - track which worktree is being pulled
+  const [pullingWorktreePath, setPullingWorktreePath] = useState<string | null>(null);
+
+  // Sync dialog state
+  const [syncWorktree, setSyncWorktree] = useState<Worktree | null>(null);
+  const [showSyncDialog, setShowSyncDialog] = useState(false);
+
+  // Stash dialog state
+  const [stashWorktree, setStashWorktree] = useState<Worktree | null>(null);
+  const [showStashDialog, setShowStashDialog] = useState(false);
+
+  // Search/filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   // Worktree statuses hook
   const {
@@ -113,6 +155,46 @@ export function GitWorktreeList({
     }
   }, []);
 
+  // Pull a single worktree
+  const handlePull = useCallback(async (worktree: Worktree) => {
+    if (pullingWorktreePath) return; // Already pulling
+
+    setPullingWorktreePath(worktree.path);
+    setError(null);
+
+    try {
+      const result = await gitAPI.pull(worktree.path);
+      if (!result.success) {
+        const errorMessages: Record<string, string> = {
+          MERGE_CONFLICT: 'Conflicts detected, resolve manually',
+          NO_UPSTREAM: 'No upstream branch configured',
+          AUTH_FAILED: 'Authentication failed',
+          NETWORK_ERROR: 'Network error',
+        };
+        setError(errorMessages[result.error || ''] || result.error || 'Pull failed');
+      }
+      // Refresh statuses after pull
+      refreshStatuses();
+    } catch (err) {
+      console.error('Failed to pull:', err);
+      setError('Failed to pull');
+    } finally {
+      setPullingWorktreePath(null);
+    }
+  }, [pullingWorktreePath, refreshStatuses]);
+
+  // Sync a single worktree
+  const handleSync = useCallback((worktree: Worktree) => {
+    setSyncWorktree(worktree);
+    setShowSyncDialog(true);
+  }, []);
+
+  // Open stash dialog for a worktree
+  const handleStash = useCallback((worktree: Worktree) => {
+    setStashWorktree(worktree);
+    setShowStashDialog(true);
+  }, []);
+
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newWorktreePath, setNewWorktreePath] = useState('');
   const [newBranch, setNewBranch] = useState('');
@@ -147,6 +229,17 @@ export function GitWorktreeList({
     const usedBranches = new Set(worktrees.map(w => w.branch).filter(Boolean));
     return branches.filter(b => !usedBranches.has(b));
   }, [branches, worktrees]);
+
+  // Filtered worktrees based on search query
+  const filteredWorktrees = useMemo(() => {
+    if (!searchQuery.trim()) return worktrees;
+    const query = searchQuery.toLowerCase();
+    return worktrees.filter((w) => {
+      const branchMatch = w.branch?.toLowerCase().includes(query);
+      const pathMatch = w.path.toLowerCase().includes(query);
+      return branchMatch || pathMatch;
+    });
+  }, [worktrees, searchQuery]);
 
   const loadWorktrees = useCallback(async (showLoading = false) => {
     if (showLoading) {
@@ -362,9 +455,90 @@ export function GitWorktreeList({
   return (
     <div className="p-4 space-y-4">
       {/* Header with actions - matching Git panel style */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-muted-foreground">Worktrees</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="text-sm font-medium text-muted-foreground flex-shrink-0">Worktrees</h3>
+          {/* Search input - show when expanded or has query */}
+          {(isSearchExpanded || searchQuery) && (
+            <div className="relative flex items-center">
+              <Search className="absolute left-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter..."
+                autoFocus
+                className="w-32 pl-7 pr-7 py-1 text-xs bg-muted/50 border border-border rounded focus:outline-none focus:border-blue-500"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIsSearchExpanded(false);
+                  }}
+                  className="absolute right-1.5 p-0.5 rounded hover:bg-accent"
+                >
+                  <X className="w-3 h-3 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+          )}
+          {/* Search count */}
+          {searchQuery && filteredWorktrees.length !== worktrees.length && (
+            <span className="text-xs text-muted-foreground">
+              {filteredWorktrees.length}/{worktrees.length}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
+          {/* Search toggle */}
+          {!isSearchExpanded && !searchQuery && (
+            <button
+              onClick={() => setIsSearchExpanded(true)}
+              className="p-1.5 rounded hover:bg-accent transition-colors"
+              title="Search worktrees"
+            >
+              <Search className="w-4 h-4 text-muted-foreground" />
+            </button>
+          )}
+          {/* View mode toggle */}
+          <div className="flex items-center gap-0.5 bg-muted/50 rounded-md p-0.5">
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn(
+                'p-1.5 rounded transition-colors',
+                viewMode === 'list'
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={cn(
+                'p-1.5 rounded transition-colors',
+                viewMode === 'grid'
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              title="Grid view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
+          {/* Batch Actions */}
+          {worktrees.length > 1 && (
+            <WorktreeBatchActions
+              worktrees={worktrees}
+              projectPath={projectPath}
+              onComplete={() => {
+                loadWorktrees(true);
+                refreshStatuses();
+              }}
+            />
+          )}
           <button
             onClick={() => {
               loadWorktrees(true);
@@ -410,16 +584,64 @@ export function GitWorktreeList({
         </div>
       )}
 
-      {/* Worktree List */}
+      {/* Health Check Warnings */}
+      {worktrees.length > 0 && (
+        <WorktreeHealthCheck
+          worktrees={worktrees}
+          statuses={worktreeStatuses}
+          isCollapsed={isHealthCheckCollapsed}
+          onToggleCollapse={() => setIsHealthCheckCollapsed(!isHealthCheckCollapsed)}
+        />
+      )}
+
+      {/* Worktree List/Grid */}
       {worktrees.length === 0 ? (
         <div className="p-8 text-center text-muted-foreground">
           <GitBranch className="w-10 h-10 mx-auto mb-3 opacity-50" />
           <p className="text-sm">No worktrees</p>
           <p className="text-xs mt-1">Click "New" to create a worktree</p>
         </div>
+      ) : filteredWorktrees.length === 0 ? (
+        <div className="p-8 text-center text-muted-foreground">
+          <Search className="w-10 h-10 mx-auto mb-3 opacity-50" />
+          <p className="text-sm">No matches for "{searchQuery}"</p>
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setIsSearchExpanded(false);
+            }}
+            className="text-xs text-blue-400 hover:underline mt-2"
+          >
+            Clear search
+          </button>
+        </div>
+      ) : viewMode === 'grid' ? (
+        /* Grid View */
+        <div
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          role="list"
+          aria-label="Worktrees"
+        >
+          {filteredWorktrees.map((worktree) => (
+            <WorktreeCard
+              key={worktree.path}
+              worktree={worktree}
+              status={worktreeStatuses[worktree.path]}
+              isLoadingStatus={isLoadingStatuses}
+              availableEditors={availableEditors}
+              onOpenInEditor={handleOpenInEditor}
+              onSwitchWorkingDirectory={onSwitchWorkingDirectory}
+              onRemove={handleOpenRemoveDialog}
+              onPull={handlePull}
+              onSync={handleSync}
+              onStash={handleStash}
+            />
+          ))}
+        </div>
       ) : (
+        /* List View */
         <div className="space-y-1">
-          {worktrees.map((worktree) => (
+          {filteredWorktrees.map((worktree) => (
               <div
                 key={worktree.path}
                 className={`group flex items-center gap-2 py-2 px-2 rounded transition-colors ${
@@ -454,7 +676,7 @@ export function GitWorktreeList({
                     className="text-xs text-muted-foreground mt-0.5 truncate"
                     title={worktree.path}
                   >
-                    {worktree.path}
+                    {formatPath(worktree.path)}
                   </p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs text-muted-foreground font-mono">
@@ -507,6 +729,39 @@ export function GitWorktreeList({
                       </Dropdown>
                     )
                   )}
+                  {/* Pull button */}
+                  {!worktree.isDetached && (
+                    <button
+                      onClick={() => handlePull(worktree)}
+                      disabled={pullingWorktreePath === worktree.path}
+                      className="p-1.5 rounded hover:bg-accent disabled:opacity-50"
+                      title="Pull"
+                    >
+                      {pullingWorktreePath === worktree.path ? (
+                        <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                      ) : (
+                        <ArrowDownToLine className="w-3.5 h-3.5 text-blue-400" />
+                      )}
+                    </button>
+                  )}
+                  {/* Sync button */}
+                  {!worktree.isMain && !worktree.isDetached && (
+                    <button
+                      onClick={() => handleSync(worktree)}
+                      className="p-1.5 rounded hover:bg-accent"
+                      title="Sync with main"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-orange-400" />
+                    </button>
+                  )}
+                  {/* Stash button */}
+                  <button
+                    onClick={() => handleStash(worktree)}
+                    className="p-1.5 rounded hover:bg-accent"
+                    title="Stash"
+                  >
+                    <Archive className="w-3.5 h-3.5 text-purple-400" />
+                  </button>
                   {onSwitchWorkingDirectory && !worktree.isMain && (
                     <button
                       onClick={() => onSwitchWorkingDirectory(worktree.path)}
@@ -681,7 +936,7 @@ export function GitWorktreeList({
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 truncate" title={worktreeToRemove.path}>
-                  {worktreeToRemove.path}
+                  {formatPath(worktreeToRemove.path)}
                 </p>
               </div>
 
@@ -779,6 +1034,33 @@ export function GitWorktreeList({
         cancelText="Cancel"
         onConfirm={() => handleRemoveWorktree(true)}
         isLoading={isRemoving}
+      />
+
+      {/* Sync Dialog */}
+      <WorktreeSyncDialog
+        worktree={syncWorktree}
+        isOpen={showSyncDialog}
+        onClose={() => {
+          setShowSyncDialog(false);
+          setSyncWorktree(null);
+        }}
+        onComplete={() => {
+          loadWorktrees(true);
+          refreshStatuses();
+        }}
+      />
+
+      {/* Stash Dialog */}
+      <WorktreeStashDialog
+        worktree={stashWorktree}
+        isOpen={showStashDialog}
+        onClose={() => {
+          setShowStashDialog(false);
+          setStashWorktree(null);
+        }}
+        onComplete={() => {
+          refreshStatuses();
+        }}
       />
     </div>
   );

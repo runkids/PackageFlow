@@ -516,6 +516,36 @@ export interface RemoveWorktreeResponse {
   error?: string;
 }
 
+export interface GetMergedWorktreesResponse {
+  success: boolean;
+  mergedWorktrees?: Worktree[];
+  baseBranch?: string;
+  error?: string;
+}
+
+export interface CommitInfo {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+export interface GetBehindCommitsResponse {
+  success: boolean;
+  behindCount: number;
+  commits?: CommitInfo[];
+  baseBranch?: string;
+  error?: string;
+}
+
+export interface SyncWorktreeResponse {
+  success: boolean;
+  method?: string;
+  hasConflicts: boolean;
+  error?: string;
+}
+
 export interface AddWorktreeParams {
   projectPath: string;
   worktreePath: string;
@@ -550,6 +580,15 @@ export const worktreeAPI = {
       force: params.force ?? false,
       deleteBranch: params.deleteBranch ?? false,
     }),
+
+  getMergedWorktrees: (projectPath: string, baseBranch?: string): Promise<GetMergedWorktreesResponse> =>
+    invoke<GetMergedWorktreesResponse>('get_merged_worktrees', { projectPath, baseBranch }),
+
+  getBehindCommits: (worktreePath: string, baseBranch?: string, limit?: number): Promise<GetBehindCommitsResponse> =>
+    invoke<GetBehindCommitsResponse>('get_behind_commits', { worktreePath, baseBranch, limit }),
+
+  syncWorktree: (worktreePath: string, baseBranch: string, method: 'rebase' | 'merge'): Promise<SyncWorktreeResponse> =>
+    invoke<SyncWorktreeResponse>('sync_worktree', { worktreePath, baseBranch, method }),
 
   // T012: Enhanced worktree status API
   getWorktreeStatus: (worktreePath: string): Promise<GetWorktreeStatusResponse> =>

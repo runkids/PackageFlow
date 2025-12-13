@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useTerminalHeight } from '../../hooks/useTerminalHeight';
 import { scriptAPI } from '../../lib/tauri-api';
+import { useSettings } from '../../contexts/SettingsContext';
 import '@xterm/xterm/css/xterm.css';
 
 // PTY session info
@@ -155,6 +156,9 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
   const [searchQuery, setSearchQuery] = useState('');
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
+
+  // Settings context for path formatting
+  const { formatPath } = useSettings();
 
   // Feature 008: Store callback refs to avoid stale closures in useEffect
   const onUpdatePtyOutputRef = useRef(onUpdatePtyOutput);
@@ -824,8 +828,8 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
               Exit code: {activeSession.exitCode}
             </span>
           )}
-          <span className="ml-auto text-muted-foreground">
-            {activeSession.projectPath}
+          <span className="ml-auto text-muted-foreground" title={activeSession.projectPath}>
+            {formatPath(activeSession.projectPath)}
           </span>
         </div>
       )}

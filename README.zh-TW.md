@@ -5,16 +5,15 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>專為前端與 Node.js 專案打造的開發工作流管理工具</strong>
+  <strong>別再切換視窗了。用視覺化方式自動化你的開發流程。</strong>
 </p>
 
 <p align="center">
+  <a href="#為什麼選擇-packageflow">為什麼選擇</a> •
   <a href="#功能特色">功能特色</a> •
   <a href="#安裝方式">安裝方式</a> •
   <a href="#截圖預覽">截圖預覽</a> •
-  <a href="#開發指南">開發指南</a> •
-  <a href="#參與貢獻">參與貢獻</a> •
-  <a href="#授權條款">授權條款</a>
+  <a href="#開發指南">開發指南</a>
 </p>
 
 <p align="center">
@@ -24,9 +23,22 @@
 
 ---
 
-## 什麼是 PackageFlow？
+## 為什麼選擇 PackageFlow？
 
-PackageFlow 是一款桌面應用程式，旨在簡化您的開發工作流程。採用 Tauri、React 和 Rust 技術打造，提供統一的介面來管理 Git 操作、自動化任務、處理 Monorepo 專案，並確保套件安全性。
+**痛點：** 身為前端開發者，你是否每天在多個終端機之間來回切換——跑 Git 指令、執行建置腳本、管理 worktree、檢查安全漏洞？這種上下文切換正在扼殺你的生產力。
+
+**解決方案：** PackageFlow 是一個輕量的桌面應用程式，把所有工具整合在一個地方——還有視覺化工作流編輯器，讓你不用寫腳本就能自動化重複性任務。
+
+### 有什麼不同？
+
+| 功能 | 傳統工具 | PackageFlow |
+|------|---------|-------------|
+| **Git Worktree** | 只能用 CLI，難以視覺化 | 視覺化管理 + 快速切換器 |
+| **任務自動化** | Shell 腳本、CI/CD | 拖拉式工作流編輯器 |
+| **Monorepo** | 各自獨立的 CLI 工具 | Nx 與 Turborepo 統一介面 |
+| **安全審計** | 手動執行 `npm audit` | 一鍵掃描 + 歷史記錄 |
+
+使用 **Tauri + Rust** 打造 = 快速、輕量（~15MB），沒有 Electron 的肥大問題。
 
 ## 功能特色
 

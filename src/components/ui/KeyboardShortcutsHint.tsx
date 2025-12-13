@@ -152,7 +152,7 @@ export function KeyboardShortcutsHint({
         onClick={() => setIsOpen(true)}
         className={cn(
           'fixed z-40 p-2 bg-card hover:bg-accent border border-border rounded-lg shadow-lg transition-all duration-200 group',
-          position === 'bottom-left' ? 'left-4 bottom-4' : 'right-4 bottom-4'
+          position === 'bottom-left' ? 'left-4 bottom-16' : 'right-4 bottom-16'
         )}
         title="Show keyboard shortcuts (⌘/)"
         aria-label="Show keyboard shortcuts"

@@ -100,6 +100,9 @@ pub fn run() {
             worktree::list_worktrees,
             worktree::add_worktree,
             worktree::remove_worktree,
+            worktree::get_merged_worktrees,
+            worktree::get_behind_commits,
+            worktree::sync_worktree,
             // Enhanced worktree commands (001-worktree-enhancements)
             worktree::get_worktree_status,
             worktree::get_all_worktree_statuses,

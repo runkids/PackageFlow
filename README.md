@@ -5,16 +5,15 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>Developer workflow management tool for frontend and Node.js projects</strong>
+  <strong>Stop juggling terminals. Automate your dev workflow visually.</strong>
 </p>
 
 <p align="center">
+  <a href="#why-packageflow">Why PackageFlow</a> •
   <a href="#features">Features</a> •
   <a href="#installation">Installation</a> •
   <a href="#screenshots">Screenshots</a> •
-  <a href="#development">Development</a> •
-  <a href="#contributing">Contributing</a> •
-  <a href="#license">License</a>
+  <a href="#development">Development</a>
 </p>
 
 <p align="center">
@@ -24,9 +23,22 @@
 
 ---
 
-## What is PackageFlow?
+## Why PackageFlow?
 
-PackageFlow is a desktop application that streamlines your development workflow. Built with Tauri, React, and Rust, it provides a unified interface for managing Git operations, automating tasks, handling monorepo projects, and ensuring package security.
+**The Problem:** You're a frontend developer juggling multiple terminals, switching between Git commands, running build scripts, managing worktrees, and checking security audits. Context switching kills your productivity.
+
+**The Solution:** PackageFlow is a lightweight desktop app that puts everything in one place—with a visual workflow builder that lets you automate repetitive tasks without writing scripts.
+
+### What Makes It Different
+
+| Feature | Traditional Tools | PackageFlow |
+|---------|------------------|-------------|
+| **Git Worktree** | CLI-only, hard to visualize | Visual management with quick switcher |
+| **Task Automation** | Shell scripts, CI/CD | Drag-and-drop workflow builder |
+| **Monorepo** | Separate CLI tools | Unified UI for Nx & Turborepo |
+| **Security Audit** | Manual `npm audit` | One-click scan with history |
+
+Built with **Tauri + Rust** = Fast, lightweight (~15MB), no Electron bloat.
 
 ## Features
 

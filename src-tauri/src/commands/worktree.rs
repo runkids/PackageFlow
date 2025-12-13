@@ -35,6 +35,48 @@ pub struct AddWorktreeResponse {
     pub error: Option<String>,
 }
 
+/// Response for get_merged_worktrees command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetMergedWorktreesResponse {
+    pub success: bool,
+    pub merged_worktrees: Option<Vec<Worktree>>,
+    pub base_branch: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Commit info for sync assistant
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitInfo {
+    pub hash: String,
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    pub date: String,
+}
+
+/// Response for get_behind_commits command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetBehindCommitsResponse {
+    pub success: bool,
+    pub behind_count: i32,
+    pub commits: Option<Vec<CommitInfo>>,
+    pub base_branch: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Response for sync_worktree command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncWorktreeResponse {
+    pub success: bool,
+    pub method: Option<String>, // "rebase" or "merge"
+    pub has_conflicts: bool,
+    pub error: Option<String>,
+}
+
 /// Response for remove_worktree command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -226,6 +268,296 @@ pub async fn list_worktrees(project_path: String) -> Result<ListWorktreesRespons
             worktrees: None,
             error: Some(format!("GIT_ERROR: {}", e)),
         }),
+    }
+}
+
+/// Get worktrees whose branches have been merged into the base branch
+#[tauri::command]
+pub async fn get_merged_worktrees(
+    project_path: String,
+    base_branch: Option<String>,
+) -> Result<GetMergedWorktreesResponse, String> {
+    let path = Path::new(&project_path);
+
+    // Check if git repo
+    if !is_git_repo(project_path.clone()).await? {
+        return Ok(GetMergedWorktreesResponse {
+            success: false,
+            merged_worktrees: None,
+            base_branch: None,
+            error: Some("NOT_GIT_REPO".to_string()),
+        });
+    }
+
+    // Determine base branch (main or master)
+    let base = base_branch.unwrap_or_else(|| {
+        // Check if main exists
+        if exec_git(path, &["rev-parse", "--verify", "main"]).is_ok() {
+            "main".to_string()
+        } else if exec_git(path, &["rev-parse", "--verify", "master"]).is_ok() {
+            "master".to_string()
+        } else {
+            "main".to_string() // Default to main
+        }
+    });
+
+    // Get list of merged branches
+    let merged_output = match exec_git(path, &["branch", "--merged", &base, "--format=%(refname:short)"]) {
+        Ok(output) => output,
+        Err(e) => {
+            return Ok(GetMergedWorktreesResponse {
+                success: false,
+                merged_worktrees: None,
+                base_branch: Some(base),
+                error: Some(format!("GIT_ERROR: {}", e)),
+            });
+        }
+    };
+
+    let merged_branches: Vec<String> = merged_output
+        .lines()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.trim().to_string())
+        .collect();
+
+    // Get all worktrees
+    let list_result = list_worktrees(project_path).await?;
+    if !list_result.success {
+        return Ok(GetMergedWorktreesResponse {
+            success: false,
+            merged_worktrees: None,
+            base_branch: Some(base),
+            error: list_result.error,
+        });
+    }
+
+    let worktrees = list_result.worktrees.unwrap_or_default();
+
+    // Filter worktrees whose branches are merged (excluding main worktree and base branch itself)
+    let merged_worktrees: Vec<Worktree> = worktrees
+        .into_iter()
+        .filter(|w| {
+            // Skip main worktree
+            if w.is_main {
+                return false;
+            }
+            // Skip if no branch (detached HEAD)
+            let branch = match &w.branch {
+                Some(b) => b,
+                None => return false,
+            };
+            // Skip base branch itself
+            if branch == &base {
+                return false;
+            }
+            // Check if branch is in merged list
+            merged_branches.contains(branch)
+        })
+        .collect();
+
+    Ok(GetMergedWorktreesResponse {
+        success: true,
+        merged_worktrees: Some(merged_worktrees),
+        base_branch: Some(base),
+        error: None,
+    })
+}
+
+/// Get commits that the worktree is behind compared to base branch
+#[tauri::command]
+pub async fn get_behind_commits(
+    worktree_path: String,
+    base_branch: Option<String>,
+    limit: Option<i32>,
+) -> Result<GetBehindCommitsResponse, String> {
+    let path = Path::new(&worktree_path);
+
+    // Check if path exists
+    if !path.exists() {
+        return Ok(GetBehindCommitsResponse {
+            success: false,
+            behind_count: 0,
+            commits: None,
+            base_branch: None,
+            error: Some("PATH_NOT_FOUND".to_string()),
+        });
+    }
+
+    // Check if it's a valid git worktree
+    if exec_git(path, &["rev-parse", "--is-inside-work-tree"]).is_err() {
+        return Ok(GetBehindCommitsResponse {
+            success: false,
+            behind_count: 0,
+            commits: None,
+            base_branch: None,
+            error: Some("NOT_A_WORKTREE".to_string()),
+        });
+    }
+
+    // Determine base branch (main or master)
+    let base = base_branch.unwrap_or_else(|| {
+        // Try to get the default branch from remote
+        if let Ok(output) = exec_git(path, &["symbolic-ref", "refs/remotes/origin/HEAD"]) {
+            if let Some(branch) = output.strip_prefix("refs/remotes/origin/") {
+                return branch.to_string();
+            }
+        }
+        // Fallback: check if main or master exists
+        if exec_git(path, &["rev-parse", "--verify", "origin/main"]).is_ok() {
+            "origin/main".to_string()
+        } else if exec_git(path, &["rev-parse", "--verify", "origin/master"]).is_ok() {
+            "origin/master".to_string()
+        } else if exec_git(path, &["rev-parse", "--verify", "main"]).is_ok() {
+            "main".to_string()
+        } else {
+            "master".to_string()
+        }
+    });
+
+    // Get the count of commits behind
+    let behind_count = match exec_git(path, &["rev-list", "--count", &format!("HEAD..{}", base)]) {
+        Ok(output) => output.trim().parse().unwrap_or(0),
+        Err(_) => 0,
+    };
+
+    if behind_count == 0 {
+        return Ok(GetBehindCommitsResponse {
+            success: true,
+            behind_count: 0,
+            commits: Some(vec![]),
+            base_branch: Some(base),
+            error: None,
+        });
+    }
+
+    // Get the actual commits (limited)
+    let max_commits = limit.unwrap_or(10).min(50);
+    let format = "--format=%H|%h|%s|%an|%ci";
+    let range = format!("HEAD..{}", base);
+
+    let commits = match exec_git(path, &["log", format, &format!("-{}", max_commits), &range]) {
+        Ok(output) => {
+            output
+                .lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.splitn(5, '|').collect();
+                    CommitInfo {
+                        hash: parts.get(0).unwrap_or(&"").to_string(),
+                        short_hash: parts.get(1).unwrap_or(&"").to_string(),
+                        message: parts.get(2).unwrap_or(&"").to_string(),
+                        author: parts.get(3).unwrap_or(&"").to_string(),
+                        date: parts.get(4).unwrap_or(&"").to_string(),
+                    }
+                })
+                .collect()
+        }
+        Err(e) => {
+            return Ok(GetBehindCommitsResponse {
+                success: false,
+                behind_count,
+                commits: None,
+                base_branch: Some(base),
+                error: Some(format!("GIT_ERROR: {}", e)),
+            });
+        }
+    };
+
+    Ok(GetBehindCommitsResponse {
+        success: true,
+        behind_count,
+        commits: Some(commits),
+        base_branch: Some(base),
+        error: None,
+    })
+}
+
+/// Sync worktree with base branch using rebase or merge
+#[tauri::command]
+pub async fn sync_worktree(
+    worktree_path: String,
+    base_branch: String,
+    method: String, // "rebase" or "merge"
+) -> Result<SyncWorktreeResponse, String> {
+    let path = Path::new(&worktree_path);
+
+    // Check if path exists
+    if !path.exists() {
+        return Ok(SyncWorktreeResponse {
+            success: false,
+            method: Some(method),
+            has_conflicts: false,
+            error: Some("PATH_NOT_FOUND".to_string()),
+        });
+    }
+
+    // Check if it's a valid git worktree
+    if exec_git(path, &["rev-parse", "--is-inside-work-tree"]).is_err() {
+        return Ok(SyncWorktreeResponse {
+            success: false,
+            method: Some(method),
+            has_conflicts: false,
+            error: Some("NOT_A_WORKTREE".to_string()),
+        });
+    }
+
+    // Check for uncommitted changes
+    if let Ok(status) = exec_git(path, &["status", "--porcelain"]) {
+        if !status.is_empty() {
+            return Ok(SyncWorktreeResponse {
+                success: false,
+                method: Some(method),
+                has_conflicts: false,
+                error: Some("HAS_UNCOMMITTED_CHANGES".to_string()),
+            });
+        }
+    }
+
+    // Perform the sync operation
+    let result = match method.as_str() {
+        "rebase" => exec_git(path, &["rebase", &base_branch]),
+        "merge" => exec_git(path, &["merge", &base_branch, "--no-edit"]),
+        _ => {
+            return Ok(SyncWorktreeResponse {
+                success: false,
+                method: Some(method),
+                has_conflicts: false,
+                error: Some("INVALID_METHOD".to_string()),
+            });
+        }
+    };
+
+    match result {
+        Ok(_) => Ok(SyncWorktreeResponse {
+            success: true,
+            method: Some(method),
+            has_conflicts: false,
+            error: None,
+        }),
+        Err(e) => {
+            // Check if it's a conflict
+            let has_conflicts = e.contains("CONFLICT") || e.contains("conflict");
+
+            // If there are conflicts, abort the operation
+            if has_conflicts {
+                match method.as_str() {
+                    "rebase" => { let _ = exec_git(path, &["rebase", "--abort"]); }
+                    "merge" => { let _ = exec_git(path, &["merge", "--abort"]); }
+                    _ => {}
+                }
+            }
+
+            Ok(SyncWorktreeResponse {
+                success: false,
+                method: Some(method),
+                has_conflicts,
+                error: Some(if has_conflicts {
+                    "CONFLICT".to_string()
+                } else {
+                    format!("GIT_ERROR: {}", e)
+                }),
+            })
+        }
     }
 }
 

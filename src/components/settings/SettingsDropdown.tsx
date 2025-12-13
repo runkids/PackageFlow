@@ -4,10 +4,11 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings, Download, Upload, FolderOpen, RotateCcw, ExternalLink, Keyboard, Sun, Moon } from 'lucide-react';
+import { Settings, Download, Upload, FolderOpen, RotateCcw, ExternalLink, Keyboard, Sun, Moon, FolderTree, TextCursorInput } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSection, DropdownSeparator } from '../ui/Dropdown';
 import { settingsAPI, open } from '../../lib/tauri-api';
 import type { StorePathInfo } from '../../types/tauri';
+import { useSettings } from '../../contexts/SettingsContext';
 
 interface SettingsDropdownProps {
   onExport: () => void;
@@ -22,6 +23,10 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
 }) => {
   const [storePathInfo, setStorePathInfo] = useState<StorePathInfo | null>(null);
   const [isChangingPath, setIsChangingPath] = useState(false);
+
+  // Path display format from settings context
+  const { pathDisplayFormat, setPathDisplayFormat } = useSettings();
+
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
@@ -67,6 +72,15 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
+
+  // Toggle path display format
+  const togglePathFormat = useCallback(async () => {
+    try {
+      await setPathDisplayFormat(pathDisplayFormat === 'short' ? 'full' : 'short');
+    } catch (error) {
+      console.error('Failed to change path format:', error);
+    }
+  }, [pathDisplayFormat, setPathDisplayFormat]);
 
   // Handle change storage location
   const handleChangeStorePath = useCallback(async () => {
@@ -150,6 +164,14 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
         icon={theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
       >
         {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+      </DropdownItem>
+
+      {/* Path Display Format Toggle */}
+      <DropdownItem
+        onClick={togglePathFormat}
+        icon={pathDisplayFormat === 'short' ? <FolderTree className="w-4 h-4" /> : <TextCursorInput className="w-4 h-4" />}
+      >
+        {pathDisplayFormat === 'short' ? 'Show Full Paths' : 'Show Short Paths'}
       </DropdownItem>
 
       <DropdownSeparator />

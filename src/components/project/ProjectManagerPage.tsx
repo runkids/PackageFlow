@@ -249,7 +249,7 @@ export function ProjectManagerPage({
     await ptyTerminalRef.current.spawnSession(
       cmd,
       args,
-      activeProject.path,
+      selectedWorktreePath || activeProject.path,
       commandId,
       activeProject.name
     );
@@ -257,7 +257,7 @@ export function ProjectManagerPage({
     if (isTerminalCollapsed) {
       onToggleTerminalCollapse?.();
     }
-  }, [activeProject, ptyTerminalRef, isTerminalCollapsed, onToggleTerminalCollapse]);
+  }, [activeProject, selectedWorktreePath, ptyTerminalRef, isTerminalCollapsed, onToggleTerminalCollapse]);
 
   // Handle refresh project
   const handleRefreshProject = useCallback(async () => {

@@ -35,6 +35,11 @@ fn default_global_toggle_shortcut() -> String {
     String::from("cmd+shift+p")
 }
 
+/// Default path display format
+fn default_path_display_format() -> String {
+    String::from("short")
+}
+
 /// Custom shortcut binding configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,6 +122,9 @@ pub struct AppSettings {
     /// Keyboard shortcuts settings
     #[serde(default)]
     pub keyboard_shortcuts: KeyboardShortcutsSettings,
+    /// Path display format: "short" (with ~/...) | "full" (complete path)
+    #[serde(default = "default_path_display_format")]
+    pub path_display_format: String,
 }
 
 impl Default for AppSettings {
@@ -136,6 +144,7 @@ impl Default for AppSettings {
             workflow_order: Vec::new(),
             custom_store_path: None,
             keyboard_shortcuts: KeyboardShortcutsSettings::default(),
+            path_display_format: default_path_display_format(),
         }
     }
 }
