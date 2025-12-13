@@ -5,13 +5,13 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>為 vibe coding 而生——把你的 package.json 變成開發控制台：腳本、worktree、工作流、部署與資安掃描，一個快又輕的桌面 App 搞定。</strong>
+  <strong>給前端與 Node.js 開發者的桌面工具 — 管理腳本、Git、worktree，部署後立即取得預覽連結。</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/runkids/PackageFlow/releases">下載</a> •
   <a href="#為什麼選擇-packageflow">為什麼選擇</a> •
-  <a href="#精選亮點">精選亮點</a> •
+  <a href="#功能">功能</a> •
   <a href="#截圖預覽">截圖預覽</a> •
   <a href="#安裝方式">安裝方式</a> •
   <a href="#開發指南">開發指南</a>
@@ -26,22 +26,21 @@
 
 ## 為什麼選擇 PackageFlow？
 
-PackageFlow 是一個以 `package.json` 為核心的輕量桌面應用程式。它把每天最耗腦的事情——腳本、Git、worktree、資安掃描、部署——收斂成一個鍵盤友善的控制台。
+PackageFlow 讓你的 `package.json` 動起來。執行腳本、管理 Git、切換 worktree、部署並取得可分享的連結——全在一個 App 內完成。
 
-使用 **Tauri + Rust** 打造：體積小、啟動快，沒有 Electron 的肥大負擔。
-對新手也很友善：少記指令、多把想法做出來。
+適合 vibe coding：少打指令，專注開發。使用 **Tauri + Rust** 打造，檔案小、啟動快。
 
-## 精選亮點
+## 功能
 
-- **腳本 + 終端機**：以卡片整理 `dev/build/test/lint`（以及更多），在內建 PTY 終端機看即時輸出，快速停止程序（含 port 偵測）。
-- **工具鏈護欄**：偵測 Volta/Corepack/版本不一致，並用正確版本執行命令。
-- **Git 不用跳出去**：狀態、暫存、Diff 檢視、提交、分支、歷史、Stash，且支援 worktree 情境。
-- **Worktree + Session**：視覺化管理所有 worktrees，<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd> 快速切換，為每個 worktree 存「我在幹嘛」（目標/筆記/清單/標籤），一鍵 Resume。
-- **Monorepo 感知**：自動偵測 Nx/Turborepo、Workspace 檢視、依賴圖（重度 layout 交給 worker）。
-- **視覺化工作流**：拖拉式工作流編輯器＋步驟範本、Outgoing Webhook、Incoming Webhook 觸發（含桌面通知）。
-- **一鍵部署**：產生 GitHub Pages workflow 或透過 Netlify/Cloudflare Pages 部署，拿到可分享的連結（含歷史與多帳號支援）。
-- **資安掃描不再忘記**：一鍵掃描、嚴重程度統計、提醒機制，依賴未安裝時可直接跳到快速修復。
-- **資料在你手上**：所有資料本機保存（Tauri store），支援匯出/匯入（也包含 IPA/APK 檢視等工具）。
+- **腳本 + 終端機**：以卡片執行 npm 腳本，內建 PTY 終端機即時輸出，支援 port 偵測停止程序。
+- **工具鏈偵測**：偵測 Volta/Corepack 版本不一致，以正確版本執行命令。
+- **Git 整合**：狀態、暫存、Diff 檢視、提交、分支、歷史、Stash，支援 worktree 操作。
+- **Worktree + Session**：視覺化管理 worktrees，<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd> 快速切換，可儲存每個 worktree 的工作記錄（目標/筆記/清單/標籤）。
+- **Monorepo 支援**：Nx/Turborepo 偵測、Workspace 檢視、依賴圖。
+- **視覺化工作流**：拖拉式工作流編輯器，支援步驟範本、Outgoing/Incoming Webhook。
+- **部署 + 預覽**：透過 Netlify/Cloudflare Pages 部署，立即取得可分享的預覽連結。支援歷史記錄與多帳號。
+- **資安掃描**：執行掃描、嚴重程度統計、提醒機制、快速修復未安裝的依賴。
+- **本機優先**：所有資料本機保存（Tauri store），支援匯出/匯入，含 IPA/APK 檢視工具。
 
 <p align="center">
   <img src="docs/screenshots/deploy-demo.gif" width="620" alt="部署 Demo" />

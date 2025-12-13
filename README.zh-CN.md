@@ -5,13 +5,13 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>为 vibe coding 而生——把你的 package.json 变成开发控制台：脚本、worktree、工作流、部署与安全扫描，一个快又轻的桌面 App 搞定。</strong>
+  <strong>给前端与 Node.js 开发者的桌面工具 — 管理脚本、Git、worktree，部署后立即获取预览链接。</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/runkids/PackageFlow/releases">下载</a> •
   <a href="#为什么选择-packageflow">为什么选择</a> •
-  <a href="#精选亮点">精选亮点</a> •
+  <a href="#功能">功能</a> •
   <a href="#截图">截图</a> •
   <a href="#安装">安装</a> •
   <a href="#开发">开发</a>
@@ -26,22 +26,21 @@
 
 ## 为什么选择 PackageFlow？
 
-PackageFlow 是一个以 `package.json` 为核心的轻量桌面应用。它把每天最耗脑的事情——脚本、Git、worktree、安全扫描、部署——收敛成一个键盘友好的控制台。
+PackageFlow 让你的 `package.json` 动起来。运行脚本、管理 Git、切换 worktree、部署并获取可分享的链接——全在一个 App 内完成。
 
-使用 **Tauri + Rust** 构建：体积小、启动快，没有 Electron 的臃肿负担。
-对新手也很友好：少记命令，多把想法做出来。
+适合 vibe coding：少打命令，专注开发。使用 **Tauri + Rust** 构建，文件小、启动快。
 
-## 精选亮点
+## 功能
 
-- **脚本 + 终端**：用卡片整理 `dev/build/test/lint`（以及更多），在内置 PTY 终端里看实时输出，快速停止进程（含端口检测）。
-- **工具链护栏**：检测 Volta/Corepack/版本不一致，并用正确版本执行命令。
-- **Git 不用跳出去**：状态、暂存、Diff 查看、提交、分支、历史、Stash，并支持 worktree 场景。
-- **Worktree + Session**：可视化管理所有 worktrees，<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd> 快速切换，为每个 worktree 保存“我在做什么”（目标/笔记/清单/标签），一键 Resume。
-- **Monorepo 感知**：自动检测 Nx/Turborepo、Workspace 视图、依赖图（重度 layout 交给 worker）。
-- **可视化工作流**：拖拽式工作流编辑器 + 步骤模板、Outgoing Webhook、Incoming Webhook 触发（含桌面通知）。
-- **一键部署**：生成 GitHub Pages workflow 或通过 Netlify/Cloudflare Pages 部署，拿到可分享的链接（含历史与多账号支持）。
-- **安全扫描不再忘记**：一键扫描、严重程度统计、提醒机制，依赖未安装时可直接跳到快速修复。
-- **数据在你手上**：所有数据本地保存（Tauri store），支持导出/导入（也包含 IPA/APK 检视等工具）。
+- **脚本 + 终端**：以卡片执行 npm 脚本，内置 PTY 终端实时输出，支持端口检测停止进程。
+- **工具链检测**：检测 Volta/Corepack 版本不一致，以正确版本执行命令。
+- **Git 集成**：状态、暂存、Diff 查看、提交、分支、历史、Stash，支持 worktree 操作。
+- **Worktree + Session**：可视化管理 worktrees，<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd> 快速切换，可保存每个 worktree 的工作记录（目标/笔记/清单/标签）。
+- **Monorepo 支持**：Nx/Turborepo 检测、Workspace 视图、依赖图。
+- **可视化工作流**：拖拽式工作流编辑器，支持步骤模板、Outgoing/Incoming Webhook。
+- **部署 + 预览**：通过 Netlify/Cloudflare Pages 部署，立即获取可分享的预览链接。支持历史记录与多账号。
+- **安全扫描**：执行扫描、严重程度统计、提醒机制、快速修复未安装的依赖。
+- **本地优先**：所有数据本地保存（Tauri store），支持导出/导入，含 IPA/APK 检视工具。
 
 <p align="center">
   <img src="docs/screenshots/deploy-demo.gif" width="620" alt="部署 Demo" />

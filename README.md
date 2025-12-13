@@ -5,7 +5,7 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>Built for vibe coding — scripts, worktrees, workflows, deploys, and audits in one fast desktop app.</strong>
+  <strong>A desktop app for frontend & Node.js developers — manage scripts, Git, worktrees, and deploy with instant preview links.</strong>
 </p>
 
 <p align="center">
@@ -26,23 +26,21 @@
 
 ## Why PackageFlow?
 
-PackageFlow is a lightweight desktop app for developers who live in `package.json`.
-It turns the messy parts of daily dev work—scripts, Git, worktrees, audits, deploys—into a single keyboard-friendly control panel.
+PackageFlow brings your `package.json` to life. Run scripts, manage Git, switch worktrees, and deploy to get a shareable link—all from one app.
 
-Built with **Tauri + Rust** for a small footprint and a snappy UI (no Electron bloat).
-Beginner-friendly by design: fewer terminals, more shipping.
+Great for vibe coding: less command-line, more building. Built with **Tauri + Rust** for a small binary and fast startup.
 
 ## Highlights
 
-- **Scripts + terminal**: run `dev/build/test/lint` (and more) from clean cards, see live output in a built-in PTY terminal, and stop processes fast (port detection included).
-- **Toolchain guardrails**: detect Volta/Corepack/version mismatches and run commands with the right versions.
-- **Git, without leaving the app**: status, staging, diff viewer, commit, branches, history, stashes, and worktree-aware operations.
-- **Worktrees + Sessions**: visualize all worktrees, jump with <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd>, and save “what I was doing” (goal/notes/checklist/tags) per worktree—then “Resume” with one click.
-- **Monorepo awareness**: Nx/Turborepo detection, workspaces view, and dependency graph (heavy layout work offloaded to a worker).
-- **Visual workflows**: drag-and-drop workflow builder with step templates, outgoing webhooks, and incoming webhook triggers (with desktop notifications).
-- **One-click deploy**: generate a GitHub Pages workflow or deploy via Netlify/Cloudflare Pages—then get a link you can share, with history and multi-account support.
-- **Security audits that don’t get forgotten**: run scans, view severity breakdowns, get reminders, and jump to quick fixes when dependencies aren’t installed.
-- **Local-first + portable**: everything stays local (Tauri store) and you can export/import app data (plus extras like IPA/APK inspection).
+- **Scripts + Terminal**: Run npm scripts from cards with live PTY terminal output. Stop processes with port detection.
+- **Toolchain Detection**: Detect Volta/Corepack version mismatches and run commands with correct versions.
+- **Git Integration**: Status, staging, diff viewer, commit, branches, history, stashes, and worktree operations.
+- **Worktrees + Sessions**: Manage worktrees visually, quick switch with <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd>, save session context (goal/notes/checklist/tags) per worktree.
+- **Monorepo Support**: Nx/Turborepo detection, workspaces view, and dependency graph.
+- **Visual Workflows**: Drag-and-drop workflow builder with step templates, outgoing webhooks, and incoming webhook triggers.
+- **Deploy + Preview**: Deploy via Netlify/Cloudflare Pages and get a shareable preview link instantly. Supports history and multiple accounts.
+- **Security Audits**: Run scans, view severity breakdowns, set reminders, quick fixes for uninstalled dependencies.
+- **Local-first**: All data stored locally (Tauri store). Export/import supported. Includes IPA/APK inspection tools.
 
 <p align="center">
   <img src="docs/screenshots/deploy-demo.gif" width="620" alt="Deploy demo" />
