@@ -313,17 +313,44 @@ pub async fn execute_script(
 
     // Check if project has Volta config and Volta is available
     let path = Path::new(&working_dir);
-    let has_volta_config = match parse_package_json(path) {
-        Ok(pj) => pj.volta.is_some(),
-        Err(_) => false,
+    let volta_config = match parse_package_json(path) {
+        Ok(pj) => pj.volta.clone(),
+        Err(_) => None,
     };
     let volta_status = detect_volta();
 
     // Determine final command and args (with or without Volta wrapper)
-    let (cmd, args): (String, Vec<String>) = if has_volta_config && volta_status.available {
-        // Use volta run to ensure correct Node.js version
+    let (cmd, args): (String, Vec<String>) = if volta_config.is_some() && volta_status.available {
+        // Use volta run to ensure correct versions
         let volta_cmd = volta_status.path.unwrap_or_else(|| "volta".to_string());
-        let mut volta_args = vec!["run".to_string(), pm_cmd.to_string()];
+        let mut volta_args = vec!["run".to_string()];
+
+        // Add all configured volta versions
+        if let Some(ref config) = volta_config {
+            // Node.js version
+            if let Some(ref node_version) = config.node {
+                volta_args.push("--node".to_string());
+                volta_args.push(node_version.clone());
+            }
+            // npm version (only when running npm)
+            if pm_cmd == "npm" {
+                if let Some(ref npm_version) = config.npm {
+                    volta_args.push("--npm".to_string());
+                    volta_args.push(npm_version.clone());
+                }
+            }
+            // yarn version (only when running yarn)
+            if pm_cmd == "yarn" {
+                if let Some(ref yarn_version) = config.yarn {
+                    volta_args.push("--yarn".to_string());
+                    volta_args.push(yarn_version.clone());
+                }
+            }
+            // Note: Volta doesn't directly support --pnpm flag
+            // pnpm version management should use corepack instead
+        }
+
+        volta_args.push(pm_cmd.to_string());
         volta_args.extend(pm_args);
         println!(
             "[execute_script] Using Volta: {} {:?} in {}",
