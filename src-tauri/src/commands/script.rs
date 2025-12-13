@@ -12,7 +12,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use uuid::Uuid;
 
+use crate::commands::project::parse_package_json;
+use crate::commands::version::detect_volta;
 use crate::utils::path_resolver;
+use std::path::Path;
 
 // ============================================================================
 // Feature 007: Terminal Session Reconnect - New Types
@@ -294,13 +297,13 @@ pub async fn execute_script(
     // Special handling for built-in commands (install, build, etc.)
     let is_builtin_command = matches!(script_name.as_str(), "install" | "i" | "ci");
 
-    let cmd = match package_manager.as_str() {
+    let pm_cmd = match package_manager.as_str() {
         "pnpm" => "pnpm",
         "yarn" => "yarn",
         "npm" | _ => "npm",
     };
 
-    let args: Vec<String> = if is_builtin_command {
+    let pm_args: Vec<String> = if is_builtin_command {
         // For built-in commands, run directly without "run"
         vec![script_name.clone()]
     } else {
@@ -308,13 +311,35 @@ pub async fn execute_script(
         vec!["run".to_string(), script_name.clone()]
     };
 
-    println!(
-        "[execute_script] Spawning {} {:?} in {}",
-        cmd, args, working_dir
-    );
+    // Check if project has Volta config and Volta is available
+    let path = Path::new(&working_dir);
+    let has_volta_config = match parse_package_json(path) {
+        Ok(pj) => pj.volta.is_some(),
+        Err(_) => false,
+    };
+    let volta_status = detect_volta();
+
+    // Determine final command and args (with or without Volta wrapper)
+    let (cmd, args): (String, Vec<String>) = if has_volta_config && volta_status.available {
+        // Use volta run to ensure correct Node.js version
+        let volta_cmd = volta_status.path.unwrap_or_else(|| "volta".to_string());
+        let mut volta_args = vec!["run".to_string(), pm_cmd.to_string()];
+        volta_args.extend(pm_args);
+        println!(
+            "[execute_script] Using Volta: {} {:?} in {}",
+            volta_cmd, volta_args, working_dir
+        );
+        (volta_cmd, volta_args)
+    } else {
+        println!(
+            "[execute_script] Spawning {} {:?} in {}",
+            pm_cmd, pm_args, working_dir
+        );
+        (pm_cmd.to_string(), pm_args)
+    };
 
     // Use path_resolver to create command with proper PATH for macOS GUI apps
-    let mut command = path_resolver::create_command(cmd);
+    let mut command = path_resolver::create_command(&cmd);
     command.args(&args);
     command.current_dir(&working_dir);
     command.stdout(Stdio::piped());
