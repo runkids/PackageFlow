@@ -623,6 +623,44 @@ export const worktreeAPI = {
 };
 
 // ============================================================================
+// Terminal Types & API
+// ============================================================================
+
+export interface TerminalDefinition {
+  id: string;
+  name: string;
+  command?: string;
+  bundleId?: string;
+  args: string[];
+  isAvailable: boolean;
+  isBuiltin: boolean;
+}
+
+export interface GetAvailableTerminalsResponse {
+  success: boolean;
+  terminals?: TerminalDefinition[];
+  defaultTerminal?: string;
+  error?: string;
+}
+
+export interface OpenInTerminalResponse {
+  success: boolean;
+  terminal?: string;
+  error?: string;
+}
+
+export const terminalAPI = {
+  getAvailableTerminals: (): Promise<GetAvailableTerminalsResponse> =>
+    invoke<GetAvailableTerminalsResponse>('get_available_terminals'),
+
+  setPreferredTerminal: (terminalId: string): Promise<boolean> =>
+    invoke<boolean>('set_preferred_terminal', { terminalId }),
+
+  openInTerminal: (path: string, terminalId?: string): Promise<OpenInTerminalResponse> =>
+    invoke<OpenInTerminalResponse>('open_in_terminal', { path, terminalId }),
+};
+
+// ============================================================================
 // Gitignore Management Types
 // ============================================================================
 
@@ -648,7 +686,7 @@ export interface WorktreeTemplate {
   id: string;
   name: string;
   description?: string;
-  /** Branch naming pattern with placeholders: {name}, {date}, {user}, {repo} */
+  /** Branch naming pattern with placeholders: {name}, {date}, {user}, {repo}, {num} */
   branchPattern: string;
   /** Path pattern for worktree location with placeholders */
   pathPattern: string;
@@ -692,10 +730,17 @@ export interface ListTemplatesResponse {
   error?: string;
 }
 
+export interface GetNextFeatureNumberResponse {
+  success: boolean;
+  featureNumber?: string;
+  error?: string;
+}
+
 export interface CreateWorktreeFromTemplateResponse {
   success: boolean;
   worktree?: Worktree;
   executedScripts?: string[];
+  specFilePath?: string;
   error?: string;
 }
 
@@ -712,6 +757,9 @@ export const worktreeTemplateAPI = {
 
   getDefaultTemplates: (): Promise<ListTemplatesResponse> =>
     invoke<ListTemplatesResponse>('get_default_worktree_templates'),
+
+  getNextFeatureNumber: (projectPath: string): Promise<GetNextFeatureNumberResponse> =>
+    invoke<GetNextFeatureNumberResponse>('get_next_feature_number', { projectPath }),
 
   // T050: Create worktree from template
   createWorktreeFromTemplate: (
@@ -1114,6 +1162,42 @@ export const tauriEvents = {
 
   onChildExecutionCompleted: (callback: (data: ChildExecutionCompletedPayload) => void): Promise<UnlistenFn> =>
     listen<ChildExecutionCompletedPayload>('child_execution_completed', (event) => callback(event.payload)),
+
+  // File watcher events (package.json monitoring)
+  onPackageJsonChanged: (callback: (data: PackageJsonChangedPayload) => void): Promise<UnlistenFn> =>
+    listen<PackageJsonChangedPayload>('package-json-changed', (event) => callback(event.payload)),
+};
+
+// ============================================================================
+// File Watcher Types and API (package.json monitoring)
+// ============================================================================
+
+export interface PackageJsonChangedPayload {
+  project_path: string;
+  file_path: string;
+}
+
+export interface FileWatcherResponse {
+  success: boolean;
+  error?: string;
+}
+
+export const fileWatcherAPI = {
+  /** Start watching a project's package.json file for changes */
+  watchProject: (projectPath: string): Promise<FileWatcherResponse> =>
+    invoke<FileWatcherResponse>('watch_project', { projectPath }),
+
+  /** Stop watching a project's package.json file */
+  unwatchProject: (projectPath: string): Promise<FileWatcherResponse> =>
+    invoke<FileWatcherResponse>('unwatch_project', { projectPath }),
+
+  /** Stop watching all projects */
+  unwatchAllProjects: (): Promise<FileWatcherResponse> =>
+    invoke<FileWatcherResponse>('unwatch_all_projects'),
+
+  /** Get list of currently watched project paths */
+  getWatchedProjects: (): Promise<string[]> =>
+    invoke<string[]>('get_watched_projects'),
 };
 
 // ============================================================================
@@ -1634,6 +1718,129 @@ export const incomingWebhookAPI = {
 };
 
 // ============================================================================
+// Deploy API (015-one-click-deploy)
+// ============================================================================
+
+import type {
+  PlatformType,
+  DeploymentEnvironment,
+  DeploymentStatus,
+  EnvVariable,
+  ConnectedPlatform,
+  DeploymentConfig,
+  Deployment,
+  OAuthFlowResult,
+  DeploymentStatusEvent,
+  // 016-multi-deploy-accounts
+  DeployAccount,
+  DeployPreferences,
+  RemoveAccountResult,
+} from '../types/deploy';
+
+export type {
+  PlatformType,
+  DeploymentEnvironment,
+  DeploymentStatus,
+  EnvVariable,
+  ConnectedPlatform,
+  DeploymentConfig,
+  Deployment,
+  OAuthFlowResult,
+  DeploymentStatusEvent,
+  // 016-multi-deploy-accounts
+  DeployAccount,
+  DeployPreferences,
+  RemoveAccountResult,
+};
+
+export const deployAPI = {
+  // OAuth (Legacy)
+  startOAuthFlow: (platform: PlatformType): Promise<OAuthFlowResult> =>
+    invoke<OAuthFlowResult>('start_oauth_flow', { platform }),
+
+  getConnectedPlatforms: (): Promise<ConnectedPlatform[]> =>
+    invoke<ConnectedPlatform[]>('get_connected_platforms'),
+
+  disconnectPlatform: (platform: PlatformType): Promise<void> =>
+    invoke('disconnect_platform', { platform }),
+
+  // Deployment
+  startDeployment: (projectId: string, projectPath: string, config: DeploymentConfig): Promise<Deployment> =>
+    invoke<Deployment>('start_deployment', { projectId, projectPath, config }),
+
+  getDeploymentHistory: (projectId: string): Promise<Deployment[]> =>
+    invoke<Deployment[]>('get_deployment_history', { projectId }),
+
+  getDeploymentConfig: (projectId: string): Promise<DeploymentConfig | null> =>
+    invoke<DeploymentConfig | null>('get_deployment_config', { projectId }),
+
+  saveDeploymentConfig: (config: DeploymentConfig): Promise<void> =>
+    invoke('save_deployment_config', { config }),
+
+  detectFramework: (projectPath: string): Promise<string | null> =>
+    invoke<string | null>('detect_framework', { projectPath }),
+
+  redeploy: (projectId: string, projectPath: string): Promise<Deployment> =>
+    invoke<Deployment>('redeploy', { projectId, projectPath }),
+
+  // ============================================================================
+  // T012-T014: Multi Deploy Accounts API (016-multi-deploy-accounts)
+  // ============================================================================
+
+  // T012: Account Management
+  /** Get all deploy accounts (sanitized - no tokens) */
+  getDeployAccounts: (): Promise<DeployAccount[]> =>
+    invoke<DeployAccount[]>('get_deploy_accounts'),
+
+  /** Get accounts filtered by platform */
+  getAccountsByPlatform: (platform: PlatformType): Promise<DeployAccount[]> =>
+    invoke<DeployAccount[]>('get_accounts_by_platform', { platform }),
+
+  /** Add a new deploy account via OAuth */
+  addDeployAccount: (platform: PlatformType): Promise<OAuthFlowResult> =>
+    invoke<OAuthFlowResult>('add_deploy_account', { platform }),
+
+  /** Remove a deploy account */
+  removeDeployAccount: (accountId: string, force?: boolean): Promise<RemoveAccountResult> =>
+    invoke<RemoveAccountResult>('remove_deploy_account', { accountId, force }),
+
+  /** Update deploy account (display name) */
+  updateDeployAccount: (accountId: string, displayName?: string): Promise<DeployAccount> =>
+    invoke<DeployAccount>('update_deploy_account', { accountId, displayName }),
+
+  // T013: Project Binding
+  /** Bind a project to a specific deploy account */
+  bindProjectAccount: (projectId: string, accountId: string): Promise<DeploymentConfig> =>
+    invoke<DeploymentConfig>('bind_project_account', { projectId, accountId }),
+
+  /** Unbind a project from its deploy account */
+  unbindProjectAccount: (projectId: string): Promise<DeploymentConfig> =>
+    invoke<DeploymentConfig>('unbind_project_account', { projectId }),
+
+  /** Get the account bound to a project */
+  getProjectBinding: (projectId: string): Promise<DeployAccount | null> =>
+    invoke<DeployAccount | null>('get_project_binding', { projectId }),
+
+  // T014: Preferences
+  /** Get deploy preferences (default accounts) */
+  getDeployPreferences: (): Promise<DeployPreferences> =>
+    invoke<DeployPreferences>('get_deploy_preferences'),
+
+  /** Set default account for a platform */
+  setDefaultAccount: (platform: PlatformType, accountId?: string): Promise<DeployPreferences> =>
+    invoke<DeployPreferences>('set_default_account', { platform, accountId }),
+};
+
+export const deployEvents = {
+  onDeploymentStatus: (
+    callback: (event: DeploymentStatusEvent) => void
+  ): Promise<UnlistenFn> =>
+    listen<DeploymentStatusEvent>('deployment:status', (e) =>
+      callback(e.payload)
+    ),
+};
+
+// ============================================================================
 // Keyboard Shortcuts API
 // ============================================================================
 
@@ -1688,4 +1895,5 @@ export const tauriAPI = {
   ...gitAPI,
   ...stepTemplateAPI,
   ...shortcutsAPI,
+  ...deployAPI,
 };

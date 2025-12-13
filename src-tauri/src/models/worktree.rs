@@ -168,7 +168,7 @@ impl WorktreeTemplate {
             open_in_editor: true,
             preferred_editor: None,
             base_branch: Some("main".to_string()),
-            is_default: false,
+            is_default: true,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: None,
         }
@@ -186,7 +186,30 @@ impl WorktreeTemplate {
             open_in_editor: true,
             preferred_editor: None,
             base_branch: Some("main".to_string()),
-            is_default: false,
+            is_default: true,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: None,
+        }
+    }
+
+    /// Create a default "SpecKit Feature" template
+    ///
+    /// This creates a numbered feature branch and worktree suitable for SpecKit workflows
+    /// (e.g. `001-my-feature`), and can be paired with additional scaffolding in commands.
+    pub fn speckit_feature_template() -> Self {
+        Self {
+            id: "speckit-feature".to_string(),
+            name: "SpecKit Feature".to_string(),
+            description: Some(
+                "Create a numbered worktree and scaffold a SpecKit spec folder".to_string(),
+            ),
+            branch_pattern: "{num}-{name}".to_string(),
+            path_pattern: ".worktrees/{num}-{name}".to_string(),
+            post_create_scripts: vec!["install".to_string()],
+            open_in_editor: true,
+            preferred_editor: None,
+            base_branch: Some("main".to_string()),
+            is_default: true,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: None,
         }
@@ -231,6 +254,133 @@ impl EditorDefinition {
             command: "code-insiders".to_string(),
             args: vec![],
             is_available: false,
+        }
+    }
+}
+
+/// Terminal definition for external terminal integration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalDefinition {
+    pub id: String,
+    pub name: String,
+    /// Command to launch the terminal (for CLI tools)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// App bundle identifier for macOS (e.g., "com.apple.Terminal")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
+    /// Arguments to pass when opening
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub is_available: bool,
+    /// Whether this is the built-in PTY terminal
+    #[serde(default)]
+    pub is_builtin: bool,
+}
+
+impl TerminalDefinition {
+    /// Built-in PTY terminal (uses the app's integrated terminal)
+    pub fn builtin() -> Self {
+        Self {
+            id: "builtin".to_string(),
+            name: "Built-in Terminal".to_string(),
+            command: None,
+            bundle_id: None,
+            args: vec![],
+            is_available: true,
+            is_builtin: true,
+        }
+    }
+
+    /// macOS default Terminal.app
+    pub fn macos_terminal() -> Self {
+        Self {
+            id: "terminal".to_string(),
+            name: "Terminal".to_string(),
+            command: None,
+            bundle_id: Some("com.apple.Terminal".to_string()),
+            args: vec![],
+            is_available: false,
+            is_builtin: false,
+        }
+    }
+
+    /// iTerm2
+    pub fn iterm2() -> Self {
+        Self {
+            id: "iterm2".to_string(),
+            name: "iTerm".to_string(),
+            command: None,
+            bundle_id: Some("com.googlecode.iterm2".to_string()),
+            args: vec![],
+            is_available: false,
+            is_builtin: false,
+        }
+    }
+
+    /// Warp terminal
+    pub fn warp() -> Self {
+        Self {
+            id: "warp".to_string(),
+            name: "Warp".to_string(),
+            command: None,
+            bundle_id: Some("dev.warp.Warp-Stable".to_string()),
+            args: vec![],
+            is_available: false,
+            is_builtin: false,
+        }
+    }
+
+    /// Ghostty terminal
+    pub fn ghostty() -> Self {
+        Self {
+            id: "ghostty".to_string(),
+            name: "Ghostty".to_string(),
+            command: None,
+            bundle_id: Some("com.mitchellh.ghostty".to_string()),
+            args: vec![],
+            is_available: false,
+            is_builtin: false,
+        }
+    }
+
+    /// Alacritty terminal
+    pub fn alacritty() -> Self {
+        Self {
+            id: "alacritty".to_string(),
+            name: "Alacritty".to_string(),
+            command: Some("alacritty".to_string()),
+            bundle_id: Some("org.alacritty".to_string()),
+            args: vec![],
+            is_available: false,
+            is_builtin: false,
+        }
+    }
+
+    /// Kitty terminal
+    pub fn kitty() -> Self {
+        Self {
+            id: "kitty".to_string(),
+            name: "Kitty".to_string(),
+            command: Some("kitty".to_string()),
+            bundle_id: Some("net.kovidgoyal.kitty".to_string()),
+            args: vec![],
+            is_available: false,
+            is_builtin: false,
+        }
+    }
+
+    /// Hyper terminal
+    pub fn hyper() -> Self {
+        Self {
+            id: "hyper".to_string(),
+            name: "Hyper".to_string(),
+            command: None,
+            bundle_id: Some("co.zeit.hyper".to_string()),
+            args: vec![],
+            is_available: false,
+            is_builtin: false,
         }
     }
 }

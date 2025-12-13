@@ -1026,6 +1026,8 @@ fn check_editor_available(command: &str) -> bool {
             "mate" => Some("TextMate.app"),
             "windsurf" => Some("Windsurf.app"),
             "positron" => Some("Positron.app"),
+            "kiro" => Some("Kiro.app"),
+            "antigravity" => Some("Antigravity.app"),
             _ => None,
         };
 
@@ -1419,6 +1421,26 @@ pub async fn get_available_editors() -> Result<GetAvailableEditorsResponse, Stri
         is_available: check_editor_available("positron"),
     };
     editors.push(positron);
+
+    // Check Kiro (AWS)
+    let kiro = EditorDefinition {
+        id: "kiro".to_string(),
+        name: "Kiro".to_string(),
+        command: "kiro".to_string(),
+        args: vec![],
+        is_available: check_editor_available("kiro"),
+    };
+    editors.push(kiro);
+
+    // Check Antigravity
+    let antigravity = EditorDefinition {
+        id: "antigravity".to_string(),
+        name: "Antigravity".to_string(),
+        command: "antigravity".to_string(),
+        args: vec![],
+        is_available: check_editor_available("antigravity"),
+    };
+    editors.push(antigravity);
 
     Ok(GetAvailableEditorsResponse {
         success: true,
@@ -2080,5 +2102,294 @@ pub async fn create_worktree_from_template(
         executed_scripts: Some(executed_scripts),
         spec_file_path,
         error: None,
+    })
+}
+
+// ============================================================================
+// Terminal Commands
+// ============================================================================
+
+use crate::models::TerminalDefinition;
+
+/// Response for get_available_terminals command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetAvailableTerminalsResponse {
+    pub success: bool,
+    pub terminals: Option<Vec<TerminalDefinition>>,
+    pub default_terminal: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Response for open_in_terminal command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInTerminalResponse {
+    pub success: bool,
+    pub terminal: Option<String>,
+    pub error: Option<String>,
+}
+
+const PREFERRED_TERMINAL_KEY: &str = "preferred_terminal";
+
+/// Check if a macOS app bundle is available
+#[cfg(target_os = "macos")]
+fn check_app_bundle_available(bundle_id: &str) -> bool {
+    use std::process::Command;
+
+    // Use mdfind to check if app with bundle ID exists
+    let output = Command::new("mdfind")
+        .args(["kMDItemCFBundleIdentifier", "==", bundle_id])
+        .output();
+
+    match output {
+        Ok(out) => {
+            let result = String::from_utf8_lossy(&out.stdout);
+            !result.trim().is_empty()
+        }
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn check_app_bundle_available(_bundle_id: &str) -> bool {
+    false
+}
+
+/// Get list of available terminals on the system
+#[tauri::command]
+pub async fn get_available_terminals(
+    app: tauri::AppHandle,
+) -> Result<GetAvailableTerminalsResponse, String> {
+    let mut terminals: Vec<TerminalDefinition> = Vec::new();
+
+    // Built-in PTY terminal is always available
+    terminals.push(TerminalDefinition::builtin());
+
+    // macOS terminals
+    #[cfg(target_os = "macos")]
+    {
+        // macOS Terminal.app (always available on macOS)
+        let mut terminal = TerminalDefinition::macos_terminal();
+        terminal.is_available = true; // Terminal.app is always available on macOS
+        terminals.push(terminal);
+
+        // iTerm2
+        let mut iterm = TerminalDefinition::iterm2();
+        if let Some(ref bundle_id) = iterm.bundle_id {
+            iterm.is_available = check_app_bundle_available(bundle_id);
+        }
+        terminals.push(iterm);
+
+        // Warp
+        let mut warp = TerminalDefinition::warp();
+        if let Some(ref bundle_id) = warp.bundle_id {
+            warp.is_available = check_app_bundle_available(bundle_id);
+        }
+        terminals.push(warp);
+
+        // Ghostty
+        let mut ghostty = TerminalDefinition::ghostty();
+        if let Some(ref bundle_id) = ghostty.bundle_id {
+            ghostty.is_available = check_app_bundle_available(bundle_id);
+        }
+        terminals.push(ghostty);
+
+        // Alacritty
+        let mut alacritty = TerminalDefinition::alacritty();
+        if let Some(ref bundle_id) = alacritty.bundle_id {
+            alacritty.is_available = check_app_bundle_available(bundle_id);
+        }
+        terminals.push(alacritty);
+
+        // Kitty
+        let mut kitty = TerminalDefinition::kitty();
+        if let Some(ref bundle_id) = kitty.bundle_id {
+            kitty.is_available = check_app_bundle_available(bundle_id);
+        }
+        terminals.push(kitty);
+
+        // Hyper
+        let mut hyper = TerminalDefinition::hyper();
+        if let Some(ref bundle_id) = hyper.bundle_id {
+            hyper.is_available = check_app_bundle_available(bundle_id);
+        }
+        terminals.push(hyper);
+    }
+
+    // Load saved preference
+    let store = app
+        .store("store.json")
+        .map_err(|e| format!("Failed to access store: {}", e))?;
+
+    let default_terminal: Option<String> = store
+        .get(PREFERRED_TERMINAL_KEY)
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+    // If no preference saved, default to builtin
+    let default_terminal = default_terminal.unwrap_or_else(|| "builtin".to_string());
+
+    Ok(GetAvailableTerminalsResponse {
+        success: true,
+        terminals: Some(terminals),
+        default_terminal: Some(default_terminal),
+        error: None,
+    })
+}
+
+/// Save preferred terminal preference
+#[tauri::command]
+pub async fn set_preferred_terminal(
+    app: tauri::AppHandle,
+    terminal_id: String,
+) -> Result<bool, String> {
+    let store = app
+        .store("store.json")
+        .map_err(|e| format!("Failed to access store: {}", e))?;
+
+    store.set(
+        PREFERRED_TERMINAL_KEY.to_string(),
+        serde_json::Value::String(terminal_id),
+    );
+    store
+        .save()
+        .map_err(|e| format!("Failed to save store: {}", e))?;
+
+    Ok(true)
+}
+
+/// Open a directory in an external terminal application
+#[tauri::command]
+pub async fn open_in_terminal(
+    app: tauri::AppHandle,
+    path: String,
+    terminal_id: Option<String>,
+) -> Result<OpenInTerminalResponse, String> {
+    let terminal_id = terminal_id.unwrap_or_else(|| "builtin".to_string());
+
+    // If built-in terminal, return a special response
+    if terminal_id == "builtin" {
+        return Ok(OpenInTerminalResponse {
+            success: true,
+            terminal: Some("builtin".to_string()),
+            error: None,
+        });
+    }
+
+    // Get terminal definition
+    let terminal = match terminal_id.as_str() {
+        "terminal" => TerminalDefinition::macos_terminal(),
+        "iterm2" => TerminalDefinition::iterm2(),
+        "warp" => TerminalDefinition::warp(),
+        "ghostty" => TerminalDefinition::ghostty(),
+        "alacritty" => TerminalDefinition::alacritty(),
+        "kitty" => TerminalDefinition::kitty(),
+        "hyper" => TerminalDefinition::hyper(),
+        _ => {
+            return Ok(OpenInTerminalResponse {
+                success: false,
+                terminal: Some(terminal_id),
+                error: Some("Unknown terminal".to_string()),
+            });
+        }
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+
+        // For macOS, use open command with bundle ID
+        if let Some(bundle_id) = &terminal.bundle_id {
+            let result = Command::new("open")
+                .args(["-b", bundle_id, &path])
+                .spawn();
+
+            match result {
+                Ok(_) => {
+                    // Save as preferred terminal
+                    let _ = set_preferred_terminal(app, terminal_id.clone()).await;
+
+                    return Ok(OpenInTerminalResponse {
+                        success: true,
+                        terminal: Some(terminal_id),
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    return Ok(OpenInTerminalResponse {
+                        success: false,
+                        terminal: Some(terminal_id),
+                        error: Some(format!("Failed to open terminal: {}", e)),
+                    });
+                }
+            }
+        }
+
+        // Fall back to command if no bundle ID
+        if let Some(cmd) = &terminal.command {
+            let mut command = Command::new(cmd);
+            command.arg(&path);
+            for arg in &terminal.args {
+                command.arg(arg);
+            }
+
+            match command.spawn() {
+                Ok(_) => {
+                    // Save as preferred terminal
+                    let _ = set_preferred_terminal(app, terminal_id.clone()).await;
+
+                    return Ok(OpenInTerminalResponse {
+                        success: true,
+                        terminal: Some(terminal_id),
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    return Ok(OpenInTerminalResponse {
+                        success: false,
+                        terminal: Some(terminal_id),
+                        error: Some(format!("Failed to open terminal: {}", e)),
+                    });
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // For other platforms, use command
+        if let Some(cmd) = &terminal.command {
+            let mut command = std::process::Command::new(cmd);
+            command.arg(&path);
+            for arg in &terminal.args {
+                command.arg(arg);
+            }
+
+            match command.spawn() {
+                Ok(_) => {
+                    // Save as preferred terminal
+                    let _ = set_preferred_terminal(app, terminal_id.clone()).await;
+
+                    return Ok(OpenInTerminalResponse {
+                        success: true,
+                        terminal: Some(terminal_id),
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    return Ok(OpenInTerminalResponse {
+                        success: false,
+                        terminal: Some(terminal_id),
+                        error: Some(format!("Failed to open terminal: {}", e)),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(OpenInTerminalResponse {
+        success: false,
+        terminal: Some(terminal_id),
+        error: Some("No command available for this terminal".to_string()),
     })
 }

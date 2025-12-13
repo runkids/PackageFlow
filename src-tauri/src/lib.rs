@@ -12,13 +12,18 @@ pub use models::*;
 use commands::script::ScriptExecutionState;
 use commands::workflow::WorkflowExecutionState;
 use commands::{
-    apk, git, incoming_webhook, ipa, monorepo, project, script, security, settings, shortcuts,
-    step_template, version, webhook, workflow, worktree,
+    apk, deploy, file_watcher, git, incoming_webhook, ipa, monorepo, project, script, security,
+    settings, shortcuts, step_template, version, webhook, workflow, worktree,
 };
-use services::IncomingWebhookManager;
+use services::{FileWatcherManager, IncomingWebhookManager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load environment variables from .env file (for OAuth credentials)
+    // Try project root first, then current dir
+    let _ = dotenvy::from_filename("../.env")
+        .or_else(|_| dotenvy::dotenv());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -31,10 +36,12 @@ pub fn run() {
         .plugin(tauri_plugin_pty::init()) // Feature 008: PTY for interactive terminals
         .plugin(tauri_plugin_notification::init()) // Feature 015: Webhook desktop notifications
         .plugin(tauri_plugin_global_shortcut::Builder::new().build()) // Keyboard shortcuts enhancement
+        .plugin(tauri_plugin_oauth::init()) // OAuth for deploy feature
         // App state
         .manage(ScriptExecutionState::default())
         .manage(WorkflowExecutionState::default())
         .manage(IncomingWebhookManager::new())
+        .manage(FileWatcherManager::new())
         // Register commands
         .invoke_handler(tauri::generate_handler![
             // Settings commands (US7)
@@ -115,7 +122,12 @@ pub fn run() {
             worktree::delete_worktree_template,
             worktree::list_worktree_templates,
             worktree::get_default_worktree_templates,
+            worktree::get_next_feature_number,
             worktree::create_worktree_from_template,
+            // Terminal commands
+            worktree::get_available_terminals,
+            worktree::set_preferred_terminal,
+            worktree::open_in_terminal,
             // Gitignore management commands
             worktree::check_gitignore_has_worktrees,
             worktree::add_worktrees_to_gitignore,
@@ -208,6 +220,32 @@ pub fn run() {
             shortcuts::toggle_window_visibility,
             shortcuts::get_registered_shortcuts,
             shortcuts::is_shortcut_registered,
+            // Deploy commands (015-one-click-deploy)
+            deploy::start_oauth_flow,
+            deploy::get_connected_platforms,
+            deploy::disconnect_platform,
+            deploy::start_deployment,
+            deploy::get_deployment_history,
+            deploy::get_deployment_config,
+            deploy::save_deployment_config,
+            deploy::detect_framework,
+            deploy::redeploy,
+            // Multi Deploy Accounts (016-multi-deploy-accounts)
+            deploy::get_deploy_accounts,
+            deploy::get_accounts_by_platform,
+            deploy::add_deploy_account,
+            deploy::remove_deploy_account,
+            deploy::update_deploy_account,
+            deploy::bind_project_account,
+            deploy::unbind_project_account,
+            deploy::get_project_binding,
+            deploy::get_deploy_preferences,
+            deploy::set_default_account,
+            // File watcher commands (package.json monitoring)
+            file_watcher::watch_project,
+            file_watcher::unwatch_project,
+            file_watcher::unwatch_all_projects,
+            file_watcher::get_watched_projects,
         ])
         // Setup hook - sync incoming webhook server on app start
         .setup(|app| {

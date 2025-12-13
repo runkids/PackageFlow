@@ -9,6 +9,7 @@ import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as Workfl
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
 import { ipaAPI, apkAPI, worktreeAPI, type Worktree, type EditorDefinition } from '../../lib/tauri-api';
+import { TerminalSelector } from './TerminalSelector';
 import { ScriptCards } from './ScriptCards';
 import { MonorepoView } from './MonorepoView';
 import { DependencyGraphView } from './monorepo/DependencyGraphView';
@@ -447,7 +448,7 @@ export function ProjectExplorer({
               <p className="text-sm text-muted-foreground mt-2">{project.description}</p>
             )}
           </div>
-          <div className="flex items-center gap-2 ml-4">
+          <div className="flex items-center gap-px">
             {/* Quick Switcher Button */}
             <button
               onClick={() => setIsQuickSwitcherOpen(true)}
@@ -506,7 +507,12 @@ export function ProjectExplorer({
                 </>
               )}
             </div>
-
+            {onOpenTerminal && (
+              <TerminalSelector
+                path={displayPath}
+                onOpenBuiltinTerminal={onOpenTerminal}
+              />
+            )}
             <button
               onClick={() => {
                 onRefresh();
@@ -518,15 +524,6 @@ export function ProjectExplorer({
             >
               <RefreshCw className={`w-4 h-4 text-muted-foreground ${isLoading ? 'animate-spin' : ''}`} />
             </button>
-            {onOpenTerminal && (
-              <button
-                onClick={onOpenTerminal}
-                className="p-2 rounded hover:bg-accent transition-colors"
-                title="Open Terminal"
-              >
-                <Terminal className="w-4 h-4 text-muted-foreground" />
-              </button>
-            )}
             <button
               onClick={onOpenInFinder}
               className="p-2 rounded hover:bg-accent transition-colors"
