@@ -578,11 +578,11 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
     activeSession?.terminal?.focus();
   }, [activeSession]);
 
-  // Clear current terminal output (not close tabs)
-  const handleClearOutput = useCallback(() => {
-    if (!activeSession?.terminal) return;
-    activeSession.terminal.clear();
-  }, [activeSession]);
+  // Close active session (kill process and remove tab)
+  const handleCloseActiveSession = useCallback(() => {
+    if (!activeSessionId) return;
+    killSession(activeSessionId);
+  }, [activeSessionId, killSession]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -732,12 +732,12 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
                   <Copy className="w-4 h-4 text-muted-foreground" />
                 )}
               </button>
-              {/* Clear output button */}
+              {/* Close session button */}
               <button
-                onClick={handleClearOutput}
+                onClick={handleCloseActiveSession}
                 disabled={!activeSession}
-                className="p-1.5 rounded hover:bg-secondary disabled:opacity-50"
-                title="Clear output"
+                className="p-1.5 rounded hover:bg-secondary hover:text-red-400 disabled:opacity-50"
+                title="Close session (kill process)"
               >
                 <Trash2 className="w-4 h-4 text-muted-foreground" />
               </button>
