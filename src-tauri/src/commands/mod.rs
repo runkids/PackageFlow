@@ -1,6 +1,7 @@
 // Tauri commands module
 // Each submodule contains commands for a specific feature
 
+pub mod ai;
 pub mod apk;
 pub mod deploy;
 pub mod file_watcher;

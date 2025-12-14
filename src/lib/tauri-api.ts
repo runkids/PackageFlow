@@ -2055,6 +2055,127 @@ export const shortcutsEvents = {
     listen<string>('global-shortcut-triggered', (event) => callback(event.payload)),
 };
 
+// ============================================================================
+// AI Integration API (020-ai-cli-integration)
+// ============================================================================
+
+import type {
+  AIProvider,
+  AIServiceConfig,
+  PromptTemplate,
+  ProjectAISettings,
+  GenerateResult,
+  TestConnectionResult,
+  ModelInfo,
+  AddServiceRequest,
+  UpdateServiceRequest,
+  AddTemplateRequest,
+  UpdateTemplateRequest,
+  GenerateCommitMessageRequest,
+  UpdateProjectSettingsRequest,
+} from '../types/ai';
+
+export type {
+  AIProvider,
+  AIServiceConfig,
+  PromptTemplate,
+  ProjectAISettings,
+  GenerateResult,
+  TestConnectionResult,
+  ModelInfo,
+  AddServiceRequest,
+  UpdateServiceRequest,
+  AddTemplateRequest,
+  UpdateTemplateRequest,
+  GenerateCommitMessageRequest,
+  UpdateProjectSettingsRequest,
+};
+
+/** Generic API response type */
+export interface AIApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export const aiAPI = {
+  // ============================================================================
+  // AI Service Management
+  // ============================================================================
+
+  /** List all AI service configurations */
+  listServices: (): Promise<AIApiResponse<AIServiceConfig[]>> =>
+    invoke<AIApiResponse<AIServiceConfig[]>>('ai_list_services'),
+
+  /** Add a new AI service configuration */
+  addService: (config: AddServiceRequest): Promise<AIApiResponse<AIServiceConfig>> =>
+    invoke<AIApiResponse<AIServiceConfig>>('ai_add_service', { config }),
+
+  /** Update an AI service configuration */
+  updateService: (config: UpdateServiceRequest): Promise<AIApiResponse<AIServiceConfig>> =>
+    invoke<AIApiResponse<AIServiceConfig>>('ai_update_service', { config }),
+
+  /** Delete an AI service configuration */
+  deleteService: (id: string): Promise<AIApiResponse<void>> =>
+    invoke<AIApiResponse<void>>('ai_delete_service', { id }),
+
+  /** Set a service as the default */
+  setDefaultService: (id: string): Promise<AIApiResponse<void>> =>
+    invoke<AIApiResponse<void>>('ai_set_default_service', { id }),
+
+  /** Test connection to an AI service */
+  testConnection: (id: string): Promise<AIApiResponse<TestConnectionResult>> =>
+    invoke<AIApiResponse<TestConnectionResult>>('ai_test_connection', { id }),
+
+  /** List available models for a service (Ollama/LMStudio) */
+  listModels: (serviceId: string): Promise<AIApiResponse<ModelInfo[]>> =>
+    invoke<AIApiResponse<ModelInfo[]>>('ai_list_models', { serviceId }),
+
+  // ============================================================================
+  // Prompt Template Management
+  // ============================================================================
+
+  /** List all prompt templates */
+  listTemplates: (): Promise<AIApiResponse<PromptTemplate[]>> =>
+    invoke<AIApiResponse<PromptTemplate[]>>('ai_list_templates'),
+
+  /** Add a new prompt template */
+  addTemplate: (template: AddTemplateRequest): Promise<AIApiResponse<PromptTemplate>> =>
+    invoke<AIApiResponse<PromptTemplate>>('ai_add_template', { template }),
+
+  /** Update a prompt template */
+  updateTemplate: (template: UpdateTemplateRequest): Promise<AIApiResponse<PromptTemplate>> =>
+    invoke<AIApiResponse<PromptTemplate>>('ai_update_template', { template }),
+
+  /** Delete a prompt template */
+  deleteTemplate: (id: string): Promise<AIApiResponse<void>> =>
+    invoke<AIApiResponse<void>>('ai_delete_template', { id }),
+
+  /** Set a template as the default */
+  setDefaultTemplate: (id: string): Promise<AIApiResponse<void>> =>
+    invoke<AIApiResponse<void>>('ai_set_default_template', { id }),
+
+  // ============================================================================
+  // Project AI Settings
+  // ============================================================================
+
+  /** Get project-specific AI settings */
+  getProjectSettings: (projectPath: string): Promise<AIApiResponse<ProjectAISettings>> =>
+    invoke<AIApiResponse<ProjectAISettings>>('ai_get_project_settings', { projectPath }),
+
+  /** Update project-specific AI settings */
+  updateProjectSettings: (settings: UpdateProjectSettingsRequest): Promise<AIApiResponse<void>> =>
+    invoke<AIApiResponse<void>>('ai_update_project_settings', { settings }),
+
+  // ============================================================================
+  // Commit Message Generation
+  // ============================================================================
+
+  /** Generate a commit message using AI */
+  generateCommitMessage: (request: GenerateCommitMessageRequest): Promise<AIApiResponse<GenerateResult>> =>
+    invoke<AIApiResponse<GenerateResult>>('ai_generate_commit_message', { request }),
+};
+
 export const tauriAPI = {
   ...projectAPI,
   ...scriptAPI,
@@ -2070,4 +2191,5 @@ export const tauriAPI = {
   ...shortcutsAPI,
   ...deployAPI,
   ...toolchainAPI,
+  ...aiAPI,
 };

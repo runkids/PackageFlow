@@ -26,6 +26,7 @@ import { GitStashList } from './GitStashList';
 import { GitSettingsPanel } from './GitSettingsPanel';
 import { GitWorktreeList } from './GitWorktreeList';
 import { GitDiffViewer } from './GitDiffViewer';
+import { AIServiceSettingsDialog } from '../../settings/AIServiceSettingsDialog';
 import { cn } from '../../../lib/utils';
 import type { GitFile } from '../../../types/git';
 import type { Project } from '../../../types/project';
@@ -59,6 +60,10 @@ export function GitPanel({
   const [error, setError] = useState<string | null>(null);
   // Diff viewer state
   const [selectedFileForDiff, setSelectedFileForDiff] = useState<GitFile | null>(null);
+  // AI settings dialog state
+  const [showAISettings, setShowAISettings] = useState(false);
+  // Trigger to refresh AI services in GitCommitForm after settings change
+  const [aiRefreshTrigger, setAiRefreshTrigger] = useState(0);
 
   // Load Git status (with loading indicator)
   const loadStatus = useCallback(async (silent = false) => {
@@ -387,6 +392,9 @@ export function GitPanel({
             <GitCommitForm
               hasStagedChanges={status.stagedCount > 0}
               onCommit={handleCommit}
+              projectPath={projectPath}
+              onOpenAISettings={() => setShowAISettings(true)}
+              aiRefreshTrigger={aiRefreshTrigger}
             />
           </div>
         )}
@@ -437,6 +445,16 @@ export function GitPanel({
         filePath={selectedFileForDiff?.path ?? ''}
         initialDiffType={selectedFileForDiff?.staged ? 'staged' : 'unstaged'}
         onStagingChange={handleStagingChange}
+      />
+
+      {/* AI Service Settings Dialog */}
+      <AIServiceSettingsDialog
+        isOpen={showAISettings}
+        onClose={() => {
+          setShowAISettings(false);
+          // Trigger refresh of AI services in GitCommitForm
+          setAiRefreshTrigger((prev) => prev + 1);
+        }}
       />
     </div>
   );

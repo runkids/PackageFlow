@@ -12,7 +12,7 @@ pub use models::*;
 use commands::script::ScriptExecutionState;
 use commands::workflow::WorkflowExecutionState;
 use commands::{
-    apk, deploy, file_watcher, git, incoming_webhook, ipa, monorepo, project, script, security,
+    ai, apk, deploy, file_watcher, git, incoming_webhook, ipa, monorepo, project, script, security,
     settings, shortcuts, step_template, toolchain, version, webhook, workflow, worktree,
 };
 use services::{FileWatcherManager, IncomingWebhookManager};
@@ -269,6 +269,22 @@ pub fn run() {
             toolchain::clear_toolchain_preference,
             toolchain::get_environment_diagnostics,
             toolchain::humanize_toolchain_error,
+            // AI Integration (020-ai-cli-integration)
+            ai::ai_list_services,
+            ai::ai_add_service,
+            ai::ai_update_service,
+            ai::ai_delete_service,
+            ai::ai_set_default_service,
+            ai::ai_test_connection,
+            ai::ai_list_models,
+            ai::ai_list_templates,
+            ai::ai_add_template,
+            ai::ai_update_template,
+            ai::ai_delete_template,
+            ai::ai_set_default_template,
+            ai::ai_get_project_settings,
+            ai::ai_update_project_settings,
+            ai::ai_generate_commit_message,
         ])
         // Setup hook - sync incoming webhook server on app start
         .setup(|app| {

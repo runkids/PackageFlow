@@ -1,10 +1,12 @@
 /**
  * Git Commit Form - Commit message input and submit
  * @see specs/009-git-integration/tasks.md - T025
+ * @see specs/020-ai-cli-integration/tasks.md - T023-T026
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Check, Loader2, ChevronDown } from 'lucide-react';
+import { Check, Loader2, ChevronDown, Sparkles, AlertCircle, X, Settings } from 'lucide-react';
+import { useAICommitMessage, useAIService } from '../../../hooks/useAIService';
 
 interface GitCommitFormProps {
   /** Whether there are staged changes */
@@ -15,6 +17,12 @@ interface GitCommitFormProps {
   defaultMessage?: string;
   /** Loading state */
   isCommitting?: boolean;
+  /** Project path for AI commit message generation */
+  projectPath?: string;
+  /** Callback to open AI settings */
+  onOpenAISettings?: () => void;
+  /** Trigger to refresh AI services (increment to reload) */
+  aiRefreshTrigger?: number;
 }
 
 // Conventional Commits templates
@@ -34,6 +42,9 @@ export function GitCommitForm({
   onCommit,
   defaultMessage = '',
   isCommitting = false,
+  projectPath = '',
+  onOpenAISettings,
+  aiRefreshTrigger = 0,
 }: GitCommitFormProps) {
   const [message, setMessage] = useState(defaultMessage);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,6 +52,34 @@ export function GitCommitForm({
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // AI commit message generation
+  const aiCommit = useAICommitMessage({ projectPath });
+
+  // Check if AI service is configured
+  const { defaultService, isLoadingServices, loadServices } = useAIService({ autoLoad: true });
+
+  // Refresh services when trigger changes (e.g., after AI settings dialog closes)
+  useEffect(() => {
+    if (aiRefreshTrigger > 0) {
+      loadServices();
+    }
+  }, [aiRefreshTrigger, loadServices]);
+
+  // Handle AI commit message generation
+  const handleAIGenerate = useCallback(async () => {
+    if (!hasStagedChanges) return;
+
+    const generatedMessage = await aiCommit.generate();
+    if (generatedMessage) {
+      setMessage(generatedMessage);
+      setSelectedTemplate(null);
+      // Focus textarea
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
+    }
+  }, [hasStagedChanges, aiCommit]);
 
   // Handle commit submission
   const handleSubmit = useCallback(async () => {
@@ -102,37 +141,97 @@ export function GitCommitForm({
 
   return (
     <div className="bg-card rounded-lg p-4 space-y-3">
-      {/* Template Selector */}
-      <div className="relative" ref={dropdownRef}>
-        <button
-          onClick={() => setShowTemplates(!showTemplates)}
-          className="flex items-center gap-2 px-3 py-1.5 bg-muted hover:bg-accent rounded text-sm transition-colors"
-        >
-          <span className="text-muted-foreground">
-            {currentTemplate ? currentTemplate.label : 'Template'}
-          </span>
-          <ChevronDown className="w-4 h-4 text-muted-foreground" />
-        </button>
-
-        {/* Dropdown Menu */}
-        {showTemplates && (
-          <div className="absolute top-full left-0 mt-1 w-64 max-h-60 overflow-y-auto bg-card border border-border rounded-lg shadow-xl z-10">
-            {COMMIT_TEMPLATES.map((template) => (
-              <button
-                key={template.id}
-                onClick={() => handleSelectTemplate(template)}
-                className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-accent transition-colors ${
-                  selectedTemplate === template.id ? 'bg-accent' : ''
-                }`}
-              >
-                <div>
-                  <div className="text-sm text-foreground">{template.label}</div>
-                  <div className="text-xs text-muted-foreground">{template.description}</div>
-                </div>
-                <code className="text-xs text-muted-foreground font-mono">{template.prefix}</code>
-              </button>
-            ))}
+      {/* AI Error Alert */}
+      {aiCommit.error && (
+        <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-red-400">{aiCommit.error}</p>
           </div>
+          <button
+            onClick={aiCommit.clearError}
+            className="flex-shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors"
+          >
+            <X className="w-3.5 h-3.5 text-red-400" />
+          </button>
+        </div>
+      )}
+
+      {/* Template Selector + AI Generate Button */}
+      <div className="flex items-center gap-2">
+        {/* Template Selector */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setShowTemplates(!showTemplates)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-muted hover:bg-accent rounded text-sm transition-colors"
+          >
+            <span className="text-muted-foreground">
+              {currentTemplate ? currentTemplate.label : 'Template'}
+            </span>
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+          </button>
+
+          {/* Dropdown Menu */}
+          {showTemplates && (
+            <div className="absolute top-full left-0 mt-1 w-64 max-h-60 overflow-y-auto bg-card border border-border rounded-lg shadow-xl z-10">
+              {COMMIT_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => handleSelectTemplate(template)}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-accent transition-colors ${
+                    selectedTemplate === template.id ? 'bg-accent' : ''
+                  }`}
+                >
+                  <div>
+                    <div className="text-sm text-foreground">{template.label}</div>
+                    <div className="text-xs text-muted-foreground">{template.description}</div>
+                  </div>
+                  <code className="text-xs text-muted-foreground font-mono">{template.prefix}</code>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* AI Generate Button */}
+        {projectPath && (
+          <>
+            {!isLoadingServices && !defaultService ? (
+              // No default AI service configured - show setup prompt
+              <button
+                onClick={onOpenAISettings}
+                title="Configure AI service to enable AI commit message generation"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-muted hover:bg-accent rounded text-sm transition-colors border border-border"
+              >
+                <Settings className="w-4 h-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Setup AI</span>
+              </button>
+            ) : (
+              // AI service configured - show generate button
+              <button
+                onClick={handleAIGenerate}
+                disabled={!hasStagedChanges || aiCommit.isGenerating || isLoadingServices}
+                title={!hasStagedChanges ? 'Stage files first' : 'Generate commit message with AI'}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors border border-purple-500/30"
+              >
+                {aiCommit.isGenerating ? (
+                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                )}
+                <span className="text-purple-400">
+                  {aiCommit.isGenerating ? 'Generating...' : 'AI Generate'}
+                </span>
+              </button>
+            )}
+          </>
+        )}
+
+        {/* Tokens used indicator */}
+        {aiCommit.tokensUsed !== null && (
+          <span className="text-xs text-muted-foreground">
+            {aiCommit.tokensUsed} tokens
+          </span>
         )}
       </div>
 

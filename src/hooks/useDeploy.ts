@@ -2,6 +2,7 @@
 // One-Click Deploy feature (015-one-click-deploy)
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import { deployAPI, deployEvents, type UnlistenFn } from '../lib/tauri-api';
 import { useDeployAccounts } from './useDeployAccounts';
 import type {
@@ -121,6 +122,28 @@ export function useDeploy(): UseDeployReturn {
               : d
           )
         );
+
+        // Send desktop notification
+        (async () => {
+          let permissionGranted = await isPermissionGranted();
+          if (!permissionGranted) {
+            const permission = await requestPermission();
+            permissionGranted = permission === 'granted';
+          }
+          if (permissionGranted) {
+            if (event.status === 'ready') {
+              sendNotification({
+                title: 'Deploy 完成',
+                body: event.url ? `部署成功！${event.url}` : '部署成功！',
+              });
+            } else {
+              sendNotification({
+                title: 'Deploy 失敗',
+                body: event.errorMessage || '部署過程中發生錯誤',
+              });
+            }
+          }
+        })();
       }
     }).then((unlisten) => {
       unlistenRef.current = unlisten;

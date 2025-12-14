@@ -1,12 +1,14 @@
 // Data models module
 // Rust structs that map to TypeScript interfaces
 
+pub mod ai;
 pub mod apk;
 pub mod deploy;
 pub mod execution;
 pub mod git;
 pub mod incoming_webhook;
 pub mod ipa;
+pub mod mcp;
 pub mod monorepo;
 pub mod project;
 pub mod security;
@@ -39,3 +41,5 @@ pub use version::*;
 pub use webhook::*;
 // Note: toolchain types are not re-exported to avoid conflict with version::VoltaConfig
 // Use crate::models::toolchain::* explicitly when needed
+// Note: ai and mcp types are not glob re-exported to keep namespace clean
+// Use crate::models::ai::* or crate::models::mcp::* explicitly when needed
