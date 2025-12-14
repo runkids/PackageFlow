@@ -19,7 +19,7 @@ export function useUpdater() {
         // Debug mode: show dialog without checking for updates
         if (DEBUG_SHOW_DIALOG) {
           const confirmed = await ask(
-            `A new version (v0.2.0) is available!\n\nWould you like to download and install it now?`,
+            `A new version (vX.X.X) is available!\n\nWould you like to download and install it now?`,
             {
               title: 'Update Available',
               kind: 'info',

@@ -52,7 +52,7 @@ Perfect for **vibe coding**: less terminal chaos, more building cool stuff.
 ## 🎬 Quick Start
 
 1. **Download** → [Get PackageFlow for macOS](https://github.com/runkids/PackageFlow/releases)
-2. **Open a project** → Drag any Node.js project folder into the app
+2. **Open a project** → Drag any folder with `package.json` into the app
 3. **Start using** → Click any script card to run it!
 
 > 💡 **Pro tip**: Press <kbd>Cmd</kbd>+<kbd>K</kbd> to quickly switch between worktrees
