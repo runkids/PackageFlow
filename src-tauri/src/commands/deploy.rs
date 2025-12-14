@@ -1040,19 +1040,40 @@ fn get_build_output_dir(framework: Option<&str>) -> String {
 
 /// Run the build command for the project
 async fn run_build_command(project_path: &str, config: &DeploymentConfig) -> Result<(), String> {
+    use crate::commands::monorepo::get_volta_wrapped_command;
+    use crate::utils::path_resolver;
+    use std::path::Path;
     use std::process::Stdio;
-    use tokio::process::Command;
 
     // Use custom build command if set, otherwise default to "npm run build"
     let build_cmd = config.build_command.as_deref().unwrap_or("npm run build");
 
-    // Split command for execution
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(build_cmd)
-        .current_dir(project_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+    // Parse the build command
+    let parts: Vec<&str> = build_cmd.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err("Empty build command".to_string());
+    }
+
+    let base_cmd = parts[0];
+    let base_args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
+
+    // Use version manager wrapping (Volta/Corepack) for proper Node.js/npm resolution
+    let project_path_buf = Path::new(project_path);
+    let (final_cmd, final_args) = get_volta_wrapped_command(project_path_buf, base_cmd, base_args);
+
+    println!(
+        "[deploy] Running build command: {} {:?} in {}",
+        final_cmd, final_args, project_path
+    );
+
+    // Use path_resolver to create command with proper PATH for macOS GUI apps
+    let mut command = path_resolver::create_command(&final_cmd);
+    command.args(&final_args);
+    command.current_dir(project_path);
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let output = tokio::process::Command::from(command)
         .output()
         .await
         .map_err(|e| format!("Failed to run build command '{}': {}", build_cmd, e))?;
