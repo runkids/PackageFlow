@@ -30,6 +30,9 @@ import { useSecurity } from '../../hooks/useSecurity';
 import { useScanReminder } from '../../hooks/useScanReminder';
 import { FRAMEWORK_CONFIG, UI_FRAMEWORK_CONFIG, shouldShowUIFrameworkBadge } from '../../lib/framework-detector';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useToolchainStrategy } from '../../hooks/useToolchainStrategy';
+import { ToolchainConflictDialog } from './ToolchainConflictDialog';
+import type { ToolchainStrategy } from '../../types/toolchain';
 
 type TabType = 'scripts' | 'workspaces' | 'workflows' | 'builds' | 'security' | 'git' | 'deploy';
 
@@ -124,6 +127,16 @@ export function ProjectExplorer({
 
   // Editor dropdown state
   const [isEditorDropdownOpen, setIsEditorDropdownOpen] = useState(false);
+
+  // Toolchain conflict detection state (017-toolchain-conflict-detection)
+  const [showToolchainConflictDialog, setShowToolchainConflictDialog] = useState(false);
+  const {
+    conflict: toolchainConflict,
+    preference: toolchainPreference,
+    detectConflict: detectToolchainConflict,
+    setPreference: setToolchainPreference,
+    isDetecting: isDetectingToolchain,
+  } = useToolchainStrategy();
 
 
   // Get all worktrees (prefer external if provided)
@@ -240,6 +253,35 @@ export function ProjectExplorer({
   useEffect(() => {
     checkMobileBuilds();
   }, [checkMobileBuilds]);
+
+  // Detect toolchain conflict when project changes (017-toolchain-conflict-detection)
+  useEffect(() => {
+    if (!project?.path) return;
+
+    const checkToolchainConflict = async () => {
+      await detectToolchainConflict(project.path);
+    };
+
+    checkToolchainConflict();
+  }, [project?.path, detectToolchainConflict]);
+
+  // Show toolchain conflict dialog when conflict detected and no saved preference
+  useEffect(() => {
+    if (toolchainConflict?.has_conflict && !toolchainPreference && !isDetectingToolchain) {
+      setShowToolchainConflictDialog(true);
+    }
+  }, [toolchainConflict, toolchainPreference, isDetectingToolchain]);
+
+  // Handle toolchain strategy selection
+  const handleToolchainStrategySelect = useCallback(async (strategy: ToolchainStrategy, remember: boolean) => {
+    if (!project?.path) return;
+    try {
+      await setToolchainPreference(project.path, strategy, remember);
+      setShowToolchainConflictDialog(false);
+    } catch (err) {
+      console.error('Failed to save toolchain preference:', err);
+    }
+  }, [project?.path, setToolchainPreference]);
 
   // Load worktrees for Quick Switcher
   const loadWorktrees = useCallback(async () => {
@@ -828,6 +870,17 @@ export function ProjectExplorer({
             />
           </div>
         </div>
+      )}
+
+      {/* Toolchain Conflict Dialog (017-toolchain-conflict-detection) */}
+      {showToolchainConflictDialog && project && toolchainConflict && (
+        <ToolchainConflictDialog
+          isOpen={showToolchainConflictDialog}
+          onClose={() => setShowToolchainConflictDialog(false)}
+          projectPath={project.path}
+          conflict={toolchainConflict}
+          onStrategySelect={handleToolchainStrategySelect}
+        />
       )}
     </div>
   );

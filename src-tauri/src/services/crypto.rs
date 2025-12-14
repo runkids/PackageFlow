@@ -67,9 +67,7 @@ fn get_machine_id() -> Result<String, CryptoError> {
         let output = Command::new("ioreg")
             .args(["-rd1", "-c", "IOPlatformExpertDevice"])
             .output()
-            .map_err(|e| {
-                CryptoError::KeychainError(format!("Failed to get machine ID: {}", e))
-            })?;
+            .map_err(|e| CryptoError::KeychainError(format!("Failed to get machine ID: {}", e)))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -86,8 +84,7 @@ fn get_machine_id() -> Result<String, CryptoError> {
         let hostname = hostname::get()
             .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_else(|_| "unknown-host".to_string());
-        let username =
-            std::env::var("USER").unwrap_or_else(|_| "unknown-user".to_string());
+        let username = std::env::var("USER").unwrap_or_else(|_| "unknown-user".to_string());
 
         Ok(format!("{}-{}", hostname, username))
     }

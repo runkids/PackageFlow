@@ -1943,6 +1943,72 @@ export const deployEvents = {
 };
 
 // ============================================================================
+// Toolchain Conflict Detection API (017-toolchain-conflict-detection)
+// ============================================================================
+
+import type {
+  ToolchainStrategy,
+  ToolchainConflictResult,
+  ProjectPreference,
+  ToolchainError,
+  BuildCommandResult,
+  EnvironmentDiagnostics,
+} from '../types/toolchain';
+
+export type {
+  ToolchainStrategy,
+  ToolchainConflictResult,
+  ProjectPreference,
+  ToolchainError,
+  BuildCommandResult,
+  EnvironmentDiagnostics,
+};
+
+export const toolchainAPI = {
+  /** Detect toolchain conflict for a project */
+  detectConflict: (projectPath: string): Promise<ToolchainConflictResult> =>
+    invoke<ToolchainConflictResult>('detect_toolchain_conflict', { projectPath }),
+
+  /** Build wrapped command with toolchain strategy */
+  buildCommand: (
+    projectPath: string,
+    command: string,
+    args: string[],
+    strategy?: ToolchainStrategy
+  ): Promise<BuildCommandResult> =>
+    invoke<BuildCommandResult>('build_toolchain_command', {
+      projectPath,
+      command,
+      args,
+      strategy,
+    }),
+
+  /** Get project toolchain preference */
+  getPreference: (projectPath: string): Promise<ProjectPreference | null> =>
+    invoke<ProjectPreference | null>('get_toolchain_preference', { projectPath }),
+
+  /** Set project toolchain preference */
+  setPreference: (
+    projectPath: string,
+    strategy: ToolchainStrategy,
+    remember: boolean
+  ): Promise<void> =>
+    invoke('set_toolchain_preference', { projectPath, strategy, remember }),
+
+  /** Clear project toolchain preference */
+  clearPreference: (projectPath: string): Promise<void> =>
+    invoke('clear_toolchain_preference', { projectPath }),
+
+  /** Get environment diagnostics */
+  getDiagnostics: (projectPath?: string): Promise<EnvironmentDiagnostics> =>
+    invoke<EnvironmentDiagnostics>('get_environment_diagnostics', { projectPath }),
+
+  /** Humanize toolchain error */
+  humanizeError: (rawError: string): Promise<ToolchainError> =>
+    invoke<ToolchainError>('humanize_toolchain_error', { rawError }),
+};
+
+// ============================================================================
 // Keyboard Shortcuts API
 // ============================================================================
 
@@ -1998,4 +2064,5 @@ export const tauriAPI = {
   ...stepTemplateAPI,
   ...shortcutsAPI,
   ...deployAPI,
+  ...toolchainAPI,
 };

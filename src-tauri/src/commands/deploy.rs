@@ -273,8 +273,8 @@ const CLOUDFLARE_VERIFY_URL: &str = "https://api.cloudflare.com/client/v4/user/t
 
 // Store keys
 const STORE_CONNECTED_PLATFORMS: &str = "connected_platforms"; // Very old: ConnectedPlatform format
-const STORE_ENCRYPTED_ACCOUNTS: &str = "encrypted_accounts";   // New: encrypted tokens (preferred)
-const STORE_DEPLOY_ACCOUNTS: &str = "deploy_accounts";         // Fallback: plain-text when encryption fails
+const STORE_ENCRYPTED_ACCOUNTS: &str = "encrypted_accounts"; // New: encrypted tokens (preferred)
+const STORE_DEPLOY_ACCOUNTS: &str = "deploy_accounts"; // Fallback: plain-text when encryption fails
 const STORE_DEPLOYMENT_CONFIGS: &str = "deployment_configs";
 const STORE_DEPLOYMENT_HISTORY: &str = "deployment_history";
 // T008: Deploy preferences store key (016-multi-deploy-accounts)
@@ -345,10 +345,8 @@ fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String
             serde_json::from_value::<Vec<EncryptedDeployAccount>>(value.clone())
         {
             if !encrypted_accounts.is_empty() {
-                let accounts: Result<Vec<DeployAccount>, String> = encrypted_accounts
-                    .iter()
-                    .map(|e| e.to_account())
-                    .collect();
+                let accounts: Result<Vec<DeployAccount>, String> =
+                    encrypted_accounts.iter().map(|e| e.to_account()).collect();
 
                 match accounts {
                     Ok(accts) if !accts.is_empty() => {
@@ -356,7 +354,10 @@ fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String
                         return Ok(accts);
                     }
                     Err(e) => {
-                        log::error!("Failed to decrypt accounts: {}. Will try fallback formats.", e);
+                        log::error!(
+                            "Failed to decrypt accounts: {}. Will try fallback formats.",
+                            e
+                        );
                         // Clear corrupted encrypted data
                         store.delete(STORE_ENCRYPTED_ACCOUNTS);
                         let _ = store.save();
@@ -371,7 +372,10 @@ fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String
     if let Some(value) = store.get(STORE_DEPLOY_ACCOUNTS) {
         if let Ok(accounts) = serde_json::from_value::<Vec<DeployAccount>>(value.clone()) {
             if !accounts.is_empty() {
-                log::info!("Migrating {} plain-text accounts to encrypted storage", accounts.len());
+                log::info!(
+                    "Migrating {} plain-text accounts to encrypted storage",
+                    accounts.len()
+                );
                 // Migrate to encrypted storage
                 let _ = save_accounts_to_store(app, &accounts);
                 return Ok(accounts);
@@ -387,7 +391,10 @@ fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String
             let needs_migration = accounts.iter().any(|a| a.id.is_empty());
             if !needs_migration && !accounts.is_empty() {
                 // Migrate to encrypted storage
-                log::info!("Migrating {} plain-text accounts to encrypted storage", accounts.len());
+                log::info!(
+                    "Migrating {} plain-text accounts to encrypted storage",
+                    accounts.len()
+                );
                 let _ = save_accounts_to_store(app, &accounts);
                 // Clear legacy storage after successful migration
                 store.delete(STORE_CONNECTED_PLATFORMS);
@@ -407,7 +414,10 @@ fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String
 
             // Save migrated data to encrypted store
             if !migrated.is_empty() {
-                log::info!("Migrating {} legacy ConnectedPlatform to encrypted storage", migrated.len());
+                log::info!(
+                    "Migrating {} legacy ConnectedPlatform to encrypted storage",
+                    migrated.len()
+                );
                 let _ = save_accounts_to_store(app, &migrated);
                 // Clear legacy storage after successful migration
                 store.delete(STORE_CONNECTED_PLATFORMS);
@@ -482,10 +492,7 @@ fn find_account_by_id(accounts: &[DeployAccount], account_id: &str) -> Option<De
 }
 
 /// T037: Find projects using a specific account
-fn find_projects_using_account(
-    app: &AppHandle,
-    account_id: &str,
-) -> Result<Vec<String>, String> {
+fn find_projects_using_account(app: &AppHandle, account_id: &str) -> Result<Vec<String>, String> {
     let configs = get_configs_from_store(app)?;
     let affected: Vec<String> = configs
         .values()
@@ -598,7 +605,9 @@ fn save_netlify_site_id(app: &AppHandle, project_id: &str, site_id: &str) -> Res
 }
 
 /// Get the history store instance (separate file for deployment history)
-fn get_history_store(app: &AppHandle) -> Result<Arc<tauri_plugin_store::Store<tauri::Wry>>, String> {
+fn get_history_store(
+    app: &AppHandle,
+) -> Result<Arc<tauri_plugin_store::Store<tauri::Wry>>, String> {
     app.store(DEPLOYMENT_HISTORY_FILE)
         .map_err(|e| format!("Failed to access deployment history store: {}", e))
 }
@@ -761,7 +770,9 @@ pub async fn start_oauth_flow(
 
     // Parse callback URL and exchange for token
     let connected_platform = match oauth_config {
-        OAuthClientConfig::Netlify { .. } => extract_netlify_token(&callback_url, &state_clone).await?,
+        OAuthClientConfig::Netlify { .. } => {
+            extract_netlify_token(&callback_url, &state_clone).await?
+        }
     };
 
     // Save connected platform
@@ -892,8 +903,14 @@ pub async fn start_deployment(
 
     // Start deployment in background
     tauri::async_runtime::spawn(async move {
-        let result =
-            execute_deployment(&app_clone, &deployment_id, &access_token_clone, &config_clone, &project_path_clone).await;
+        let result = execute_deployment(
+            &app_clone,
+            &deployment_id,
+            &access_token_clone,
+            &config_clone,
+            &project_path_clone,
+        )
+        .await;
 
         // Update deployment status based on result
         let mut history = get_history_from_store(&app_clone).unwrap_or_default();
@@ -987,15 +1004,22 @@ async fn execute_deployment(
 
     match config.platform {
         PlatformType::GithubPages => {
-            let (url, deploy_id) = deploy_to_github_pages(app, deployment_id, project_path, config, &full_build_path).await?;
+            let (url, deploy_id) =
+                deploy_to_github_pages(app, deployment_id, project_path, config, &full_build_path)
+                    .await?;
             Ok(DeployResult {
                 url,
                 deploy_id,
                 ..Default::default()
             })
-        },
-        PlatformType::Netlify => deploy_to_netlify(app, deployment_id, access_token, config, &full_build_path).await,
-        PlatformType::CloudflarePages => deploy_to_cloudflare_pages(app, deployment_id, access_token, config, &full_build_path).await,
+        }
+        PlatformType::Netlify => {
+            deploy_to_netlify(app, deployment_id, access_token, config, &full_build_path).await
+        }
+        PlatformType::CloudflarePages => {
+            deploy_to_cloudflare_pages(app, deployment_id, access_token, config, &full_build_path)
+                .await
+        }
     }
 }
 
@@ -1046,7 +1070,9 @@ async fn run_build_command(project_path: &str, config: &DeploymentConfig) -> Res
 }
 
 /// Collect all files from a directory for upload
-fn collect_files_for_upload(build_path: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, String> {
+fn collect_files_for_upload(
+    build_path: &std::path::Path,
+) -> Result<Vec<(String, Vec<u8>)>, String> {
     use std::fs;
 
     let mut files = Vec::new();
@@ -1056,14 +1082,17 @@ fn collect_files_for_upload(build_path: &std::path::Path) -> Result<Vec<(String,
         current: &std::path::Path,
         files: &mut Vec<(String, Vec<u8>)>,
     ) -> Result<(), String> {
-        for entry in fs::read_dir(current).map_err(|e| format!("Failed to read directory: {}", e))? {
+        for entry in
+            fs::read_dir(current).map_err(|e| format!("Failed to read directory: {}", e))?
+        {
             let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
             let path = entry.path();
 
             if path.is_dir() {
                 collect_recursive(base, &path, files)?;
             } else {
-                let relative = path.strip_prefix(base)
+                let relative = path
+                    .strip_prefix(base)
                     .map_err(|e| format!("Failed to get relative path: {}", e))?
                     .to_string_lossy()
                     .to_string();
@@ -1081,7 +1110,7 @@ fn collect_files_for_upload(build_path: &std::path::Path) -> Result<Vec<(String,
 
 /// Calculate SHA1 hash of content (hex string)
 fn calculate_sha1(content: &[u8]) -> String {
-    use sha1::{Sha1, Digest};
+    use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
     hasher.update(content);
     format!("{:x}", hasher.finalize())
@@ -1090,7 +1119,7 @@ fn calculate_sha1(content: &[u8]) -> String {
 /// Calculate SHA-256 hash of content and return first 32 hex characters
 /// This is used for Cloudflare Pages file manifest
 fn calculate_sha256_short(content: &[u8]) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(content);
     let result = format!("{:x}", hasher.finalize());
@@ -1134,19 +1163,31 @@ async fn deploy_to_github_pages(
         return Err("No git remote 'origin' found. Please configure git remote first.".to_string());
     }
 
-    let remote_url = String::from_utf8_lossy(&remote_output.stdout).trim().to_string();
+    let remote_url = String::from_utf8_lossy(&remote_output.stdout)
+        .trim()
+        .to_string();
 
     // Parse GitHub username and repo from remote URL
     let (username, repo) = parse_github_remote(&remote_url)?;
 
     // Create a temporary directory for gh-pages branch
-    let temp_dir = std::env::temp_dir().join(format!("packageflow-gh-pages-{}", uuid::Uuid::new_v4()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("packageflow-gh-pages-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
     // Clone the gh-pages branch (or create it)
     let clone_result = Command::new("git")
-        .args(["clone", "--branch", "gh-pages", "--single-branch", "--depth", "1", &remote_url, "."])
+        .args([
+            "clone",
+            "--branch",
+            "gh-pages",
+            "--single-branch",
+            "--depth",
+            "1",
+            &remote_url,
+            ".",
+        ])
         .current_dir(&temp_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1189,7 +1230,9 @@ async fn deploy_to_github_pages(
     };
 
     // Clear existing files (except .git)
-    for entry in std::fs::read_dir(&temp_dir).map_err(|e| format!("Failed to read temp dir: {}", e))? {
+    for entry in
+        std::fs::read_dir(&temp_dir).map_err(|e| format!("Failed to read temp dir: {}", e))?
+    {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let path = entry.path();
         if path.file_name().map(|n| n != ".git").unwrap_or(false) {
@@ -1219,7 +1262,10 @@ async fn deploy_to_github_pages(
         .map_err(|e| format!("Failed to git add: {}", e))?;
 
     // Git commit
-    let commit_msg = format!("Deploy from PackageFlow - {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
+    let commit_msg = format!(
+        "Deploy from PackageFlow - {}",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    );
     let commit_output = Command::new("git")
         .args(["commit", "-m", &commit_msg])
         .current_dir(&temp_dir)
@@ -1253,7 +1299,10 @@ async fn deploy_to_github_pages(
         .stderr(Stdio::piped())
         // Disable interactive prompts
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o StrictHostKeyChecking=no")
+        .env(
+            "GIT_SSH_COMMAND",
+            "ssh -o BatchMode=yes -o StrictHostKeyChecking=no",
+        )
         .output();
 
     // Add timeout of 60 seconds
@@ -1271,7 +1320,10 @@ async fn deploy_to_github_pages(
         format!("Failed to git push: {}", e)
     })?;
 
-    println!("[Deploy] Git push completed with status: {}", push_output.status);
+    println!(
+        "[Deploy] Git push completed with status: {}",
+        push_output.status
+    );
 
     // Clean up temp directory
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1279,8 +1331,14 @@ async fn deploy_to_github_pages(
     if !push_output.status.success() {
         let stderr = String::from_utf8_lossy(&push_output.stderr);
         let stdout = String::from_utf8_lossy(&push_output.stdout);
-        println!("[Deploy] Git push failed - stdout: {}, stderr: {}", stdout, stderr);
-        return Err(format!("Git push failed: {}. Make sure you have push access and valid credentials.", stderr));
+        println!(
+            "[Deploy] Git push failed - stdout: {}, stderr: {}",
+            stdout, stderr
+        );
+        return Err(format!(
+            "Git push failed: {}. Make sure you have push access and valid credentials.",
+            stderr
+        ));
     }
 
     println!("[Deploy] GitHub Pages deployment successful!");
@@ -1360,7 +1418,11 @@ async fn deploy_to_netlify(
     let site_id = if let Some(existing_id) = &config.netlify_site_id {
         // Verify the site still exists
         let check_url = format!("{}/{}", NETLIFY_SITES_URL, existing_id);
-        let check = client.get(&check_url).bearer_auth(access_token).send().await;
+        let check = client
+            .get(&check_url)
+            .bearer_auth(access_token)
+            .send()
+            .await;
         if check.map(|r| r.status().is_success()).unwrap_or(false) {
             existing_id.clone()
         } else {
@@ -1429,7 +1491,14 @@ async fn deploy_to_netlify(
                 // Find file with matching SHA
                 for (path, content) in &files {
                     if calculate_sha1(content) == sha_str {
-                        upload_file_to_netlify(&client, access_token, &netlify_deploy_id, &format!("/{}", path), content).await?;
+                        upload_file_to_netlify(
+                            &client,
+                            access_token,
+                            &netlify_deploy_id,
+                            &format!("/{}", path),
+                            content,
+                        )
+                        .await?;
                         break;
                     }
                 }
@@ -1438,7 +1507,14 @@ async fn deploy_to_netlify(
     }
 
     // Step 5: Poll for deployment status and get extended info
-    let result = poll_netlify_deployment(app, deployment_id, access_token, &site_id, &netlify_deploy_id).await?;
+    let result = poll_netlify_deployment(
+        app,
+        deployment_id,
+        access_token,
+        &site_id,
+        &netlify_deploy_id,
+    )
+    .await?;
 
     Ok(result)
 }
@@ -1451,7 +1527,10 @@ async fn upload_file_to_netlify(
     file_path: &str,
     content: &[u8],
 ) -> Result<(), String> {
-    let url = format!("https://api.netlify.com/api/v1/deploys/{}/files{}", deploy_id, file_path);
+    let url = format!(
+        "https://api.netlify.com/api/v1/deploys/{}/files{}",
+        deploy_id, file_path
+    );
 
     let response = client
         .put(&url)
@@ -1498,9 +1577,10 @@ async fn get_or_create_netlify_site(
             .map_err(|e| format!("Failed to parse Netlify sites: {}", e))?;
 
         // Look for a site matching the site name
-        if let Some(site) = sites.iter().find(|s| {
-            s["name"].as_str().map(|n| n == site_name).unwrap_or(false)
-        }) {
+        if let Some(site) = sites
+            .iter()
+            .find(|s| s["name"].as_str().map(|n| n == site_name).unwrap_or(false))
+        {
             if let Some(site_id) = site["id"].as_str() {
                 return Ok(site_id.to_string());
             }
@@ -1555,7 +1635,10 @@ async fn poll_netlify_deployment(
     netlify_deploy_id: &str,
 ) -> Result<DeployResult, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/{}/deploys/{}", NETLIFY_SITES_URL, site_id, netlify_deploy_id);
+    let url = format!(
+        "{}/{}/deploys/{}",
+        NETLIFY_SITES_URL, site_id, netlify_deploy_id
+    );
 
     for _ in 0..60 {
         // Max 5 minutes polling
@@ -1667,10 +1750,7 @@ pub async fn delete_deployment_history_item(
 
 /// Clear all deployment history for a project
 #[tauri::command]
-pub async fn clear_deployment_history(
-    app: AppHandle,
-    project_id: String,
-) -> Result<(), String> {
+pub async fn clear_deployment_history(app: AppHandle, project_id: String) -> Result<(), String> {
     let mut history = get_history_from_store(&app)?;
     history.remove(&project_id);
     save_history_to_store(&app, &history)
@@ -1748,7 +1828,11 @@ pub async fn detect_framework(project_path: String) -> Result<Option<String>, St
 
 /// Redeploy using last deployment config
 #[tauri::command]
-pub async fn redeploy(app: AppHandle, project_id: String, project_path: String) -> Result<Deployment, String> {
+pub async fn redeploy(
+    app: AppHandle,
+    project_id: String,
+    project_path: String,
+) -> Result<Deployment, String> {
     // Get last deployment config
     let config = get_deployment_config(app.clone(), project_id.clone())
         .await?
@@ -1990,22 +2074,24 @@ pub async fn bind_project_account(
 
     // Get or create deployment config
     let mut configs = get_configs_from_store(&app)?;
-    let config = configs.entry(project_id.clone()).or_insert(DeploymentConfig {
-        project_id: project_id.clone(),
-        platform: account.platform.clone(),
-        account_id: None,
-        environment: crate::models::deploy::DeploymentEnvironment::Production,
-        framework_preset: None,
-        env_variables: Vec::new(),
-        root_directory: None,
-        install_command: None,
-        build_command: None,
-        output_directory: None,
-        netlify_site_id: None,
-        netlify_site_name: None,
-        cloudflare_account_id: None,
-        cloudflare_project_name: None,
-    });
+    let config = configs
+        .entry(project_id.clone())
+        .or_insert(DeploymentConfig {
+            project_id: project_id.clone(),
+            platform: account.platform.clone(),
+            account_id: None,
+            environment: crate::models::deploy::DeploymentEnvironment::Production,
+            framework_preset: None,
+            env_variables: Vec::new(),
+            root_directory: None,
+            install_command: None,
+            build_command: None,
+            output_directory: None,
+            netlify_site_id: None,
+            netlify_site_name: None,
+            cloudflare_account_id: None,
+            cloudflare_project_name: None,
+        });
 
     // Verify platform matches
     if config.platform != account.platform {
@@ -2312,13 +2398,24 @@ pub async fn generate_github_actions_workflow(
         .await
     {
         Ok(remote_output) if remote_output.status.success() => {
-            let remote_url = String::from_utf8_lossy(&remote_output.stdout).trim().to_string();
-            parse_github_remote(&remote_url).unwrap_or(("<username>".to_string(), "<repo>".to_string()))
+            let remote_url = String::from_utf8_lossy(&remote_output.stdout)
+                .trim()
+                .to_string();
+            parse_github_remote(&remote_url)
+                .unwrap_or(("<username>".to_string(), "<repo>".to_string()))
         }
         _ => ("<username>".to_string(), "<repo>".to_string()),
     };
-    let username = if username_str == "<username>" { None } else { Some(username_str.clone()) };
-    let repo = if repo_str == "<repo>" { None } else { Some(repo_str.clone()) };
+    let username = if username_str == "<username>" {
+        None
+    } else {
+        Some(username_str.clone())
+    };
+    let repo = if repo_str == "<repo>" {
+        None
+    } else {
+        Some(repo_str.clone())
+    };
 
     // Detect package manager
     let (package_manager, install_command) = detect_package_manager(&project_path);
@@ -2348,7 +2445,9 @@ pub async fn generate_github_actions_workflow(
     );
 
     // Create .github/workflows directory
-    let workflows_dir = std::path::Path::new(&project_path).join(".github").join("workflows");
+    let workflows_dir = std::path::Path::new(&project_path)
+        .join(".github")
+        .join("workflows");
     fs::create_dir_all(&workflows_dir)
         .map_err(|e| format!("Failed to create workflows directory: {}", e))?;
 
@@ -2385,7 +2484,9 @@ pub async fn generate_github_actions_workflow(
 
 /// Validate Cloudflare API token and get account info
 #[tauri::command]
-pub async fn validate_cloudflare_token(api_token: String) -> Result<CloudflareValidationResult, String> {
+pub async fn validate_cloudflare_token(
+    api_token: String,
+) -> Result<CloudflareValidationResult, String> {
     let client = reqwest::Client::new();
 
     // First, verify the token is valid
@@ -2473,19 +2574,24 @@ pub async fn add_cloudflare_account(
     let validation = validate_cloudflare_token(api_token.clone()).await?;
 
     if !validation.valid {
-        return Err(validation.error.unwrap_or_else(|| "Invalid token".to_string()));
+        return Err(validation
+            .error
+            .unwrap_or_else(|| "Invalid token".to_string()));
     }
 
     let account_id = validation
         .account_id
         .ok_or("Could not retrieve Cloudflare account ID")?;
-    let account_name = validation.account_name.unwrap_or_else(|| "Cloudflare Account".to_string());
+    let account_name = validation
+        .account_name
+        .unwrap_or_else(|| "Cloudflare Account".to_string());
 
     // Check for duplicate
     let accounts = get_accounts_from_store(&app)?;
-    if accounts.iter().any(|a| {
-        a.platform == PlatformType::CloudflarePages && a.platform_user_id == account_id
-    }) {
+    if accounts
+        .iter()
+        .any(|a| a.platform == PlatformType::CloudflarePages && a.platform_user_id == account_id)
+    {
         return Err("This Cloudflare account is already connected".to_string());
     }
 
@@ -2525,7 +2631,7 @@ async fn deploy_to_cloudflare_pages(
     config: &DeploymentConfig,
     build_path: &std::path::Path,
 ) -> Result<DeployResult, String> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
     let client = reqwest::Client::new();
 
@@ -2598,7 +2704,10 @@ async fn deploy_to_cloudflare_pages(
 
             if !create_response.status().is_success() {
                 let error_text = create_response.text().await.unwrap_or_default();
-                return Err(format!("Failed to create Cloudflare Pages project: {}", error_text));
+                return Err(format!(
+                    "Failed to create Cloudflare Pages project: {}",
+                    error_text
+                ));
             }
         }
     }
@@ -2630,7 +2739,10 @@ async fn deploy_to_cloudflare_pages(
         // Determine content type based on file extension
         let content_type = get_mime_type(&path);
 
-        manifest.insert(manifest_path.clone(), serde_json::Value::String(hash.clone()));
+        manifest.insert(
+            manifest_path.clone(),
+            serde_json::Value::String(hash.clone()),
+        );
         file_data_list.push(FileData {
             path: manifest_path,
             hash,
@@ -2639,7 +2751,10 @@ async fn deploy_to_cloudflare_pages(
         });
     }
 
-    log::info!("Cloudflare Pages: {} files to process", file_data_list.len());
+    log::info!(
+        "Cloudflare Pages: {} files to process",
+        file_data_list.len()
+    );
 
     // Step 3: Get JWT upload token
     let jwt_url = format!(
@@ -2695,10 +2810,17 @@ async fn deploy_to_cloudflare_pages(
 
     let missing_hashes: std::collections::HashSet<String> = missing_data["result"]
         .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
-    log::info!("Cloudflare Pages: {} files missing, need to upload", missing_hashes.len());
+    log::info!(
+        "Cloudflare Pages: {} files missing, need to upload",
+        missing_hashes.len()
+    );
 
     // Step 5: Upload missing files
     if !missing_hashes.is_empty() {
@@ -2794,7 +2916,10 @@ async fn deploy_to_cloudflare_pages(
         .unwrap_or("")
         .to_string();
 
-    log::info!("Cloudflare Pages: Deployment created with ID {}", cf_deploy_id);
+    log::info!(
+        "Cloudflare Pages: Deployment created with ID {}",
+        cf_deploy_id
+    );
 
     // Step 8: Poll for deployment completion
     poll_cloudflare_deployment(
@@ -2835,7 +2960,8 @@ fn get_mime_type(path: &str) -> String {
         "wav" => "audio/wav",
         "wasm" => "application/wasm",
         _ => "application/octet-stream",
-    }.to_string()
+    }
+    .to_string()
 }
 
 /// Poll Cloudflare deployment status
@@ -2883,10 +3009,7 @@ async fn poll_cloudflare_deployment(
         match (stage, stage_status) {
             (_, "success") if stage == "deploy" => {
                 // Deployment complete
-                let deploy_url = status["result"]["url"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
+                let deploy_url = status["result"]["url"].as_str().unwrap_or("").to_string();
 
                 return Ok(DeployResult {
                     url: deploy_url,
@@ -2935,7 +3058,6 @@ async fn poll_cloudflare_deployment(
 
     Err("Cloudflare deployment timed out".to_string())
 }
-
 
 /// Check if an account is in use by any projects
 #[tauri::command]
@@ -3041,7 +3163,8 @@ pub async fn import_deploy_backup(
         .map_err(|_| "Invalid encryption setup".to_string())?;
 
     // Decode and decrypt
-    let nonce_bytes = BASE64.decode(&encrypted_data.nonce)
+    let nonce_bytes = BASE64
+        .decode(&encrypted_data.nonce)
         .map_err(|_| "Invalid backup format".to_string())?;
 
     if nonce_bytes.len() != 12 {
@@ -3054,15 +3177,16 @@ pub async fn import_deploy_backup(
 
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    let ciphertext = BASE64.decode(&encrypted_data.ciphertext)
+    let ciphertext = BASE64
+        .decode(&encrypted_data.ciphertext)
         .map_err(|_| "Invalid backup format".to_string())?;
 
     let plaintext = cipher
         .decrypt(nonce, ciphertext.as_ref())
         .map_err(|_| "Wrong password or corrupted backup".to_string())?;
 
-    let accounts_json = String::from_utf8(plaintext)
-        .map_err(|_| "Corrupted backup data".to_string())?;
+    let accounts_json =
+        String::from_utf8(plaintext).map_err(|_| "Corrupted backup data".to_string())?;
 
     // Parse accounts
     let imported_accounts: Vec<DeployAccount> = serde_json::from_str(&accounts_json)
@@ -3121,8 +3245,8 @@ fn derive_password_key(password: &str) -> [u8; 32] {
 // ============================================================================
 
 use crate::models::deploy::{
-    DeploymentStats, LastSuccessfulDeployment, NetlifySiteInfo,
-    CloudflareProjectInfo, PlatformSiteInfo, DeploymentProgressEvent,
+    CloudflareProjectInfo, DeploymentProgressEvent, DeploymentStats, LastSuccessfulDeployment,
+    NetlifySiteInfo, PlatformSiteInfo,
 };
 
 /// Get deployment statistics for a project
@@ -3152,10 +3276,7 @@ pub async fn get_deployment_stats(
     };
 
     // Calculate deploy times from successful deployments
-    let deploy_times: Vec<u64> = successful
-        .iter()
-        .filter_map(|d| d.deploy_time)
-        .collect();
+    let deploy_times: Vec<u64> = successful.iter().filter_map(|d| d.deploy_time).collect();
 
     let average_deploy_time = if !deploy_times.is_empty() {
         Some(deploy_times.iter().sum::<u64>() as f64 / deploy_times.len() as f64)
@@ -3167,18 +3288,19 @@ pub async fn get_deployment_stats(
     let slowest_deploy_time = deploy_times.iter().max().copied();
 
     // Get last successful deployment
-    let last_successful_deployment = successful
-        .iter()
-        .max_by_key(|d| d.completed_at)
-        .and_then(|d| {
-            d.url.as_ref().map(|url| LastSuccessfulDeployment {
-                id: d.id.clone(),
-                url: url.clone(),
-                deployed_at: d.completed_at.unwrap_or(d.created_at),
-                commit_hash: d.commit_hash.clone(),
-                platform: d.platform.clone(),
-            })
-        });
+    let last_successful_deployment =
+        successful
+            .iter()
+            .max_by_key(|d| d.completed_at)
+            .and_then(|d| {
+                d.url.as_ref().map(|url| LastSuccessfulDeployment {
+                    id: d.id.clone(),
+                    url: url.clone(),
+                    deployed_at: d.completed_at.unwrap_or(d.created_at),
+                    commit_hash: d.commit_hash.clone(),
+                    platform: d.platform.clone(),
+                })
+            });
 
     // Count recent deployments (last 7 days)
     let seven_days_ago = chrono::Utc::now() - chrono::Duration::days(7);
@@ -3243,7 +3365,9 @@ pub async fn get_platform_site_info(
 
             // Get account from bound account
             let accounts = get_accounts_from_store(&app)?;
-            let account = config.account_id.as_ref()
+            let account = config
+                .account_id
+                .as_ref()
                 .and_then(|id| find_account_by_id(&accounts, id));
 
             let cf_account_id = match account {
@@ -3251,7 +3375,8 @@ pub async fn get_platform_site_info(
                 None => return Ok(None),
             };
 
-            match fetch_cloudflare_project_info(&access_token, &cf_account_id, &project_name).await {
+            match fetch_cloudflare_project_info(&access_token, &cf_account_id, &project_name).await
+            {
                 Ok(info) => Ok(Some(PlatformSiteInfo::CloudflarePages { info })),
                 Err(e) => {
                     log::warn!("Failed to fetch Cloudflare project info: {}", e);
@@ -3306,11 +3431,17 @@ async fn fetch_netlify_site_info(
         custom_domain: data["custom_domain"].as_str().map(|s| s.to_string()),
         ssl: data["ssl"].as_bool().unwrap_or(false),
         published_at,
-        repo_url: data["build_settings"]["repo_url"].as_str().map(|s| s.to_string()),
-        repo_branch: data["build_settings"]["repo_branch"].as_str().map(|s| s.to_string()),
+        repo_url: data["build_settings"]["repo_url"]
+            .as_str()
+            .map(|s| s.to_string()),
+        repo_branch: data["build_settings"]["repo_branch"]
+            .as_str()
+            .map(|s| s.to_string()),
         build_minutes_used: None, // Would need separate API call to /accounts/{account_id}/builds/status
         build_minutes_included: None,
-        form_count: data["published_deploy"]["form_count"].as_u64().map(|n| n as usize),
+        form_count: data["published_deploy"]["form_count"]
+            .as_u64()
+            .map(|n| n as usize),
         account_slug: data["account_slug"].as_str().map(|s| s.to_string()),
         account_name: data["account_name"].as_str().map(|s| s.to_string()),
     })
@@ -3356,7 +3487,11 @@ async fn fetch_cloudflare_project_info(
     // Get domains
     let domains: Vec<String> = result["domains"]
         .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     // Get latest deployment info
@@ -3370,7 +3505,10 @@ async fn fetch_cloudflare_project_info(
         name: result["name"].as_str().unwrap_or("").to_string(),
         subdomain: result["subdomain"].as_str().unwrap_or("").to_string(),
         domains,
-        production_branch: result["production_branch"].as_str().unwrap_or("main").to_string(),
+        production_branch: result["production_branch"]
+            .as_str()
+            .unwrap_or("main")
+            .to_string(),
         latest_deployment_url,
         latest_deployment_status,
         created_at,

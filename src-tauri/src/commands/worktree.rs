@@ -2303,9 +2303,7 @@ pub async fn open_in_terminal(
 
         // For macOS, use open command with bundle ID
         if let Some(bundle_id) = &terminal.bundle_id {
-            let result = Command::new("open")
-                .args(["-b", bundle_id, &path])
-                .spawn();
+            let result = Command::new("open").args(["-b", bundle_id, &path]).spawn();
 
             match result {
                 Ok(_) => {

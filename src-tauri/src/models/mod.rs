@@ -11,6 +11,7 @@ pub mod monorepo;
 pub mod project;
 pub mod security;
 pub mod step_template;
+pub mod toolchain;
 pub mod version;
 pub mod webhook;
 pub mod workflow;
@@ -36,3 +37,5 @@ pub use security::{
 pub use step_template::*;
 pub use version::*;
 pub use webhook::*;
+// Note: toolchain types are not re-exported to avoid conflict with version::VoltaConfig
+// Use crate::models::toolchain::* explicitly when needed

@@ -13,7 +13,7 @@ use commands::script::ScriptExecutionState;
 use commands::workflow::WorkflowExecutionState;
 use commands::{
     apk, deploy, file_watcher, git, incoming_webhook, ipa, monorepo, project, script, security,
-    settings, shortcuts, step_template, version, webhook, workflow, worktree,
+    settings, shortcuts, step_template, toolchain, version, webhook, workflow, worktree,
 };
 use services::{FileWatcherManager, IncomingWebhookManager};
 
@@ -21,8 +21,7 @@ use services::{FileWatcherManager, IncomingWebhookManager};
 pub fn run() {
     // Load environment variables from .env file (for OAuth credentials)
     // Try project root first, then current dir
-    let _ = dotenvy::from_filename("../.env")
-        .or_else(|_| dotenvy::dotenv());
+    let _ = dotenvy::from_filename("../.env").or_else(|_| dotenvy::dotenv());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -262,6 +261,14 @@ pub fn run() {
             file_watcher::unwatch_project,
             file_watcher::unwatch_all_projects,
             file_watcher::get_watched_projects,
+            // Toolchain conflict detection (017-toolchain-conflict-detection)
+            toolchain::detect_toolchain_conflict,
+            toolchain::build_toolchain_command,
+            toolchain::get_toolchain_preference,
+            toolchain::set_toolchain_preference,
+            toolchain::clear_toolchain_preference,
+            toolchain::get_environment_diagnostics,
+            toolchain::humanize_toolchain_error,
         ])
         // Setup hook - sync incoming webhook server on app start
         .setup(|app| {

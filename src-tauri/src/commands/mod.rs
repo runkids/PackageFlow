@@ -14,6 +14,7 @@ pub mod security;
 pub mod settings;
 pub mod shortcuts;
 pub mod step_template;
+pub mod toolchain;
 pub mod version;
 pub mod webhook;
 pub mod workflow;

@@ -315,10 +315,7 @@ pub async fn execute_script(
     let path = Path::new(&working_dir);
     let volta_config = match parse_package_json(path) {
         Ok(pj) => {
-            println!(
-                "[execute_script] package.json volta config: {:?}",
-                pj.volta
-            );
+            println!("[execute_script] package.json volta config: {:?}", pj.volta);
             pj.volta.clone()
         }
         Err(e) => {
@@ -329,8 +326,7 @@ pub async fn execute_script(
     let volta_status = detect_volta();
     println!(
         "[execute_script] Volta status: available={}, path={:?}",
-        volta_status.available,
-        volta_status.path
+        volta_status.available, volta_status.path
     );
     println!(
         "[execute_script] volta_config.is_some()={}, volta_status.available={}",

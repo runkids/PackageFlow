@@ -68,9 +68,9 @@ export function VersionWarningDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
         <DialogClose onClick={handleClose} />
-        <DialogHeader>
+        <DialogHeader className="flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-yellow-500/10">
               <AlertTriangle className="w-5 h-5 text-yellow-400" />
@@ -79,7 +79,7 @@ export function VersionWarningDialog({
           </div>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 overflow-y-auto flex-1 min-h-0">
           {/* Show different message based on whether Volta will auto-handle */}
           {recommendedAction === 'useVolta' && hasVolta ? (
             <p className="text-sm text-muted-foreground">
@@ -236,7 +236,7 @@ export function VersionWarningDialog({
           ) : null}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           {/* When Volta will auto-handle and no conflict, show "Run with Volta" button */}
           {recommendedAction === 'useVolta' && hasVolta && !hasConflict ? (
             <button

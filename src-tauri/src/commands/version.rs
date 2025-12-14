@@ -227,7 +227,7 @@ fn detect_volta_corepack_conflict() -> VoltaCorepackConflict {
 
 /// Detect Corepack installation
 /// Checks common installation paths since GUI apps may not inherit shell PATH
-fn detect_corepack() -> ToolStatus {
+pub fn detect_corepack() -> ToolStatus {
     // First try the standard detection
     let status = detect_tool_version("corepack");
     if status.available {

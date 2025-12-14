@@ -2332,7 +2332,9 @@ pub async fn load_execution_history(
     app: AppHandle,
     workflow_id: String,
 ) -> Result<Vec<ExecutionHistoryItem>, String> {
-    let store = app.store(EXECUTION_HISTORY_FILE).map_err(|e| e.to_string())?;
+    let store = app
+        .store(EXECUTION_HISTORY_FILE)
+        .map_err(|e| e.to_string())?;
 
     let history_store: ExecutionHistoryStore = store
         .get(HISTORY_STORE_KEY)
@@ -2350,7 +2352,9 @@ pub async fn load_execution_history(
 /// Load all execution history
 #[tauri::command]
 pub async fn load_all_execution_history(app: AppHandle) -> Result<ExecutionHistoryStore, String> {
-    let store = app.store(EXECUTION_HISTORY_FILE).map_err(|e| e.to_string())?;
+    let store = app
+        .store(EXECUTION_HISTORY_FILE)
+        .map_err(|e| e.to_string())?;
 
     let history_store: ExecutionHistoryStore = store
         .get(HISTORY_STORE_KEY)
@@ -2366,7 +2370,9 @@ pub async fn save_execution_history(
     app: AppHandle,
     item: ExecutionHistoryItem,
 ) -> Result<(), String> {
-    let store = app.store(EXECUTION_HISTORY_FILE).map_err(|e| e.to_string())?;
+    let store = app
+        .store(EXECUTION_HISTORY_FILE)
+        .map_err(|e| e.to_string())?;
 
     let mut history_store: ExecutionHistoryStore = store
         .get(HISTORY_STORE_KEY)
@@ -2426,7 +2432,9 @@ pub async fn delete_execution_history(
     workflow_id: String,
     history_id: String,
 ) -> Result<(), String> {
-    let store = app.store(EXECUTION_HISTORY_FILE).map_err(|e| e.to_string())?;
+    let store = app
+        .store(EXECUTION_HISTORY_FILE)
+        .map_err(|e| e.to_string())?;
 
     let mut history_store: ExecutionHistoryStore = store
         .get(HISTORY_STORE_KEY)
@@ -2458,7 +2466,9 @@ pub async fn clear_workflow_execution_history(
     app: AppHandle,
     workflow_id: String,
 ) -> Result<(), String> {
-    let store = app.store(EXECUTION_HISTORY_FILE).map_err(|e| e.to_string())?;
+    let store = app
+        .store(EXECUTION_HISTORY_FILE)
+        .map_err(|e| e.to_string())?;
 
     let mut history_store: ExecutionHistoryStore = store
         .get(HISTORY_STORE_KEY)
@@ -2483,7 +2493,9 @@ pub async fn update_execution_history_settings(
     app: AppHandle,
     settings: ExecutionHistorySettings,
 ) -> Result<(), String> {
-    let store = app.store(EXECUTION_HISTORY_FILE).map_err(|e| e.to_string())?;
+    let store = app
+        .store(EXECUTION_HISTORY_FILE)
+        .map_err(|e| e.to_string())?;
 
     let mut history_store: ExecutionHistoryStore = store
         .get(HISTORY_STORE_KEY)

@@ -1062,9 +1062,7 @@ pub async fn git_push(
                 || error_lower.contains("no such remote")
             {
                 "NO_REMOTE".to_string()
-            } else if error_lower.contains("rejected")
-                && error_lower.contains("non-fast-forward")
-            {
+            } else if error_lower.contains("rejected") && error_lower.contains("non-fast-forward") {
                 "REJECTED_NON_FAST_FORWARD".to_string()
             } else if error_lower.contains("auth_failed")
                 || error_lower.contains("authentication")
