@@ -4,7 +4,14 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Folder, FolderOpen, Plus, RefreshCw, Trash2, Search, ChevronLeft, ChevronRight, MoreVertical, ArrowUpDown, GripVertical, Check } from 'lucide-react';
+import {
+  Folder,
+  FolderOpen,
+  Plus,
+  RefreshCw,
+  Trash2,
+  ChevronRight,
+} from 'lucide-react';
 import { Button } from '../ui/Button';
 import {
   DndContext,
@@ -23,6 +30,12 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import {
+  ListSidebarHeader,
+  ListSidebarItem,
+  ListSidebarEmpty,
+} from '../ui/ListSidebar';
+import type { SortOption } from '../ui/ListSidebar';
 import type { Project } from '../../types/project';
 import type { ProjectSortMode } from '../../types/tauri';
 
@@ -41,7 +54,7 @@ interface ProjectSidebarProps {
   onProjectOrderChange: (order: string[]) => void;
 }
 
-const SORT_OPTIONS: { value: ProjectSortMode; label: string }[] = [
+const SORT_OPTIONS: SortOption[] = [
   { value: 'name', label: 'Name (A-Z)' },
   { value: 'lastOpened', label: 'Recently Opened' },
   { value: 'created', label: 'Date Created' },
@@ -79,73 +92,27 @@ function SortableProjectItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
   };
 
-  const IconArea = () => (
-    <div className="relative flex-shrink-0 w-4 h-4">
-      {/* Folder icon - hidden on hover in custom mode */}
-      <span className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ${isDraggable ? 'group-hover:opacity-0' : ''}`}>
-        {isActive ? (
-          <FolderOpen className="w-4 h-4" />
-        ) : (
-          <Folder className="w-4 h-4 text-muted-foreground" />
-        )}
-      </span>
-      {/* Drag handle - overlays folder icon, shown on hover */}
-      {isDraggable && (
-        <div
-          {...attributes}
-          {...listeners}
-          className="absolute inset-0 flex items-center justify-center cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-          title="Drag to reorder"
-          onClick={e => e.stopPropagation()}
-        >
-          <GripVertical className="w-4 h-4 text-muted-foreground" />
-        </div>
-      )}
-    </div>
-  );
-
   return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      className="group relative"
-    >
-      <button
+    <div ref={setNodeRef} style={style}>
+      <ListSidebarItem
+        id={project.id}
+        name={project.name}
+        icon={Folder}
+        activeIcon={FolderOpen}
+        primaryMeta={project.isMonorepo ? 'Monorepo' : undefined}
+        isSelected={isActive}
+        isFocused={isFocused}
+        isMenuOpen={isMenuOpen}
+        isDraggable={isDraggable}
+        isDragging={isDragging}
+        dragAttributes={attributes}
+        dragListeners={listeners}
         onClick={onSelect}
         onContextMenu={onContextMenu}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors ${
-          isActive
-            ? 'bg-blue-600/20 text-blue-400'
-            : isFocused
-              ? 'bg-muted text-foreground ring-1 ring-blue-500'
-              : 'hover:bg-accent text-foreground'
-        }`}
-      >
-        <IconArea />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{project.name}</div>
-          {project.isMonorepo && (
-            <div className="text-xs text-muted-foreground">Monorepo</div>
-          )}
-        </div>
-      </button>
-      {/* More menu button shown on hover */}
-      <button
-        onClick={e => {
-          e.stopPropagation();
-          onContextMenu(e);
-        }}
-        className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted transition-opacity ${
-          isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-        }`}
-        title="More options"
-      >
-        <MoreVertical className="w-3.5 h-3.5 text-muted-foreground" />
-      </button>
-    </li>
+      />
+    </div>
   );
 }
 
@@ -164,13 +131,14 @@ export function ProjectSidebar({
   onProjectOrderChange,
 }: ProjectSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ projectId: string; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    projectId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const sortButtonRef = useRef<HTMLButtonElement>(null);
 
   // DnD sensors
   const sensors = useSensors(
@@ -190,7 +158,9 @@ export function ProjectSidebar({
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = projects.filter(
-        p => p.name.toLowerCase().includes(query) || p.path.toLowerCase().includes(query)
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          p.path.toLowerCase().includes(query)
       );
     }
 
@@ -199,18 +169,22 @@ export function ProjectSidebar({
       case 'name':
         return sorted.sort((a, b) => a.name.localeCompare(b.name));
       case 'lastOpened':
-        return sorted.sort((a, b) =>
-          new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime()
+        return sorted.sort(
+          (a, b) =>
+            new Date(b.lastOpenedAt).getTime() -
+            new Date(a.lastOpenedAt).getTime()
         );
       case 'created':
-        return sorted.sort((a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        return sorted.sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
       case 'custom':
         return sorted.sort((a, b) => {
           const aIndex = projectOrder.indexOf(a.id);
           const bIndex = projectOrder.indexOf(b.id);
-          if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
+          if (aIndex === -1 && bIndex === -1)
+            return a.name.localeCompare(b.name);
           if (aIndex === -1) return 1;
           if (bIndex === -1) return -1;
           return aIndex - bIndex;
@@ -220,49 +194,55 @@ export function ProjectSidebar({
     }
   }, [projects, searchQuery, sortMode, projectOrder]);
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
 
-    if (over && active.id !== over.id) {
-      const oldIndex = sortedProjects.findIndex(p => p.id === active.id);
-      const newIndex = sortedProjects.findIndex(p => p.id === over.id);
+      if (over && active.id !== over.id) {
+        const oldIndex = sortedProjects.findIndex((p) => p.id === active.id);
+        const newIndex = sortedProjects.findIndex((p) => p.id === over.id);
 
-      const newSortedProjects = arrayMove(sortedProjects, oldIndex, newIndex);
-      const newOrder = newSortedProjects.map(p => p.id);
-      onProjectOrderChange(newOrder);
-    }
-  }, [sortedProjects, onProjectOrderChange]);
+        const newSortedProjects = arrayMove(sortedProjects, oldIndex, newIndex);
+        const newOrder = newSortedProjects.map((p) => p.id);
+        onProjectOrderChange(newOrder);
+      }
+    },
+    [sortedProjects, onProjectOrderChange]
+  );
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (sortedProjects.length === 0) return;
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (sortedProjects.length === 0) return;
 
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setFocusedIndex(prev => {
-          const next = prev < sortedProjects.length - 1 ? prev + 1 : 0;
-          return next;
-        });
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setFocusedIndex(prev => {
-          const next = prev > 0 ? prev - 1 : sortedProjects.length - 1;
-          return next;
-        });
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (focusedIndex >= 0 && focusedIndex < sortedProjects.length) {
-          onSelectProject(sortedProjects[focusedIndex].id);
-        }
-        break;
-      case 'Escape':
-        setFocusedIndex(-1);
-        searchInputRef.current?.blur();
-        break;
-    }
-  }, [sortedProjects, focusedIndex, onSelectProject]);
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setFocusedIndex((prev) => {
+            const next = prev < sortedProjects.length - 1 ? prev + 1 : 0;
+            return next;
+          });
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setFocusedIndex((prev) => {
+            const next = prev > 0 ? prev - 1 : sortedProjects.length - 1;
+            return next;
+          });
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (focusedIndex >= 0 && focusedIndex < sortedProjects.length) {
+            onSelectProject(sortedProjects[focusedIndex].id);
+          }
+          break;
+        case 'Escape':
+          setFocusedIndex(-1);
+          searchInputRef.current?.blur();
+          break;
+      }
+    },
+    [sortedProjects, focusedIndex, onSelectProject]
+  );
 
   useEffect(() => {
     setFocusedIndex(-1);
@@ -285,7 +265,11 @@ export function ProjectSidebar({
     };
 
     window.addEventListener('shortcut-focus-search', handleShortcutFocusSearch);
-    return () => window.removeEventListener('shortcut-focus-search', handleShortcutFocusSearch);
+    return () =>
+      window.removeEventListener(
+        'shortcut-focus-search',
+        handleShortcutFocusSearch
+      );
   }, []);
 
   const handleContextMenu = (e: React.MouseEvent, projectId: string) => {
@@ -325,7 +309,7 @@ export function ProjectSidebar({
           </Button>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {sortedProjects.map(project => (
+          {sortedProjects.map((project) => (
             <Button
               key={project.id}
               variant="ghost"
@@ -367,87 +351,17 @@ export function ProjectSidebar({
       tabIndex={0}
     >
       {/* Search and actions */}
-      <div className="p-2 border-b border-border h-[44px] flex items-center gap-2">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() => setIsSearchFocused(false)}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            className="w-full pl-8 pr-3 py-1.5 bg-secondary border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500 transition-all duration-200"
-          />
-        </div>
-        <div className={`flex items-center gap-1 flex-shrink-0 transition-all duration-200 ${isSearchFocused ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
-          {/* Sort button */}
-          <div className="relative">
-            <Button
-              ref={sortButtonRef}
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowSortMenu(!showSortMenu)}
-              className={`h-8 w-8 ${showSortMenu ? 'bg-accent' : ''}`}
-              title="Sort by"
-            >
-              <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
-            </Button>
-            {/* Sort menu */}
-            {showSortMenu && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowSortMenu(false)}
-                />
-                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px] whitespace-nowrap">
-                  {SORT_OPTIONS.map(option => (
-                    <Button
-                      key={option.value}
-                      variant="ghost"
-                      onClick={() => {
-                        onSortModeChange(option.value);
-                        setShowSortMenu(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent justify-start h-auto rounded-none"
-                    >
-                      <Check
-                        className={`w-4 h-4 ${
-                          sortMode === option.value ? 'opacity-100' : 'opacity-0'
-                        }`}
-                      />
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onAddProject}
-            className="h-8 w-8"
-            title="Add project"
-          >
-            <Plus className="w-4 h-4 text-muted-foreground" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggleCollapse}
-            className="h-8 w-8"
-            title="Collapse sidebar"
-          >
-            <ChevronLeft className="w-4 h-4 text-muted-foreground" />
-          </Button>
-        </div>
-      </div>
+      <ListSidebarHeader
+        searchQuery={searchQuery}
+        searchPlaceholder="Search projects..."
+        sortMode={sortMode}
+        sortOptions={SORT_OPTIONS}
+        onSearchChange={setSearchQuery}
+        onSortModeChange={(mode) => onSortModeChange(mode as ProjectSortMode)}
+        onCreateNew={onAddProject}
+        onToggleCollapse={onToggleCollapse}
+        isCollapsible
+      />
 
       {/* Project list */}
       <div className="flex-1 overflow-y-auto">
@@ -457,9 +371,12 @@ export function ProjectSidebar({
             Loading...
           </div>
         ) : sortedProjects.length === 0 ? (
-          <div className="p-4 text-center text-muted-foreground text-sm">
-            {searchQuery ? 'No matching projects' : 'No projects added yet'}
-          </div>
+          <ListSidebarEmpty
+            type="projects"
+            hasSearch={searchQuery.trim().length > 0}
+            searchQuery={searchQuery}
+            onCreateNew={onAddProject}
+          />
         ) : (
           <DndContext
             sensors={sensors}
@@ -467,7 +384,7 @@ export function ProjectSidebar({
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={sortedProjects.map(p => p.id)}
+              items={sortedProjects.map((p) => p.id)}
               strategy={verticalListSortingStrategy}
             >
               <ul ref={listRef} className="p-2 space-y-1">
@@ -480,7 +397,7 @@ export function ProjectSidebar({
                     isMenuOpen={contextMenu?.projectId === project.id}
                     isDraggable={sortMode === 'custom'}
                     onSelect={() => onSelectProject(project.id)}
-                    onContextMenu={e => handleContextMenu(e, project.id)}
+                    onContextMenu={(e) => handleContextMenu(e, project.id)}
                   />
                 ))}
               </ul>
@@ -500,12 +417,9 @@ export function ProjectSidebar({
       {contextMenu && (
         <>
           {/* Transparent overlay - click anywhere to close */}
+          <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
           <div
-            className="fixed inset-0 z-40"
-            onClick={closeContextMenu}
-          />
-          <div
-            className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px]"
+            className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px] animate-in fade-in-0 zoom-in-95 duration-150"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             <Button

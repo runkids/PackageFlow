@@ -112,6 +112,11 @@ export default {
           '0%, 100%': { transform: 'scale(1)', opacity: '1' },
           '50%': { transform: 'scale(1.15)', opacity: '0.85' },
         },
+        // Subtle pulse for running list items
+        'pulse-subtle': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.85' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -130,6 +135,8 @@ export default {
         // AI Security animations
         'ai-security-glow': 'ai-security-glow 1.5s ease-in-out infinite',
         'security-sparkle': 'security-sparkle 1.2s ease-in-out infinite',
+        // Subtle pulse for running items
+        'pulse-subtle': 'pulse-subtle 2s ease-in-out infinite',
       },
     },
   },

@@ -3,8 +3,14 @@
  * @see specs/001-expo-workflow-automation/spec.md - US3
  */
 
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { Workflow as WorkflowIcon, MoreVertical, Trash2, Copy, ArrowUpFromLine, ArrowDownToLine, ArrowUpDown, Check, GripVertical, Loader2, CheckCircle, XCircle, MinusCircle, Search, Plus } from 'lucide-react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import {
+  Workflow as WorkflowIcon,
+  Trash2,
+  Copy,
+  ArrowUpFromLine,
+  ArrowDownToLine,
+} from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { ExecutionStatus } from '../../types/workflow';
 import {
@@ -25,6 +31,12 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { DeleteConfirmDialog } from '../ui/ConfirmDialog';
+import {
+  ListSidebarHeader,
+  ListSidebarItem,
+  ListSidebarEmpty,
+} from '../ui/ListSidebar';
+import type { SortOption, ItemStatus } from '../ui/ListSidebar';
 import type { Workflow } from '../../types/workflow';
 import type { WorkflowSortMode } from '../../types/tauri';
 
@@ -43,12 +55,31 @@ interface WorkflowSidebarProps {
   onWorkflowOrderChange: (order: string[]) => void;
 }
 
-const SORT_OPTIONS: { value: WorkflowSortMode; label: string }[] = [
+const SORT_OPTIONS: SortOption[] = [
   { value: 'name', label: 'Name (A-Z)' },
   { value: 'updated', label: 'Recently Updated' },
   { value: 'created', label: 'Date Created' },
   { value: 'custom', label: 'Custom Order' },
 ];
+
+// Map ExecutionStatus to ItemStatus
+function mapExecutionStatus(status?: ExecutionStatus): ItemStatus | undefined {
+  if (!status) return undefined;
+  switch (status) {
+    case 'running':
+      return 'running';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'cancelled':
+      return 'cancelled';
+    case 'paused':
+      return 'paused';
+    default:
+      return 'idle';
+  }
+}
 
 interface SortableWorkflowItemProps {
   workflow: Workflow;
@@ -81,104 +112,45 @@ function SortableWorkflowItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
   };
 
-  // Get execution status icon
-  const getStatusIcon = () => {
-    switch (executionStatus) {
-      case 'running':
-        return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
-      case 'completed':
-        return <CheckCircle className="w-4 h-4 text-green-400" />;
-      case 'failed':
-        return <XCircle className="w-4 h-4 text-red-400" />;
-      case 'cancelled':
-        return <MinusCircle className="w-4 h-4 text-muted-foreground" />;
-      case 'paused':
-        return <MinusCircle className="w-4 h-4 text-yellow-400" />;
-      default:
-        return <WorkflowIcon className={`w-4 h-4 ${isActive ? '' : 'text-muted-foreground'}`} />;
-    }
-  };
-
-  const IconArea = () => (
-    <div className="relative flex-shrink-0 w-4 h-4">
-      <span className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ${isDraggable ? 'group-hover:opacity-0' : ''}`}>
-        {getStatusIcon()}
+  // Build secondary metadata (webhook indicators)
+  const secondaryMeta =
+    workflow.webhook?.enabled || workflow.incomingWebhook?.enabled ? (
+      <span className="flex items-center gap-0.5">
+        {workflow.webhook?.enabled && (
+          <span title="Outgoing Webhook enabled" className="text-green-500">
+            <ArrowUpFromLine className="w-3 h-3" />
+          </span>
+        )}
+        {workflow.incomingWebhook?.enabled && (
+          <span title="Incoming Webhook enabled" className="text-purple-500">
+            <ArrowDownToLine className="w-3 h-3" />
+          </span>
+        )}
       </span>
-      {isDraggable && (
-        <Button
-          variant="ghost"
-          size="icon"
-          {...attributes}
-          {...listeners}
-          className="absolute inset-0 h-4 w-4 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 p-0"
-          title="Drag to reorder"
-          onClick={e => e.stopPropagation()}
-        >
-          <GripVertical className="w-4 h-4 text-muted-foreground" />
-        </Button>
-      )}
-    </div>
-  );
+    ) : undefined;
 
   return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      className="group relative"
-    >
-      <Button
-        variant="ghost"
+    <div ref={setNodeRef} style={style}>
+      <ListSidebarItem
+        id={workflow.id}
+        name={workflow.name || 'Untitled workflow'}
+        description={workflow.description}
+        icon={WorkflowIcon}
+        primaryMeta={`${workflow.nodes.length} steps`}
+        secondaryMeta={secondaryMeta}
+        status={mapExecutionStatus(executionStatus)}
+        isSelected={isActive}
+        isMenuOpen={isMenuOpen}
+        isDraggable={isDraggable}
+        isDragging={isDragging}
+        dragAttributes={attributes}
+        dragListeners={listeners}
         onClick={onSelect}
         onContextMenu={onContextMenu}
-        className={`w-full justify-start h-auto gap-2 px-2 py-1.5 ${
-          isActive
-            ? 'bg-blue-600/20 text-blue-400'
-            : 'hover:bg-accent text-foreground'
-        }`}
-      >
-        <IconArea />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">
-            {workflow.name || 'Untitled workflow'}
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>{workflow.nodes.length} steps</span>
-            {(workflow.webhook?.enabled || workflow.incomingWebhook?.enabled) && (
-              <span className="flex items-center gap-0.5">
-                <span className="text-muted-foreground">·</span>
-                {workflow.webhook?.enabled && (
-                  <span title="Outgoing Webhook enabled" className="text-green-500">
-                    <ArrowUpFromLine className="w-3 h-3" />
-                  </span>
-                )}
-                {workflow.incomingWebhook?.enabled && (
-                  <span title="Incoming Webhook enabled" className="text-purple-500">
-                    <ArrowDownToLine className="w-3 h-3" />
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-        </div>
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={(e) => {
-          e.stopPropagation();
-          onContextMenu(e);
-        }}
-        className={`absolute right-1 top-1/2 -translate-y-1/2 h-auto w-auto p-1 ${
-          isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-        }`}
-        title="More options"
-      >
-        <MoreVertical className="w-3.5 h-3.5 text-muted-foreground" />
-      </Button>
-    </li>
+      />
+    </div>
   );
 }
 
@@ -196,10 +168,12 @@ export function WorkflowSidebar({
   onWorkflowOrderChange,
 }: WorkflowSidebarProps) {
   const [deleteTarget, setDeleteTarget] = useState<Workflow | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ workflowId: string; x: number; y: number } | null>(null);
-  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    workflowId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const sensors = useSensors(
@@ -213,58 +187,83 @@ export function WorkflowSidebar({
     })
   );
 
+  // Listen for Cmd+F shortcut event to focus search input
+  useEffect(() => {
+    const handleShortcutFocusSearch = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+
+    window.addEventListener('shortcut-focus-search', handleShortcutFocusSearch);
+    return () =>
+      window.removeEventListener(
+        'shortcut-focus-search',
+        handleShortcutFocusSearch
+      );
+  }, []);
+
   const sortedWorkflows = useMemo(() => {
     let filtered = [...workflows];
 
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(w =>
-        (w.name || '').toLowerCase().includes(query) ||
-        (w.description || '').toLowerCase().includes(query)
+      filtered = filtered.filter(
+        (w) =>
+          (w.name || '').toLowerCase().includes(query) ||
+          (w.description || '').toLowerCase().includes(query)
       );
     }
 
     // Sort
     switch (sortMode) {
       case 'name':
-        return filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      case 'updated':
         return filtered.sort((a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          (a.name || '').localeCompare(b.name || '')
+        );
+      case 'updated':
+        return filtered.sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
       case 'created':
-        return filtered.sort((a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        return filtered.sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
       case 'custom':
         return filtered.sort((a, b) => {
           const aIndex = workflowOrder.indexOf(a.id);
           const bIndex = workflowOrder.indexOf(b.id);
-          if (aIndex === -1 && bIndex === -1) return (a.name || '').localeCompare(b.name || '');
+          if (aIndex === -1 && bIndex === -1)
+            return (a.name || '').localeCompare(b.name || '');
           if (aIndex === -1) return 1;
           if (bIndex === -1) return -1;
           return aIndex - bIndex;
         });
       default:
-        return filtered.sort((a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        return filtered.sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
     }
   }, [workflows, sortMode, workflowOrder, searchQuery]);
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
 
-    if (over && active.id !== over.id) {
-      const oldIndex = sortedWorkflows.findIndex(w => w.id === active.id);
-      const newIndex = sortedWorkflows.findIndex(w => w.id === over.id);
+      if (over && active.id !== over.id) {
+        const oldIndex = sortedWorkflows.findIndex((w) => w.id === active.id);
+        const newIndex = sortedWorkflows.findIndex((w) => w.id === over.id);
 
-      const newSortedWorkflows = arrayMove(sortedWorkflows, oldIndex, newIndex);
-      const newOrder = newSortedWorkflows.map(w => w.id);
-      onWorkflowOrderChange(newOrder);
-    }
-  }, [sortedWorkflows, onWorkflowOrderChange]);
+        const newSortedWorkflows = arrayMove(sortedWorkflows, oldIndex, newIndex);
+        const newOrder = newSortedWorkflows.map((w) => w.id);
+        onWorkflowOrderChange(newOrder);
+      }
+    },
+    [sortedWorkflows, onWorkflowOrderChange]
+  );
 
   const handleContextMenu = (e: React.MouseEvent, workflowId: string) => {
     e.preventDefault();
@@ -298,89 +297,30 @@ export function WorkflowSidebar({
   };
 
   return (
-    <div className="flex flex-col h-full bg-background" onClick={closeContextMenu}>
+    <div
+      className="flex flex-col h-full bg-background"
+      onClick={closeContextMenu}
+    >
       {/* Search and actions */}
-      <div className="p-2 border-b border-border h-[44px] flex items-center gap-2">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() => setIsSearchFocused(false)}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            className="w-full pl-8 pr-3 py-1.5 bg-secondary border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500 transition-all duration-200"
-          />
-        </div>
-        <div className={`flex items-center gap-1 flex-shrink-0 transition-all duration-200 ${isSearchFocused ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
-          {/* Sort button */}
-          <div className="relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowSortMenu(!showSortMenu);
-              }}
-              className={`h-8 w-8 ${showSortMenu ? 'bg-accent' : ''}`}
-              title="Sort by"
-            >
-              <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
-            </Button>
-            {/* Sort menu */}
-            {showSortMenu && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowSortMenu(false)}
-                />
-                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px] whitespace-nowrap">
-                  {SORT_OPTIONS.map(option => (
-                    <Button
-                      key={option.value}
-                      variant="ghost"
-                      onClick={() => {
-                        onSortModeChange(option.value);
-                        setShowSortMenu(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent justify-start h-auto rounded-none"
-                    >
-                      <Check
-                        className={`w-4 h-4 ${
-                          sortMode === option.value ? 'opacity-100' : 'opacity-0'
-                        }`}
-                      />
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onCreateWorkflow}
-            className="h-8 w-8"
-            title="Create workflow"
-          >
-            <Plus className="w-4 h-4 text-muted-foreground" />
-          </Button>
-        </div>
-      </div>
+      <ListSidebarHeader
+        searchQuery={searchQuery}
+        searchPlaceholder="Search workflows..."
+        sortMode={sortMode}
+        sortOptions={SORT_OPTIONS}
+        onSearchChange={setSearchQuery}
+        onSortModeChange={(mode) => onSortModeChange(mode as WorkflowSortMode)}
+        onCreateNew={onCreateWorkflow}
+      />
 
       {/* Workflow list */}
       <div className="flex-1 overflow-y-auto">
         {sortedWorkflows.length === 0 ? (
-          <div className="p-4 text-center text-muted-foreground text-sm">
-            {searchQuery ? 'No matching workflows' : 'No workflows yet'}
-          </div>
+          <ListSidebarEmpty
+            type="workflows"
+            hasSearch={searchQuery.trim().length > 0}
+            searchQuery={searchQuery}
+            onCreateNew={onCreateWorkflow}
+          />
         ) : (
           <DndContext
             sensors={sensors}
@@ -388,7 +328,7 @@ export function WorkflowSidebar({
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={sortedWorkflows.map(w => w.id)}
+              items={sortedWorkflows.map((w) => w.id)}
               strategy={verticalListSortingStrategy}
             >
               <ul className="p-2 space-y-1">
@@ -421,39 +361,40 @@ export function WorkflowSidebar({
       {contextMenu && (
         <>
           {/* Transparent overlay - click anywhere to close */}
+          <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
           <div
-            className="fixed inset-0 z-40"
-            onClick={closeContextMenu}
-          />
-          <div
-            className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px]"
+            className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px] animate-in fade-in-0 zoom-in-95 duration-150"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
-          {onDuplicateWorkflow && (
+            {onDuplicateWorkflow && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const workflow = workflows.find(
+                    (w) => w.id === contextMenu.workflowId
+                  );
+                  if (workflow) handleDuplicateClick(workflow);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent justify-start h-auto rounded-none"
+              >
+                <Copy className="w-4 h-4" />
+                Duplicate
+              </Button>
+            )}
             <Button
               variant="ghost"
               onClick={() => {
-                const workflow = workflows.find(w => w.id === contextMenu.workflowId);
-                if (workflow) handleDuplicateClick(workflow);
+                const workflow = workflows.find(
+                  (w) => w.id === contextMenu.workflowId
+                );
+                if (workflow) handleDeleteClick(workflow);
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent justify-start h-auto rounded-none"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-accent justify-start h-auto rounded-none"
             >
-              <Copy className="w-4 h-4" />
-              Duplicate
+              <Trash2 className="w-4 h-4" />
+              Delete
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            onClick={() => {
-              const workflow = workflows.find(w => w.id === contextMenu.workflowId);
-              if (workflow) handleDeleteClick(workflow);
-            }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-accent justify-start h-auto rounded-none"
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete
-          </Button>
-        </div>
+          </div>
         </>
       )}
 
