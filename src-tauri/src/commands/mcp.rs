@@ -106,6 +106,12 @@ command = "{}""#,
 #[tauri::command]
 pub fn get_mcp_tools() -> Vec<McpToolInfo> {
     vec![
+        // Project Tools (Read-only)
+        McpToolInfo {
+            name: "list_projects".to_string(),
+            description: "List all registered projects in PackageFlow".to_string(),
+            category: "Project".to_string(),
+        },
         // Git Tools (Read-only)
         McpToolInfo {
             name: "get_project".to_string(),
@@ -308,6 +314,7 @@ pub fn get_mcp_tools_with_permissions(
 
     let tools = vec![
         // Read-only tools
+        ("list_projects", "List all registered projects in PackageFlow", ToolCategory::Read),
         ("get_project", "Get project info (name, remote URL, current branch)", ToolCategory::Read),
         ("list_worktrees", "List all Git worktrees", ToolCategory::Read),
         ("get_worktree_status", "Get Git status (branch, ahead/behind, file status)", ToolCategory::Read),

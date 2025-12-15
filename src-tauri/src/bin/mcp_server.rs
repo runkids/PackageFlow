@@ -124,7 +124,7 @@ pub enum ToolCategory {
 fn get_tool_category(tool_name: &str) -> ToolCategory {
     match tool_name {
         // Read-only tools
-        "get_project" | "list_worktrees" | "get_worktree_status" | "get_git_diff" |
+        "list_projects" | "get_project" | "list_worktrees" | "get_worktree_status" | "get_git_diff" |
         "list_workflows" | "get_workflow" | "list_step_templates" => ToolCategory::ReadOnly,
         // Write tools
         "create_workflow" | "add_workflow_step" | "create_step_template" => ToolCategory::Write,
@@ -738,6 +738,13 @@ pub struct GetProjectParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetProjectsParams {
+    /// Optional search query to filter projects by name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListWorktreesParams {
     /// The absolute path to the project directory
     pub project_path: String,
@@ -1079,6 +1086,40 @@ impl PackageFlowMcp {
     // ========================================================================
     // Existing Git Tools
     // ========================================================================
+
+    /// List all registered projects in PackageFlow
+    #[tool(description = "List all registered projects in PackageFlow. Optionally filter by name using a search query.")]
+    async fn list_projects(
+        &self,
+        Parameters(params): Parameters<GetProjectsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let store_data = read_store_data()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let mut projects: Vec<&Project> = store_data.projects.iter().collect();
+
+        // Filter by query if specified
+        if let Some(ref query) = params.query {
+            let query_lower = query.to_lowercase();
+            projects.retain(|p| {
+                p.name.to_lowercase().contains(&query_lower) ||
+                p.path.to_lowercase().contains(&query_lower) ||
+                p.description.as_ref().map(|d| d.to_lowercase().contains(&query_lower)).unwrap_or(false)
+            });
+        }
+
+        // Sort by name
+        projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        let response = serde_json::json!({
+            "projects": projects,
+            "total": projects.len()
+        });
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 
     /// Get information about a project at the specified path
     #[tool(description = "Get detailed information about a git project including name, remote URL, and current branch")]

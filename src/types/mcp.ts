@@ -236,6 +236,7 @@ export const DEFAULT_READ_ONLY_TOOLS = [
   'list_workflows',
   'get_workflow',
   'get_git_diff',
+  'list_step_templates',
 ] as const;
 
 /** Execute tools (require permission) */
@@ -289,6 +290,7 @@ export interface McpToolWithPermission {
 /** Tool definitions with categories */
 export const MCP_TOOL_DEFINITIONS: McpToolWithPermission[] = [
   // Read-only tools
+  { name: 'list_projects', description: 'List all registered projects in PackageFlow', category: 'read' },
   { name: 'get_project', description: 'Get project info (name, remote URL, current branch)', category: 'read' },
   { name: 'list_worktrees', description: 'List all Git worktrees', category: 'read' },
   { name: 'get_worktree_status', description: 'Get Git status (branch, ahead/behind, file status)', category: 'read' },
