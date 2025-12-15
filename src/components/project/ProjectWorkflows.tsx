@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit, MoreVertical, ExternalLink, Link2, Unlink, Workflow as WorkflowIcon, Terminal } from 'lucide-react';
+import { Plus, Edit, MoreVertical, Link2, Unlink, Workflow as WorkflowIcon, Terminal, ChevronRight, ArrowLeft } from 'lucide-react';
 import type { Workflow } from '../../types/workflow';
 import {
   loadWorkflowsByProject,
@@ -13,8 +13,9 @@ import {
   deleteWorkflow as deleteWorkflowApi,
   saveWorkflow,
 } from '../../lib/workflow-storage';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '../ui/Dialog';
+import { Dialog, DialogContent, DialogClose } from '../ui/Dialog';
 import { Button } from '../ui/Button';
+import { cn } from '../../lib/utils';
 import { useWorkflowExecutionContext } from '../../contexts/WorkflowExecutionContext';
 import {
   ExecuteButton,
@@ -380,121 +381,259 @@ export function ProjectWorkflows({
 
       {/* Add workflow selection dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="bg-card border-border max-w-md">
-          <DialogClose onClick={() => setShowAddDialog(false)} />
-          <DialogHeader>
-            <DialogTitle className="text-foreground">Add workflow</DialogTitle>
-          </DialogHeader>
+        <DialogContent className={cn(
+          'bg-background border-blue-500/30 max-w-md p-0 overflow-hidden',
+          'shadow-2xl shadow-black/60'
+        )}>
+          {/* Header with gradient background and icon badge */}
+          <div className={cn(
+            'relative px-6 py-5',
+            'border-b border-border',
+            'bg-gradient-to-r',
+            'dark:from-blue-500/15 dark:via-blue-600/5 dark:to-transparent',
+            'from-blue-500/10 via-blue-600/5 to-transparent'
+          )}>
+            {/* Close button - positioned inside header which has relative */}
+            <DialogClose onClick={() => setShowAddDialog(false)} />
 
-          {!showNewForm && !showLinkDialog ? (
-            <div className="space-y-3 mt-4">
-              <button
-                onClick={() => setShowNewForm(true)}
-                className="w-full flex items-center gap-3 p-4 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left"
-              >
-                <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center shrink-0">
-                  <Plus className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-foreground">Create new workflow</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">Create a project-specific workflow and start editing</div>
-                </div>
-                <ExternalLink className="w-4 h-4 text-muted-foreground ml-auto" />
-              </button>
-
-              <button
-                onClick={() => setShowLinkDialog(true)}
-                disabled={globalWorkflows.length === 0}
-                className="w-full flex items-center gap-3 p-4 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="w-10 h-10 rounded-lg bg-purple-600 flex items-center justify-center shrink-0">
-                  <Link2 className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-foreground">Link existing workflow</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {globalWorkflows.length > 0
-                      ? `Choose a global workflow to link to this project (${globalWorkflows.length} available)`
-                      : 'No global workflows available'
-                    }
-                  </div>
-                </div>
-              </button>
+            <div className="flex items-center gap-4 pr-8">
+              {/* Icon badge */}
+              <div className={cn(
+                'flex-shrink-0',
+                'w-12 h-12 rounded-xl',
+                'flex items-center justify-center',
+                'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+                'border',
+                'bg-blue-500/10 border-blue-500/20',
+                'shadow-lg'
+              )}>
+                <WorkflowIcon className="w-6 h-6 text-blue-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-semibold text-foreground leading-tight">
+                  Add workflow
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Create or link a workflow to this project
+                </p>
+              </div>
             </div>
-          ) : showNewForm ? (
-            <div className="mt-4">
-              <input
-                type="text"
-                placeholder="Workflow name"
-                value={newWorkflowName}
-                onChange={e => setNewWorkflowName(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleCreateWorkflow();
-                  if (e.key === 'Escape') {
-                    setShowNewForm(false);
-                    setNewWorkflowName('');
-                  }
-                }}
-                autoFocus
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
-              />
-              <p className="text-xs text-muted-foreground mt-2">
-                Working directory will default to: {projectPath}
-              </p>
-              <div className="flex justify-end gap-2 mt-4">
-                <Button
-                  variant="ghost"
+          </div>
+
+          {/* Content area */}
+          <div className="p-6">
+            {!showNewForm && !showLinkDialog ? (
+              <div className="space-y-4">
+                {/* Create new workflow option */}
+                <button
+                  onClick={() => setShowNewForm(true)}
+                  className={cn(
+                    'w-full flex items-center gap-4 p-4',
+                    'bg-card/50 rounded-xl',
+                    'border border-border',
+                    'hover:border-blue-500/40 hover:bg-blue-500/5',
+                    'dark:hover:bg-blue-500/10',
+                    'transition-all duration-150',
+                    'text-left group',
+                    'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background'
+                  )}
+                >
+                  {/* Icon with refined styling */}
+                  <div className={cn(
+                    'w-12 h-12 rounded-xl flex-shrink-0',
+                    'flex items-center justify-center',
+                    'bg-blue-500/10 border border-blue-500/20',
+                    'group-hover:bg-blue-500/15 transition-colors'
+                  )}>
+                    <Plus className="w-6 h-6 text-blue-400" />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground">Create new workflow</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Create a project-specific workflow and start editing
+                    </div>
+                  </div>
+
+                  {/* Arrow indicator */}
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-blue-400 transition-colors flex-shrink-0" />
+                </button>
+
+                {/* Link existing workflow option */}
+                <button
+                  onClick={() => setShowLinkDialog(true)}
+                  disabled={globalWorkflows.length === 0}
+                  className={cn(
+                    'w-full flex items-center gap-4 p-4',
+                    'bg-card/50 rounded-xl',
+                    'border border-border',
+                    'hover:border-purple-500/40 hover:bg-purple-500/5',
+                    'dark:hover:bg-purple-500/10',
+                    'transition-all duration-150',
+                    'text-left group',
+                    'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                    'disabled:hover:border-border disabled:hover:bg-transparent'
+                  )}
+                >
+                  {/* Icon with refined styling */}
+                  <div className={cn(
+                    'w-12 h-12 rounded-xl flex-shrink-0',
+                    'flex items-center justify-center',
+                    'bg-purple-500/10 border border-purple-500/20',
+                    'group-hover:bg-purple-500/15 group-disabled:group-hover:bg-purple-500/10 transition-colors'
+                  )}>
+                    <Link2 className="w-6 h-6 text-purple-400" />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground">Link existing workflow</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {globalWorkflows.length > 0
+                        ? `Choose a global workflow to link (${globalWorkflows.length} available)`
+                        : 'No global workflows available'
+                      }
+                    </div>
+                  </div>
+
+                  {/* Arrow indicator - only show when enabled */}
+                  {globalWorkflows.length > 0 && (
+                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-purple-400 transition-colors flex-shrink-0" />
+                  )}
+                </button>
+              </div>
+            ) : showNewForm ? (
+              /* Create new workflow form */
+              <div className="space-y-4">
+                {/* Back navigation */}
+                <button
                   onClick={() => {
                     setShowNewForm(false);
                     setNewWorkflowName('');
                   }}
-                  className="text-muted-foreground"
+                  className={cn(
+                    'flex items-center gap-2 text-sm text-muted-foreground',
+                    'hover:text-foreground transition-colors',
+                    'focus:outline-none focus:text-foreground'
+                  )}
                 >
-                  Back
-                </Button>
-                <Button
-                  onClick={handleCreateWorkflow}
-                  disabled={!newWorkflowName.trim()}
-                  className="bg-blue-600 hover:bg-blue-500"
-                >
-                  Create and edit
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-4">
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {globalWorkflows.map(workflow => (
-                  <button
-                    key={workflow.id}
-                    onClick={() => handleLinkWorkflow(workflow)}
-                    className="w-full flex items-center justify-between p-3 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left"
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to options
+                </button>
+
+                {/* Form content */}
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="text-sm font-medium text-foreground">Workflow name</span>
+                    <input
+                      type="text"
+                      placeholder="Enter workflow name..."
+                      value={newWorkflowName}
+                      onChange={e => setNewWorkflowName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleCreateWorkflow();
+                        if (e.key === 'Escape') {
+                          setShowNewForm(false);
+                          setNewWorkflowName('');
+                        }
+                      }}
+                      autoFocus
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      className={cn(
+                        'mt-2 w-full px-3 py-2.5',
+                        'bg-background border border-border rounded-lg',
+                        'text-sm text-foreground placeholder-muted-foreground',
+                        'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent',
+                        'transition-shadow duration-150'
+                      )}
+                    />
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Working directory: <span className="font-mono text-foreground/70">{projectPath}</span>
+                  </p>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setShowNewForm(false);
+                      setNewWorkflowName('');
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
                   >
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{workflow.name}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {workflow.nodes.length} steps
-                      </div>
-                    </div>
-                    <Link2 className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                ))}
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleCreateWorkflow}
+                    disabled={!newWorkflowName.trim()}
+                    className="bg-blue-600 hover:bg-blue-500 text-white"
+                  >
+                    Create and edit
+                  </Button>
+                </div>
               </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <Button
-                  variant="ghost"
+            ) : (
+              /* Link existing workflow list */
+              <div className="space-y-4">
+                {/* Back navigation */}
+                <button
                   onClick={() => setShowLinkDialog(false)}
-                  className="text-muted-foreground"
+                  className={cn(
+                    'flex items-center gap-2 text-sm text-muted-foreground',
+                    'hover:text-foreground transition-colors',
+                    'focus:outline-none focus:text-foreground'
+                  )}
                 >
-                  Back
-                </Button>
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to options
+                </button>
+
+                {/* Workflow list */}
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {globalWorkflows.map(workflow => (
+                    <button
+                      key={workflow.id}
+                      onClick={() => handleLinkWorkflow(workflow)}
+                      className={cn(
+                        'w-full flex items-center gap-4 p-3',
+                        'bg-card/50 rounded-lg',
+                        'border border-border',
+                        'hover:border-purple-500/40 hover:bg-purple-500/5',
+                        'dark:hover:bg-purple-500/10',
+                        'transition-all duration-150',
+                        'text-left group',
+                        'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background'
+                      )}
+                    >
+                      {/* Workflow icon */}
+                      <div className={cn(
+                        'w-10 h-10 rounded-lg flex-shrink-0',
+                        'flex items-center justify-center',
+                        'bg-purple-500/10 border border-purple-500/20',
+                        'group-hover:bg-purple-500/15 transition-colors'
+                      )}>
+                        <WorkflowIcon className="w-5 h-5 text-purple-400" />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">{workflow.name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {workflow.nodes.length} {workflow.nodes.length === 1 ? 'step' : 'steps'}
+                        </div>
+                      </div>
+
+                      <Link2 className="w-4 h-4 text-muted-foreground group-hover:text-purple-400 transition-colors flex-shrink-0" />
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -739,21 +739,6 @@ export function McpSettingsPanel({ isOpen, onClose }: McpSettingsPanelProps) {
     }
   }, [config, isSaving]);
 
-  // Handle log requests toggle
-  const handleToggleLogRequests = useCallback(async (enabled: boolean) => {
-    if (!config || isSaving) return;
-
-    setIsSaving(true);
-    try {
-      const updatedConfig = await mcpAPI.updateConfig({ logRequests: enabled });
-      setConfig(updatedConfig);
-    } catch (err) {
-      console.error('Failed to toggle log requests:', err);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [config, isSaving]);
-
   // Handle individual tool permission toggle (custom mode)
   const handleToggleTool = useCallback(async (toolName: string, checked: boolean) => {
     if (!config || isSaving) return;
@@ -1057,51 +1042,38 @@ export function McpSettingsPanel({ isOpen, onClose }: McpSettingsPanelProps) {
                       </div>
                     </CollapsibleCard>
 
-                    {/* Additional Options */}
+                    {/* Request Logs */}
                     <div className={cn('space-y-3', !config.isEnabled && 'opacity-50 pointer-events-none')}>
-                      <h4 className="text-sm font-medium text-foreground">Additional Options</h4>
+                      <h4 className="text-sm font-medium text-foreground">Request Logs</h4>
                       <div className="p-3 border border-border rounded-lg space-y-3">
-                        {/* Log Requests Toggle */}
+                        {/* View Logs Button */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <FileText className="w-4 h-4 text-muted-foreground" />
                             <div>
-                              <span className="text-sm text-foreground">Log Requests</span>
+                              <span className="text-sm text-foreground">MCP Tool Call History</span>
                               <p className="text-xs text-muted-foreground">
-                                Record all MCP tool calls for debugging
+                                View write and execute operation logs
                               </p>
                             </div>
                           </div>
-                          <Toggle
-                            checked={config.logRequests}
-                            onChange={handleToggleLogRequests}
-                            disabled={isSaving || !config.isEnabled}
-                            size="sm"
-                            aria-label="Enable request logging"
-                          />
+                          <button
+                            onClick={handleLoadLogs}
+                            disabled={isLoadingLogs || !config.isEnabled}
+                            className={cn(
+                              'flex items-center gap-2 text-sm text-primary hover:text-primary/80',
+                              'focus:outline-none focus-visible:underline',
+                              'disabled:opacity-50'
+                            )}
+                          >
+                            {isLoadingLogs ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            )}
+                            <span>{showLogs ? 'Refresh Logs' : 'View Logs'}</span>
+                          </button>
                         </div>
-
-                        {/* View Logs Button */}
-                        {config.logRequests && (
-                          <div className="pt-2 border-t border-border">
-                            <button
-                              onClick={handleLoadLogs}
-                              disabled={isLoadingLogs}
-                              className={cn(
-                                'flex items-center gap-2 text-sm text-primary hover:text-primary/80',
-                                'focus:outline-none focus-visible:underline',
-                                'disabled:opacity-50'
-                              )}
-                            >
-                              {isLoadingLogs ? (
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              )}
-                              <span>{showLogs ? 'Refresh Logs' : 'View Logs'}</span>
-                            </button>
-                          </div>
-                        )}
 
                         {/* Logs Viewer */}
                         {showLogs && logsResponse && (

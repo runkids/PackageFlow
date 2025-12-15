@@ -336,7 +336,9 @@ impl DatabaseWatcher {
                                 log::error!("[DatabaseWatcher] Failed to emit event: {}", e);
                             }
 
-                            // Send desktop notification (only for write operations)
+                            // Send desktop notification only for MCP write operations
+                            // Note: Only send notification when there are actual MCP logs,
+                            // to avoid notifying on manual UI operations
                             let has_write_op = recent_logs.iter().any(|(_, tool, _)| {
                                 matches!(
                                     tool.as_str(),
@@ -347,7 +349,7 @@ impl DatabaseWatcher {
                                 )
                             });
 
-                            if has_write_op || recent_logs.is_empty() {
+                            if has_write_op {
                                 if let Err(e) = app_handle
                                     .notification()
                                     .builder()

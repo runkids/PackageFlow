@@ -1,11 +1,12 @@
-// DeploymentSettingsDialog Component
-// One-Click Deploy feature (015-one-click-deploy)
-// Extended with Multi Deploy Accounts (016-multi-deploy-accounts)
-// Redesigned with improved UX - grouped sections, better visual hierarchy
+/**
+ * DeploymentSettingsDialog Component
+ * One-Click Deploy feature (015-one-click-deploy)
+ * Extended with Multi Deploy Accounts (016-multi-deploy-accounts)
+ * Redesigned with improved UX following AIReviewDialog patterns
+ */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useId } from 'react';
 import {
-  Settings,
   Plus,
   Trash2,
   Eye,
@@ -18,6 +19,9 @@ import {
   Lock,
   Variable,
   ChevronDown,
+  X,
+  Check,
+  Info,
 } from 'lucide-react';
 import type {
   PlatformType,
@@ -29,17 +33,10 @@ import { FRAMEWORK_PRESETS } from '../../../types/deploy';
 import { useDeployAccounts } from '../../../hooks/useDeployAccounts';
 import { AccountSelector } from './AccountSelector';
 import { GithubIcon, NetlifyIcon, CloudflareIcon } from '../../ui/icons';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-  DialogFooter,
-} from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
 import { Select, type SelectOption } from '../../ui/Select';
 import { cn } from '../../../lib/utils';
+import { registerModal, unregisterModal, isTopModal } from '../../ui/modalStack';
 
 interface DeploymentSettingsDialogProps {
   isOpen: boolean;
@@ -52,9 +49,14 @@ interface DeploymentSettingsDialogProps {
   onDetectFramework: (projectPath: string) => Promise<string | null>;
 }
 
-// Section component for grouping related settings
+// ============================================================================
+// Section Component - Improved with icon badge design
+// ============================================================================
+
 interface SectionProps {
   icon: React.ReactNode;
+  iconBgClass?: string;
+  iconColorClass?: string;
   title: string;
   description?: string;
   children: React.ReactNode;
@@ -65,6 +67,8 @@ interface SectionProps {
 
 function Section({
   icon,
+  iconBgClass = 'bg-primary/10',
+  iconColorClass = 'text-primary',
   title,
   description,
   children,
@@ -75,42 +79,58 @@ function Section({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
-    <div className={cn('space-y-3', className)}>
+    <div className={cn('space-y-4', className)}>
       <button
         type="button"
         onClick={() => collapsible && setIsExpanded(!isExpanded)}
         disabled={!collapsible}
         className={cn(
-          'flex items-center gap-2 w-full text-left',
-          collapsible && 'cursor-pointer hover:opacity-80'
+          'flex items-center gap-3 w-full text-left group',
+          collapsible && 'cursor-pointer'
         )}
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-          {icon}
-        </span>
+        {/* Icon badge */}
+        <div
+          className={cn(
+            'flex h-9 w-9 items-center justify-center rounded-lg',
+            'border border-border/50 shadow-sm',
+            iconBgClass
+          )}
+        >
+          <span className={iconColorClass}>{icon}</span>
+        </div>
+
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-foreground">{title}</h3>
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
           {description && (
             <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
           )}
         </div>
+
         {collapsible && (
           <ChevronDown
             className={cn(
               'h-4 w-4 text-muted-foreground transition-transform duration-200',
+              'group-hover:text-foreground',
               !isExpanded && '-rotate-90'
             )}
           />
         )}
       </button>
+
       {(!collapsible || isExpanded) && (
-        <div className="pl-9 space-y-3">{children}</div>
+        <div className="ml-12 space-y-4 animate-in fade-in-0 slide-in-from-top-1 duration-150">
+          {children}
+        </div>
       )}
     </div>
   );
 }
 
-// Platform card component
+// ============================================================================
+// PlatformCard Component - Enhanced with better visual feedback
+// ============================================================================
+
 interface PlatformCardProps {
   platform: PlatformType;
   isSelected: boolean;
@@ -118,57 +138,108 @@ interface PlatformCardProps {
   onClick: () => void;
 }
 
-function PlatformCard({ platform, isSelected, isConnected, onClick }: PlatformCardProps) {
+function PlatformCard({
+  platform,
+  isSelected,
+  isConnected,
+  onClick,
+}: PlatformCardProps) {
   const getPlatformConfig = () => {
     switch (platform) {
       case 'github_pages':
-        return { Icon: GithubIcon, name: 'GitHub Pages', bgColor: 'bg-black', textWhite: true };
+        return {
+          Icon: GithubIcon,
+          name: 'GitHub Pages',
+          bgColor: 'bg-zinc-900 dark:bg-zinc-800',
+          iconClass: 'text-white',
+        };
       case 'netlify':
-        return { Icon: NetlifyIcon, name: 'Netlify', bgColor: 'bg-[#0e1e25]', textWhite: false };
+        return {
+          Icon: NetlifyIcon,
+          name: 'Netlify',
+          bgColor: 'bg-[#0e1e25]',
+          iconClass: 'text-[#00c7b7]',
+        };
       case 'cloudflare_pages':
-        return { Icon: CloudflareIcon, name: 'Cloudflare Pages', bgColor: 'bg-[#f38020]', textWhite: false };
+        return {
+          Icon: CloudflareIcon,
+          name: 'Cloudflare',
+          bgColor: 'bg-[#f38020]',
+          iconClass: 'text-white',
+        };
       default:
-        return { Icon: GithubIcon, name: 'Unknown', bgColor: 'bg-muted', textWhite: false };
+        return {
+          Icon: GithubIcon,
+          name: 'Unknown',
+          bgColor: 'bg-muted',
+          iconClass: 'text-muted-foreground',
+        };
     }
   };
-  const { Icon, name, bgColor, textWhite } = getPlatformConfig();
+
+  const { Icon, name, bgColor, iconClass } = getPlatformConfig();
 
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'relative flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all duration-200',
-        'hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'relative flex flex-col items-center gap-3',
+        'rounded-xl border-2 p-4',
+        'transition-all duration-200',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         isSelected
-          ? 'border-primary bg-primary/5 shadow-sm'
-          : 'border-border hover:border-primary/40'
+          ? 'border-primary bg-primary/5 shadow-md shadow-primary/10'
+          : 'border-border hover:border-primary/40 hover:bg-accent/50'
       )}
     >
-      <span
+      {/* Platform icon with brand color */}
+      <div
         className={cn(
-          'flex h-10 w-10 items-center justify-center rounded-lg',
+          'flex h-12 w-12 items-center justify-center rounded-xl',
+          'shadow-lg',
           bgColor
         )}
       >
-        <Icon className={cn('h-5 w-5', textWhite && 'text-white')} />
-      </span>
-      <span className="font-medium text-sm">{name}</span>
+        <Icon className={cn('h-6 w-6', iconClass)} />
+      </div>
+
+      <span className="font-medium text-sm text-foreground">{name}</span>
+
+      {/* Connection status indicator */}
       {!isConnected && (
-        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground">
-          <AlertCircle className="h-3 w-3" />
-        </span>
+        <div
+          className={cn(
+            'absolute -top-2 -right-2',
+            'flex h-6 w-6 items-center justify-center',
+            'rounded-full bg-destructive shadow-lg',
+            'border-2 border-background'
+          )}
+        >
+          <AlertCircle className="h-3.5 w-3.5 text-destructive-foreground" />
+        </div>
       )}
+
       {isSelected && isConnected && (
-        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <span className="h-2 w-2 rounded-full bg-current" />
-        </span>
+        <div
+          className={cn(
+            'absolute -top-2 -right-2',
+            'flex h-6 w-6 items-center justify-center',
+            'rounded-full bg-primary shadow-lg',
+            'border-2 border-background'
+          )}
+        >
+          <Check className="h-3.5 w-3.5 text-primary-foreground" />
+        </div>
       )}
     </button>
   );
 }
 
-// Environment variable row component
+// ============================================================================
+// EnvVariableRow Component
+// ============================================================================
+
 interface EnvVariableRowProps {
   env: EnvVariable;
   showSecret: boolean;
@@ -185,7 +256,7 @@ function EnvVariableRow({
   onRemove,
 }: EnvVariableRowProps) {
   return (
-    <div className="group flex items-center gap-2 rounded-lg border border-border bg-background/50 p-2 transition-colors hover:border-primary/30">
+    <div className="group flex items-center gap-2 rounded-lg border border-border bg-card/50 p-2 transition-colors hover:border-primary/30">
       <input
         type="text"
         value={env.key}
@@ -240,7 +311,7 @@ function EnvVariableRow({
         className={cn(
           'flex h-8 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
           env.isSecret
-            ? 'bg-amber-500/10 text-amber-500'
+            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
             : 'text-muted-foreground hover:bg-accent hover:text-foreground'
         )}
         title={env.isSecret ? 'Secret (hidden in logs)' : 'Mark as secret'}
@@ -260,6 +331,10 @@ function EnvVariableRow({
   );
 }
 
+// ============================================================================
+// Main Dialog Component
+// ============================================================================
+
 export function DeploymentSettingsDialog({
   isOpen,
   onClose,
@@ -270,9 +345,11 @@ export function DeploymentSettingsDialog({
   onSave,
   onDetectFramework,
 }: DeploymentSettingsDialogProps) {
+  const modalId = useId();
   const [platform, setPlatform] = useState<PlatformType>('github_pages');
   const [accountId, setAccountId] = useState<string | undefined>(undefined);
-  const [environment, setEnvironment] = useState<DeploymentEnvironment>('production');
+  const [environment, setEnvironment] =
+    useState<DeploymentEnvironment>('production');
   const [framework, setFramework] = useState<string>('');
   const [rootDirectory, setRootDirectory] = useState<string>('');
   const [installCommand, setInstallCommand] = useState<string>('');
@@ -285,6 +362,26 @@ export function DeploymentSettingsDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Modal stack management
+  useEffect(() => {
+    if (!isOpen) return;
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId, isOpen]);
+
+  // Keyboard handler for Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalId, isOpen, onClose]);
 
   // Get accounts from multi-account system
   const {
@@ -445,393 +542,552 @@ export function DeploymentSettingsDialog({
     []
   );
 
+  if (!isOpen) return null;
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            <span>Deployment Settings</span>
-          </DialogTitle>
-          <DialogClose onClick={onClose} />
-        </DialogHeader>
+    <div
+      className="fixed inset-0 z-50 animate-in fade-in-0 duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="deploy-settings-dialog-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto min-h-0 space-y-6 py-2 pr-4 -mr-4">
-          {/* Section 1: Deploy Target */}
-          <Section
-            icon={<Rocket className="h-4 w-4" />}
-            title="Deploy Target"
-            description="Choose where to deploy your project"
+      {/* Dialog container */}
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <div
+          className={cn(
+            'relative w-full max-w-xl max-h-[85vh]',
+            'bg-background rounded-2xl',
+            'border border-blue-500/30',
+            'shadow-2xl shadow-black/50',
+            'animate-in fade-in-0 zoom-in-95 duration-200 slide-in-from-bottom-4',
+            'flex flex-col overflow-hidden'
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with gradient */}
+          <div
+            className={cn(
+              'relative px-6 py-5 border-b border-border',
+              'bg-gradient-to-r',
+              'dark:from-blue-500/20 dark:via-indigo-600/10 dark:to-transparent',
+              'from-blue-500/10 via-indigo-600/5 to-transparent'
+            )}
           >
-            {/* Platform Selection */}
-            <div className="grid grid-cols-3 gap-3">
-              <PlatformCard
-                platform="github_pages"
-                isSelected={platform === 'github_pages'}
-                isConnected={isPlatformConnected('github_pages')}
-                onClick={() => handlePlatformChange('github_pages')}
-              />
-              <PlatformCard
-                platform="netlify"
-                isSelected={platform === 'netlify'}
-                isConnected={isPlatformConnected('netlify')}
-                onClick={() => handlePlatformChange('netlify')}
-              />
-              <PlatformCard
-                platform="cloudflare_pages"
-                isSelected={platform === 'cloudflare_pages'}
-                isConnected={isPlatformConnected('cloudflare_pages')}
-                onClick={() => handlePlatformChange('cloudflare_pages')}
-              />
-            </div>
+            {/* Close button */}
+            <button
+              onClick={onClose}
+              className={cn(
+                'absolute right-4 top-4',
+                'rounded-lg p-2',
+                'text-muted-foreground hover:text-foreground',
+                'hover:bg-background/80',
+                'transition-colors duration-150',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+              )}
+              aria-label="Close dialog"
+            >
+              <X className="h-4 w-4" />
+            </button>
 
-            {/* Warning if platform not connected */}
-            {!isPlatformConnected(platform) && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>
-                  Please connect your {platform === 'netlify' ? 'Netlify' : 'Cloudflare Pages'} account first
-                </span>
-              </div>
-            )}
-
-            {/* Account Selector - for Netlify and Cloudflare */}
-            {(platform === 'netlify' || platform === 'cloudflare_pages') && (
-              <div className="space-y-1.5">
-                <label className="text-sm text-muted-foreground">Deploy Account</label>
-                <AccountSelector
-                  platform={platform}
-                  accounts={platformAccounts}
-                  preferences={preferences}
-                  isLoading={isLoadingAccounts || isLoadingPreferences}
-                  selectedAccountId={accountId}
-                  onAccountChange={handleAccountChange}
-                />
-              </div>
-            )}
-
-            {/* Site Name - only for Netlify */}
-            {platform === 'netlify' && (
-              <div className="space-y-1.5">
-                <label className="text-sm text-muted-foreground">
-                  Site Name
-                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={netlifySiteName}
-                    onChange={(e) => setNetlifySiteName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-                    placeholder="my-awesome-app"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    className={cn(
-                      'flex h-9 flex-1 rounded-md border border-border',
-                      'bg-background px-3 py-2 text-sm font-mono',
-                      'placeholder:text-muted-foreground',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                    )}
-                  />
-                  <span className="text-sm text-muted-foreground">.netlify.app</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Custom subdomain for your site. Leave empty to auto-generate.
-                </p>
-              </div>
-            )}
-
-            {/* Project Name - only for Cloudflare Pages */}
-            {platform === 'cloudflare_pages' && (
-              <div className="space-y-1.5">
-                <label className="text-sm text-muted-foreground">
-                  Project Name
-                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={cloudflareProjectName}
-                    onChange={(e) => setCloudflareProjectName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-                    placeholder="my-awesome-app"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    className={cn(
-                      'flex h-9 flex-1 rounded-md border border-border',
-                      'bg-background px-3 py-2 text-sm font-mono',
-                      'placeholder:text-muted-foreground',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                    )}
-                  />
-                  <span className="text-sm text-muted-foreground">.pages.dev</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Custom project name for your site. Leave empty to auto-generate.
-                </p>
-              </div>
-            )}
-
-            {/* GitHub Pages info */}
-            {platform === 'github_pages' && (
-              <div className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                <p>PackageFlow will generate a GitHub Actions workflow file for you.</p>
-                <p className="text-xs mt-1">
-                  You can optionally override install/build/output below (leave empty to auto-detect).
-                </p>
-              </div>
-            )}
-          </Section>
-
-          {/* Section 2: Build Settings */}
-          {platform && (
-            <>
-              {/* Divider */}
-              <div className="h-px bg-border" />
-
-              <Section
-                icon={<FolderCode className="h-4 w-4" />}
-                title={platform === 'github_pages' ? 'Workflow Build Configuration' : 'Build Configuration'}
-                description={
-                  platform === 'github_pages'
-                    ? 'Optional overrides for GitHub Actions workflow generation'
-                    : 'Configure how your project is built'
-                }
-                collapsible={platform === 'github_pages'}
-                defaultExpanded={platform !== 'github_pages'}
+            {/* Title with icon badge */}
+            <div className="flex items-start gap-4 pr-10">
+              <div
+                className={cn(
+                  'flex-shrink-0',
+                  'w-12 h-12 rounded-xl',
+                  'flex items-center justify-center',
+                  'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+                  'border bg-blue-500/10 border-blue-500/20',
+                  'shadow-lg'
+                )}
               >
-            {/* Environment - Only for Netlify and Cloudflare */}
-            {platform !== 'github_pages' && (
-              <div className="space-y-1.5">
-                <label className="text-sm text-muted-foreground">Environment</label>
-                <Select
-                  value={environment}
-                  onValueChange={(v) => setEnvironment(v as DeploymentEnvironment)}
-                  options={environmentOptions}
-                  aria-label="Deployment environment"
+                <Rocket className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+              </div>
+              <div className="flex-1 min-w-0 pt-1">
+                <h2
+                  id="deploy-settings-dialog-title"
+                  className="text-lg font-semibold text-foreground leading-tight"
+                >
+                  Configure Deployment
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Set up how your project is built and deployed
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto min-h-0 p-6 space-y-6">
+            {/* Section 1: Deploy Target */}
+            <Section
+              icon={<Rocket className="h-4 w-4" />}
+              iconBgClass="bg-blue-500/10"
+              iconColorClass="text-blue-500 dark:text-blue-400"
+              title="Deploy Target"
+              description="Choose where to deploy your project"
+            >
+              {/* Platform Selection */}
+              <div className="grid grid-cols-3 gap-3">
+                <PlatformCard
+                  platform="github_pages"
+                  isSelected={platform === 'github_pages'}
+                  isConnected={isPlatformConnected('github_pages')}
+                  onClick={() => handlePlatformChange('github_pages')}
+                />
+                <PlatformCard
+                  platform="netlify"
+                  isSelected={platform === 'netlify'}
+                  isConnected={isPlatformConnected('netlify')}
+                  onClick={() => handlePlatformChange('netlify')}
+                />
+                <PlatformCard
+                  platform="cloudflare_pages"
+                  isSelected={platform === 'cloudflare_pages'}
+                  isConnected={isPlatformConnected('cloudflare_pages')}
+                  onClick={() => handlePlatformChange('cloudflare_pages')}
                 />
               </div>
-            )}
 
-            {/* Framework */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-muted-foreground">Framework</label>
-                <button
-                  type="button"
-                  onClick={handleDetectFramework}
-                  disabled={isDetecting}
-                  className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
-                >
-                  {isDetecting ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Detecting...
-                    </>
-                  ) : (
-                    'Auto Detect'
+              {/* Warning if platform not connected */}
+              {!isPlatformConnected(platform) && (
+                <div
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg p-3',
+                    'border border-destructive/30 bg-destructive/5'
                   )}
-                </button>
-              </div>
-              <Select
-                value={framework}
-                onValueChange={setFramework}
-                options={frameworkOptions}
-                placeholder="Select Framework..."
-                aria-label="Framework"
-              />
-            </div>
+                >
+                  <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+                  <span className="text-sm text-destructive">
+                    Please connect your{' '}
+                    {platform === 'netlify' ? 'Netlify' : 'Cloudflare Pages'}{' '}
+                    account first
+                  </span>
+                </div>
+              )}
 
-            {/* Install Command - GitHub Pages workflow only */}
-            {platform === 'github_pages' && (
+              {/* Account Selector - for Netlify and Cloudflare */}
+              {(platform === 'netlify' || platform === 'cloudflare_pages') && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Deploy Account
+                  </label>
+                  <AccountSelector
+                    platform={platform}
+                    accounts={platformAccounts}
+                    preferences={preferences}
+                    isLoading={isLoadingAccounts || isLoadingPreferences}
+                    selectedAccountId={accountId}
+                    onAccountChange={handleAccountChange}
+                  />
+                </div>
+              )}
+
+              {/* Site Name - only for Netlify */}
+              {platform === 'netlify' && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Site Name
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={netlifySiteName}
+                      onChange={(e) =>
+                        setNetlifySiteName(
+                          e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+                        )
+                      }
+                      placeholder="my-awesome-app"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      className={cn(
+                        'flex h-9 flex-1 rounded-lg border border-border',
+                        'bg-background px-3 py-2 text-sm font-mono',
+                        'placeholder:text-muted-foreground',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                      )}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      .netlify.app
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Custom subdomain for your site. Leave empty to auto-generate.
+                  </p>
+                </div>
+              )}
+
+              {/* Project Name - only for Cloudflare Pages */}
+              {platform === 'cloudflare_pages' && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Project Name
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={cloudflareProjectName}
+                      onChange={(e) =>
+                        setCloudflareProjectName(
+                          e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+                        )
+                      }
+                      placeholder="my-awesome-app"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      className={cn(
+                        'flex h-9 flex-1 rounded-lg border border-border',
+                        'bg-background px-3 py-2 text-sm font-mono',
+                        'placeholder:text-muted-foreground',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                      )}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      .pages.dev
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Custom project name for your site. Leave empty to auto-generate.
+                  </p>
+                </div>
+              )}
+
+              {/* GitHub Pages info */}
+              {platform === 'github_pages' && (
+                <div
+                  className={cn(
+                    'flex items-start gap-3 rounded-lg p-4',
+                    'border border-border bg-muted/30'
+                  )}
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted flex-shrink-0">
+                    <Info className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-foreground font-medium">
+                      GitHub Actions Workflow
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      PackageFlow will generate a workflow file. You can override
+                      build settings below.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </Section>
+
+            {/* Divider */}
+            <div className="h-px bg-border" />
+
+            {/* Section 2: Build Settings */}
+            <Section
+              icon={<FolderCode className="h-4 w-4" />}
+              iconBgClass="bg-emerald-500/10"
+              iconColorClass="text-emerald-500 dark:text-emerald-400"
+              title={
+                platform === 'github_pages'
+                  ? 'Workflow Build Configuration'
+                  : 'Build Configuration'
+              }
+              description={
+                platform === 'github_pages'
+                  ? 'Optional overrides for GitHub Actions workflow generation'
+                  : 'Configure how your project is built'
+              }
+              collapsible={platform === 'github_pages'}
+              defaultExpanded={platform !== 'github_pages'}
+            >
+              {/* Environment - Only for Netlify and Cloudflare */}
+              {platform !== 'github_pages' && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Environment
+                  </label>
+                  <Select
+                    value={environment}
+                    onValueChange={(v) =>
+                      setEnvironment(v as DeploymentEnvironment)
+                    }
+                    options={environmentOptions}
+                    aria-label="Deployment environment"
+                  />
+                </div>
+              )}
+
+              {/* Framework */}
               <div className="space-y-1.5">
-                <label className="text-sm text-muted-foreground">
-                  Install Command
-                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-foreground">
+                    Framework
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleDetectFramework}
+                    disabled={isDetecting}
+                    className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+                  >
+                    {isDetecting ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Detecting...
+                      </>
+                    ) : (
+                      'Auto Detect'
+                    )}
+                  </button>
+                </div>
+                <Select
+                  value={framework}
+                  onValueChange={setFramework}
+                  options={frameworkOptions}
+                  placeholder="Select Framework..."
+                  aria-label="Framework"
+                />
+              </div>
+
+              {/* Install Command - GitHub Pages workflow only */}
+              {platform === 'github_pages' && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Install Command
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={installCommand}
+                    onChange={(e) => setInstallCommand(e.target.value)}
+                    placeholder="Auto-detect from lockfile (e.g., npm ci)"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    className={cn(
+                      'flex h-9 w-full rounded-lg border border-border',
+                      'bg-background px-3 py-2 text-sm font-mono',
+                      'placeholder:text-muted-foreground',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                    )}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Used in the generated workflow. Leave empty to auto-detect
+                    based on your lockfile.
+                  </p>
+                </div>
+              )}
+
+              {/* Build Command */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  Build Command
+                  <span className="ml-1.5 font-normal text-muted-foreground">
+                    (optional)
+                  </span>
                 </label>
                 <input
                   type="text"
-                  value={installCommand}
-                  onChange={(e) => setInstallCommand(e.target.value)}
-                  placeholder="Auto-detect from lockfile (e.g., npm ci)"
+                  value={buildCommand}
+                  onChange={(e) => setBuildCommand(e.target.value)}
+                  placeholder="npm run build"
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck={false}
                   className={cn(
-                    'flex h-9 w-full rounded-md border border-border',
+                    'flex h-9 w-full rounded-lg border border-border',
                     'bg-background px-3 py-2 text-sm font-mono',
                     'placeholder:text-muted-foreground',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                   )}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Used in the generated workflow. Leave empty to auto-detect based on your lockfile.
+                  Custom build script (e.g.,{' '}
+                  <code className="bg-muted px-1 rounded">pnpm build</code>,{' '}
+                  <code className="bg-muted px-1 rounded">yarn build:prod</code>)
                 </p>
               </div>
-            )}
 
-            {/* Build Command */}
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">
-                Build Command
-                <span className="ml-1 text-muted-foreground/60">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={buildCommand}
-                onChange={(e) => setBuildCommand(e.target.value)}
-                placeholder="npm run build"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className={cn(
-                  'flex h-9 w-full rounded-md border border-border',
-                  'bg-background px-3 py-2 text-sm font-mono',
-                  'placeholder:text-muted-foreground',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                )}
-              />
-              <p className="text-xs text-muted-foreground">
-                Custom build script (e.g., <code className="bg-muted px-1 rounded">pnpm build</code>, <code className="bg-muted px-1 rounded">yarn build:prod</code>)
-              </p>
-            </div>
-
-            {/* Output Directory */}
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground">
-                Output Directory
-                <span className="ml-1 text-muted-foreground/60">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={outputDirectory}
-                onChange={(e) => setOutputDirectory(e.target.value)}
-                placeholder={framework ? FRAMEWORK_PRESETS.find(p => p.key === framework)?.outputDirectory ?? 'dist' : 'dist'}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                className={cn(
-                  'flex h-9 w-full rounded-md border border-border',
-                  'bg-background px-3 py-2 text-sm font-mono',
-                  'placeholder:text-muted-foreground',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                )}
-              />
-              <p className="text-xs text-muted-foreground">
-                Directory containing built files (overrides framework default)
-              </p>
-            </div>
-
-            {/* Root Directory - Only for Netlify and Cloudflare */}
-            {platform !== 'github_pages' && (
+              {/* Output Directory */}
               <div className="space-y-1.5">
-                <label className="text-sm text-muted-foreground">
-                  Root Directory
-                  <span className="ml-1 text-muted-foreground/60">(optional)</span>
+                <label className="text-sm font-medium text-foreground">
+                  Output Directory
+                  <span className="ml-1.5 font-normal text-muted-foreground">
+                    (optional)
+                  </span>
                 </label>
                 <input
                   type="text"
-                  value={rootDirectory}
-                  onChange={(e) => setRootDirectory(e.target.value)}
-                  placeholder="e.g., packages/web"
+                  value={outputDirectory}
+                  onChange={(e) => setOutputDirectory(e.target.value)}
+                  placeholder={
+                    framework
+                      ? FRAMEWORK_PRESETS.find((p) => p.key === framework)
+                          ?.outputDirectory ?? 'dist'
+                      : 'dist'
+                  }
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck={false}
                   className={cn(
-                    'flex h-9 w-full rounded-md border border-border',
-                    'bg-background px-3 py-2 text-sm',
+                    'flex h-9 w-full rounded-lg border border-border',
+                    'bg-background px-3 py-2 text-sm font-mono',
                     'placeholder:text-muted-foreground',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                   )}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Specify the path if your project is in a subdirectory
+                  Directory containing built files (overrides framework default)
                 </p>
               </div>
-            )}
-              </Section>
-            </>
-          )}
 
-          {/* Section 3: Environment Variables - Only for Netlify and Cloudflare */}
-          {platform !== 'github_pages' && (
-            <>
-              {/* Divider */}
-              <div className="h-px bg-border" />
-
-              <Section
-                icon={<Variable className="h-4 w-4" />}
-                title="Environment Variables"
-                description="Set variables available during build and runtime"
-                collapsible
-                defaultExpanded={envVariables.length > 0}
-              >
-            {envVariables.length > 0 ? (
-              <div className="space-y-2">
-                {envVariables.map((env, index) => (
-                  <EnvVariableRow
-                    key={index}
-                    env={env}
-                    showSecret={showSecrets[index] ?? false}
-                    onUpdate={(field, value) => updateEnvVariable(index, field, value)}
-                    onToggleSecret={() => toggleSecretVisibility(index)}
-                    onRemove={() => removeEnvVariable(index)}
+              {/* Root Directory - Only for Netlify and Cloudflare */}
+              {platform !== 'github_pages' && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    Root Directory
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={rootDirectory}
+                    onChange={(e) => setRootDirectory(e.target.value)}
+                    placeholder="e.g., packages/web"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    className={cn(
+                      'flex h-9 w-full rounded-lg border border-border',
+                      'bg-background px-3 py-2 text-sm',
+                      'placeholder:text-muted-foreground',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                    )}
                   />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-6 text-center">
-                <Server className="h-8 w-8 text-muted-foreground/40" />
-                <p className="mt-2 text-sm text-muted-foreground">
-                  No environment variables configured
-                </p>
-                <p className="text-xs text-muted-foreground/60">
-                  Add variables that will be available during build and runtime
-                </p>
+                  <p className="text-xs text-muted-foreground">
+                    Specify the path if your project is in a subdirectory
+                  </p>
+                </div>
+              )}
+            </Section>
+
+            {/* Section 3: Environment Variables - Only for Netlify and Cloudflare */}
+            {platform !== 'github_pages' && (
+              <>
+                {/* Divider */}
+                <div className="h-px bg-border" />
+
+                <Section
+                  icon={<Variable className="h-4 w-4" />}
+                  iconBgClass="bg-amber-500/10"
+                  iconColorClass="text-amber-500 dark:text-amber-400"
+                  title="Environment Variables"
+                  description="Set variables available during build and runtime"
+                  collapsible
+                  defaultExpanded={envVariables.length > 0}
+                >
+                  {envVariables.length > 0 ? (
+                    <div className="space-y-2">
+                      {envVariables.map((env, index) => (
+                        <EnvVariableRow
+                          key={index}
+                          env={env}
+                          showSecret={showSecrets[index] ?? false}
+                          onUpdate={(field, value) =>
+                            updateEnvVariable(index, field, value)
+                          }
+                          onToggleSecret={() => toggleSecretVisibility(index)}
+                          onRemove={() => removeEnvVariable(index)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div
+                      className={cn(
+                        'flex flex-col items-center justify-center',
+                        'rounded-lg border border-dashed border-border',
+                        'py-8 text-center',
+                        'bg-muted/20'
+                      )}
+                    >
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-3">
+                        <Server className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <p className="text-sm font-medium text-muted-foreground">
+                        No environment variables
+                      </p>
+                      <p className="text-xs text-muted-foreground/60 mt-1">
+                        Add variables for build and runtime
+                      </p>
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addEnvVariable}
+                    className="w-full border-dashed"
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    Add Variable
+                  </Button>
+                </Section>
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div
+            className={cn(
+              'px-6 py-4 border-t border-border',
+              'bg-card/50 flex-shrink-0'
+            )}
+          >
+            {/* Validation Error */}
+            {validationError && (
+              <div className="mb-4 flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {validationError}
               </div>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addEnvVariable}
-              className="w-full"
-            >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Add Variable
-            </Button>
-              </Section>
-            </>
-          )}
-        </div>
 
-        {/* Footer */}
-        {validationError && (
-          <div className="mt-4 text-sm text-destructive flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            {validationError}
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={isSaving || !isPlatformConnected(platform)}
+                className="bg-blue-600 hover:bg-blue-500 text-white"
+              >
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Settings
+              </Button>
+            </div>
           </div>
-        )}
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={isSaving || !isPlatformConnected(platform)}
-          >
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Settings
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </div>
   );
 }

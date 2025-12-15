@@ -117,7 +117,7 @@ export function AccountSelector({
           />
 
           {/* Dropdown */}
-          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-auto rounded-md border border-border bg-white dark:bg-zinc-900 shadow-xl">
+          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-auto rounded-lg border border-border bg-card shadow-xl">
             {/* Default option */}
             <button
               type="button"

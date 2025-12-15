@@ -1,6 +1,8 @@
-// AccountManager Component
-// Multi Deploy Accounts feature (016-multi-deploy-accounts)
-// T018: Component for managing multiple deploy accounts
+/**
+ * Account Manager Components
+ * Multi Deploy Accounts feature (016-multi-deploy-accounts)
+ * Redesigned with modular components for better maintainability
+ */
 
 import { useState } from 'react';
 import {
@@ -12,29 +14,48 @@ import {
   AlertCircle,
   User,
   ExternalLink,
+  MoreHorizontal,
+  ShieldCheck,
 } from 'lucide-react';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
-import type { PlatformType, DeployAccount, DeployPreferences, RemoveAccountResult, CheckAccountResult } from '../../../types/deploy';
+import type {
+  PlatformType,
+  DeployAccount,
+  DeployPreferences,
+  RemoveAccountResult,
+  CheckAccountResult,
+} from '../../../types/deploy';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { Dropdown, DropdownItem, DropdownSeparator } from '../../ui/Dropdown';
 import { NetlifyIcon, CloudflareIcon } from '../../ui/icons';
 import { CloudflareTokenDialog } from './CloudflareTokenDialog';
+import { formatRelativeTime } from '../../../hooks/useWorktreeStatuses';
+import { cn } from '../../../lib/utils';
 
-// Platform configuration
-// Note: GitHub Pages doesn't require OAuth - it uses git credentials directly
-const PLATFORMS: Array<{
+// ============================================================================
+// Platform Configuration
+// ============================================================================
+
+export interface PlatformConfig {
   id: PlatformType;
   name: string;
   icon: React.ReactNode;
   bgClass: string;
+  accentColor: string;
+  borderAccent: string;
   description: string;
   dashboardUrl: string;
   authType: 'oauth' | 'token';
-}> = [
+}
+
+export const PLATFORMS: PlatformConfig[] = [
   {
     id: 'netlify',
     name: 'Netlify',
-    icon: <NetlifyIcon className="h-5 w-5" />,
+    icon: <NetlifyIcon className="h-4 w-4" />,
     bgClass: 'bg-[#0e1e25]',
+    accentColor: 'text-teal-500',
+    borderAccent: 'border-l-teal-500',
     description: 'All-in-one platform for web development',
     dashboardUrl: 'https://app.netlify.com',
     authType: 'oauth',
@@ -42,15 +63,446 @@ const PLATFORMS: Array<{
   {
     id: 'cloudflare_pages',
     name: 'Cloudflare Pages',
-    icon: <CloudflareIcon className="h-5 w-5" />,
+    icon: <CloudflareIcon className="h-4 w-4" />,
     bgClass: 'bg-[#f38020]',
+    accentColor: 'text-orange-500',
+    borderAccent: 'border-l-orange-500',
     description: 'JAMstack platform with global edge network',
     dashboardUrl: 'https://dash.cloudflare.com',
     authType: 'token',
   },
 ];
 
-const MAX_ACCOUNTS_PER_PLATFORM = 5;
+export const MAX_ACCOUNTS_PER_PLATFORM = 5;
+
+// ============================================================================
+// AccountCard Component
+// ============================================================================
+
+interface AccountCardProps {
+  account: DeployAccount;
+  platform: PlatformConfig;
+  isDefault: boolean;
+  isRemoving: boolean;
+  onEdit: () => void;
+  onToggleDefault: () => void;
+  onOpenDashboard: () => void;
+  onRemove: () => void;
+}
+
+export function AccountCard({
+  account,
+  platform,
+  isDefault,
+  isRemoving,
+  onEdit,
+  onToggleDefault,
+  onOpenDashboard,
+  onRemove,
+}: AccountCardProps) {
+  // Check if token is expiring soon (within 7 days)
+  const isExpiringSoon =
+    account.expiresAt &&
+    new Date(account.expiresAt).getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
+  const isExpired =
+    account.expiresAt && new Date(account.expiresAt).getTime() < Date.now();
+
+  return (
+    <div
+      className={cn(
+        'relative rounded-lg border bg-card p-3 transition-all',
+        isDefault && 'border-l-4',
+        isDefault && platform.borderAccent,
+        !isDefault && 'border-border'
+      )}
+    >
+      <div className="flex items-center gap-3">
+        {/* Avatar */}
+        {account.avatarUrl ? (
+          <img
+            src={account.avatarUrl}
+            alt={account.username}
+            className="h-10 w-10 rounded-full ring-2 ring-border"
+          />
+        ) : (
+          <div
+            className={cn(
+              'flex h-10 w-10 items-center justify-center rounded-full',
+              platform.bgClass
+            )}
+          >
+            <User className="h-5 w-5 text-white" />
+          </div>
+        )}
+
+        {/* Account Info */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-foreground truncate">
+              {account.displayName || account.username}
+            </span>
+            {account.displayName && (
+              <span className="text-xs text-muted-foreground truncate">
+                @{account.username}
+              </span>
+            )}
+            {isDefault && (
+              <span
+                className={cn(
+                  'flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                  'bg-primary/10 text-primary'
+                )}
+              >
+                <Star className="h-3 w-3 fill-current" />
+                Default
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+            <span>Connected {formatRelativeTime(account.connectedAt)}</span>
+            {isExpired && (
+              <span className="flex items-center gap-1 text-destructive">
+                <AlertCircle className="h-3 w-3" />
+                Token expired
+              </span>
+            )}
+            {isExpiringSoon && !isExpired && (
+              <span className="flex items-center gap-1 text-amber-500">
+                <AlertCircle className="h-3 w-3" />
+                Expires soon
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Actions Dropdown */}
+        <Dropdown
+          trigger={
+            <button
+              className={cn(
+                'rounded-md p-2 transition-colors',
+                'text-muted-foreground hover:bg-accent hover:text-foreground',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+              )}
+              aria-label="Account actions"
+            >
+              {isRemoving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MoreHorizontal className="h-4 w-4" />
+              )}
+            </button>
+          }
+          align="right"
+        >
+          <DropdownItem
+            icon={<Star className={cn('h-4 w-4', isDefault && 'fill-current')} />}
+            onClick={onToggleDefault}
+          >
+            {isDefault ? 'Remove as default' : 'Set as default'}
+          </DropdownItem>
+          <DropdownItem icon={<Pencil className="h-4 w-4" />} onClick={onEdit}>
+            Edit display name
+          </DropdownItem>
+          <DropdownItem
+            icon={<ExternalLink className="h-4 w-4" />}
+            onClick={onOpenDashboard}
+          >
+            Open dashboard
+          </DropdownItem>
+          <DropdownSeparator />
+          <DropdownItem
+            icon={<Trash2 className="h-4 w-4" />}
+            onClick={onRemove}
+            destructive
+            disabled={isRemoving}
+          >
+            Remove account
+          </DropdownItem>
+        </Dropdown>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// EditDisplayNameInput Component
+// ============================================================================
+
+interface EditDisplayNameInputProps {
+  initialValue: string;
+  placeholder: string;
+  onSave: (value: string) => void;
+  onCancel: () => void;
+}
+
+function EditDisplayNameInput({
+  initialValue,
+  placeholder,
+  onSave,
+  onCancel,
+}: EditDisplayNameInputProps) {
+  const [value, setValue] = useState(initialValue);
+
+  return (
+    <div className="flex items-center gap-2 p-3 rounded-lg border border-primary/50 bg-card">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          'h-8 flex-1 rounded-md border border-input bg-background px-3 text-sm',
+          'focus:outline-none focus:ring-2 focus:ring-ring'
+        )}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSave(value);
+          if (e.key === 'Escape') onCancel();
+        }}
+      />
+      <button
+        onClick={() => onSave(value)}
+        className="px-3 py-1.5 text-sm font-medium text-primary hover:underline"
+      >
+        Save
+      </button>
+      <button
+        onClick={onCancel}
+        className="px-3 py-1.5 text-sm text-muted-foreground hover:underline"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// PlatformAccountSection Component
+// ============================================================================
+
+interface PlatformAccountSectionProps {
+  platform: PlatformConfig;
+  accounts: DeployAccount[];
+  defaultAccountId?: string;
+  isAdding: boolean;
+  removingAccountId: string | null;
+  /** Hide platform header when used inside SettingSection */
+  hideHeader?: boolean;
+  onAddAccount: () => void;
+  onRemoveAccount: (accountId: string) => void;
+  onUpdateDisplayName: (accountId: string, displayName?: string) => void;
+  onSetDefaultAccount: (accountId?: string) => void;
+  onCheckUsage: (accountId: string) => Promise<CheckAccountResult | null>;
+}
+
+export function PlatformAccountSection({
+  platform,
+  accounts,
+  defaultAccountId,
+  isAdding,
+  removingAccountId,
+  hideHeader = false,
+  onAddAccount,
+  onRemoveAccount,
+  onUpdateDisplayName,
+  onSetDefaultAccount,
+  onCheckUsage,
+}: PlatformAccountSectionProps) {
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<{
+    accountId: string;
+    affectedProjects: string[];
+  } | null>(null);
+
+  const canAddMore = accounts.length < MAX_ACCOUNTS_PER_PLATFORM;
+
+  const handleStartEdit = (account: DeployAccount) => {
+    setEditingAccountId(account.id);
+  };
+
+  const handleSaveDisplayName = async (accountId: string, value: string) => {
+    await onUpdateDisplayName(accountId, value || undefined);
+    setEditingAccountId(null);
+  };
+
+  const handleRemoveClick = async (accountId: string) => {
+    const result = await onCheckUsage(accountId);
+    if (result) {
+      setConfirmRemove({ accountId, affectedProjects: result.affectedProjects });
+    }
+  };
+
+  const handleConfirmRemove = async () => {
+    if (confirmRemove) {
+      onRemoveAccount(confirmRemove.accountId);
+      setConfirmRemove(null);
+    }
+  };
+
+  const handleToggleDefault = (account: DeployAccount) => {
+    if (defaultAccountId === account.id) {
+      onSetDefaultAccount(undefined);
+    } else {
+      onSetDefaultAccount(account.id);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Platform Header - hidden when used inside SettingSection */}
+      {!hideHeader && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg',
+                platform.bgClass
+              )}
+            >
+              {platform.icon}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-foreground">{platform.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {accounts.length}/{MAX_ACCOUNTS_PER_PLATFORM}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">{platform.description}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account List */}
+      <div className="space-y-2">
+        {accounts.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+            <div
+              className={cn(
+                'mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full',
+                'bg-muted'
+              )}
+            >
+              <User className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              No {platform.name} accounts connected
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Connect an account to start deploying
+            </p>
+          </div>
+        ) : (
+          accounts.map((account) => {
+            const isEditing = editingAccountId === account.id;
+            const isRemoving = removingAccountId === account.id;
+            const isDefault = defaultAccountId === account.id;
+
+            if (isEditing) {
+              return (
+                <EditDisplayNameInput
+                  key={account.id}
+                  initialValue={account.displayName || ''}
+                  placeholder={account.username}
+                  onSave={(value) => handleSaveDisplayName(account.id, value)}
+                  onCancel={() => setEditingAccountId(null)}
+                />
+              );
+            }
+
+            return (
+              <AccountCard
+                key={account.id}
+                account={account}
+                platform={platform}
+                isDefault={isDefault}
+                isRemoving={isRemoving}
+                onEdit={() => handleStartEdit(account)}
+                onToggleDefault={() => handleToggleDefault(account)}
+                onOpenDashboard={() => shellOpen(platform.dashboardUrl)}
+                onRemove={() => handleRemoveClick(account.id)}
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* Add Account Button */}
+      {canAddMore && (
+        <button
+          onClick={onAddAccount}
+          disabled={isAdding}
+          className={cn(
+            'flex w-full items-center justify-center gap-2',
+            'rounded-lg border border-dashed border-border',
+            'px-4 py-2.5 text-sm font-medium',
+            'text-muted-foreground transition-colors',
+            'hover:border-primary/50 hover:bg-accent/50 hover:text-foreground',
+            'disabled:cursor-not-allowed disabled:opacity-50'
+          )}
+        >
+          {isAdding ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Connecting...</span>
+            </>
+          ) : (
+            <>
+              <Plus className="h-4 w-4" />
+              <span>Add {platform.name} Account</span>
+            </>
+          )}
+        </button>
+      )}
+
+      {/* Remove Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!confirmRemove}
+        onOpenChange={(open) => !open && setConfirmRemove(null)}
+        variant="destructive"
+        title="Remove Account"
+        description={
+          (confirmRemove?.affectedProjects?.length ?? 0) > 0
+            ? `This account is currently used by ${confirmRemove?.affectedProjects.length} project(s). Removing it will unbind all associated projects.`
+            : 'Are you sure you want to remove this account? This action cannot be undone.'
+        }
+        confirmText={
+          (confirmRemove?.affectedProjects?.length ?? 0) > 0
+            ? 'Remove Anyway'
+            : 'Yes, Remove'
+        }
+        onConfirm={handleConfirmRemove}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// Security Info Box Component
+// ============================================================================
+
+export function SecurityInfoBox() {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500/10">
+        <ShieldCheck className="h-4 w-4 text-green-500" />
+      </div>
+      <div>
+        <h4 className="text-sm font-medium text-foreground">Secure Storage</h4>
+        <p className="text-xs text-muted-foreground mt-1">
+          API tokens and credentials are encrypted and stored securely in your system
+          keychain. They are never exposed to the frontend or logged.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AccountManager Component (Legacy wrapper for backward compatibility)
+// ============================================================================
 
 interface AccountManagerProps {
   accounts: DeployAccount[];
@@ -79,77 +531,23 @@ export function AccountManager({
   onRefreshAccounts,
   onCheckUsage,
 }: AccountManagerProps) {
-  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
-  const [editDisplayName, setEditDisplayName] = useState('');
-  const [confirmRemove, setConfirmRemove] = useState<{
-    accountId: string;
-    affectedProjects: string[];
-  } | null>(null);
-  // Cloudflare token dialog state
   const [showCloudflareDialog, setShowCloudflareDialog] = useState(false);
 
   const getAccountsForPlatform = (platformId: PlatformType) =>
-    accounts.filter(a => a.platform === platformId);
+    accounts.filter((a) => a.platform === platformId);
 
-  const isDefaultAccount = (accountId: string) =>
-    preferences.defaultGithubPagesAccountId === accountId ||
-    preferences.defaultNetlifyAccountId === accountId ||
-    preferences.defaultCloudflarePagesAccountId === accountId;
-
-  const handleStartEdit = (account: DeployAccount) => {
-    setEditingAccountId(account.id);
-    setEditDisplayName(account.displayName || '');
-  };
-
-  const handleSaveDisplayName = async (accountId: string) => {
-    await onUpdateDisplayName(accountId, editDisplayName || undefined);
-    setEditingAccountId(null);
-    setEditDisplayName('');
-  };
-
-  const handleCancelEdit = () => {
-    setEditingAccountId(null);
-    setEditDisplayName('');
-  };
-
-  const handleRemoveClick = async (accountId: string) => {
-    const result = await onCheckUsage(accountId);
-    if (result) {
-      setConfirmRemove({ accountId, affectedProjects: result.affectedProjects });
-    }
-  };
-
-  const handleConfirmRemove = async () => {
-    if (confirmRemove) {
-      await onRemoveAccount(confirmRemove.accountId, true);
-      setConfirmRemove(null);
-    }
-  };
-
-  const handleToggleDefault = async (account: DeployAccount) => {
-    let currentDefault: string | undefined;
-    switch (account.platform) {
+  const getDefaultAccountId = (platformId: PlatformType): string | undefined => {
+    switch (platformId) {
       case 'github_pages':
-        currentDefault = preferences.defaultGithubPagesAccountId;
-        break;
+        return preferences.defaultGithubPagesAccountId;
       case 'netlify':
-        currentDefault = preferences.defaultNetlifyAccountId;
-        break;
+        return preferences.defaultNetlifyAccountId;
       case 'cloudflare_pages':
-        currentDefault = preferences.defaultCloudflarePagesAccountId;
-        break;
-    }
-
-    if (currentDefault === account.id) {
-      // Clear default
-      await onSetDefaultAccount(account.platform, undefined);
-    } else {
-      // Set as default
-      await onSetDefaultAccount(account.platform, account.id);
+        return preferences.defaultCloudflarePagesAccountId;
     }
   };
 
-  const handleAddAccount = (platform: typeof PLATFORMS[number]) => {
+  const handleAddAccount = (platform: PlatformConfig) => {
     if (platform.authType === 'token' && platform.id === 'cloudflare_pages') {
       setShowCloudflareDialog(true);
     } else {
@@ -158,7 +556,6 @@ export function AccountManager({
   };
 
   const handleCloudflareSuccess = async () => {
-    // Refresh accounts to show the newly added account
     await onRefreshAccounts();
   };
 
@@ -166,223 +563,33 @@ export function AccountManager({
     <div className="space-y-6">
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Platforms */}
-      <div className="space-y-6">
-        {PLATFORMS.map(platform => {
-          const platformAccounts = getAccountsForPlatform(platform.id);
-          const canAddMore = platformAccounts.length < MAX_ACCOUNTS_PER_PLATFORM;
-          const isAddingThis = addingPlatform === platform.id;
+      {/* Platform Sections */}
+      {PLATFORMS.map((platform) => (
+        <PlatformAccountSection
+          key={platform.id}
+          platform={platform}
+          accounts={getAccountsForPlatform(platform.id)}
+          defaultAccountId={getDefaultAccountId(platform.id)}
+          isAdding={addingPlatform === platform.id}
+          removingAccountId={removingAccountId}
+          onAddAccount={() => handleAddAccount(platform)}
+          onRemoveAccount={(accountId) => onRemoveAccount(accountId, true)}
+          onUpdateDisplayName={onUpdateDisplayName}
+          onSetDefaultAccount={(accountId) =>
+            onSetDefaultAccount(platform.id, accountId)
+          }
+          onCheckUsage={onCheckUsage}
+        />
+      ))}
 
-          return (
-            <div key={platform.id} className="space-y-3">
-              {/* Platform Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`flex h-6 w-6 items-center justify-center rounded ${platform.bgClass}`}>
-                    {platform.icon}
-                  </div>
-                  <span className="font-medium">{platform.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({platformAccounts.length}/{MAX_ACCOUNTS_PER_PLATFORM})
-                  </span>
-                </div>
-
-                {canAddMore && (
-                  <button
-                    onClick={() => handleAddAccount(platform)}
-                    disabled={isAddingThis || addingPlatform !== null}
-                    className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50"
-                  >
-                    {isAddingThis ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Plus className="h-3 w-3" />
-                    )}
-                    <span>{isAddingThis ? 'Connecting...' : 'Add Account'}</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Account List */}
-              {platformAccounts.length === 0 ? (
-                <div className="rounded-md border border-dashed border-border p-4 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    No {platform.name} accounts connected
-                  </p>
-                  <button
-                    onClick={() => handleAddAccount(platform)}
-                    disabled={isAddingThis || addingPlatform !== null}
-                    className="mt-2 text-sm text-primary hover:underline disabled:opacity-50"
-                  >
-                    Connect your first account
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {platformAccounts.map(account => {
-                    const isEditing = editingAccountId === account.id;
-                    const isRemoving = removingAccountId === account.id;
-                    const isDefault = isDefaultAccount(account.id);
-
-                    return (
-                      <div
-                        key={account.id}
-                        className={`relative rounded-lg border p-3 transition-all ${
-                          isDefault
-                            ? 'border-primary/50 bg-primary/5'
-                            : 'border-border bg-card'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          {/* Avatar */}
-                          {account.avatarUrl ? (
-                            <img
-                              src={account.avatarUrl}
-                              alt={account.username}
-                              className="h-8 w-8 rounded-full"
-                            />
-                          ) : (
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                              <User className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                          )}
-
-                          {/* Account Info */}
-                          <div className="min-w-0 flex-1">
-                            {isEditing ? (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={editDisplayName}
-                                  onChange={e => setEditDisplayName(e.target.value)}
-                                  placeholder={account.username}
-                                  className="h-7 w-40 rounded border border-input bg-background px-2 text-sm"
-                                  autoFocus
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') handleSaveDisplayName(account.id);
-                                    if (e.key === 'Escape') handleCancelEdit();
-                                  }}
-                                />
-                                <button
-                                  onClick={() => handleSaveDisplayName(account.id)}
-                                  className="text-sm text-primary hover:underline"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={handleCancelEdit}
-                                  className="text-sm text-muted-foreground hover:underline"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium truncate">
-                                  {account.displayName || account.username}
-                                </span>
-                                {account.displayName && (
-                                  <span className="text-xs text-muted-foreground">
-                                    (@{account.username})
-                                  </span>
-                                )}
-                                {isDefault && (
-                                  <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                                    <Star className="h-3 w-3" />
-                                    Default
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                              Connected {new Date(account.connectedAt).toLocaleDateString()}
-                            </p>
-                          </div>
-
-                          {/* Actions */}
-                          {!isEditing && (
-                            <div className="flex items-center gap-1">
-                              {/* Set as Default */}
-                              <button
-                                onClick={() => handleToggleDefault(account)}
-                                className={`rounded p-1.5 transition-colors ${
-                                  isDefault
-                                    ? 'text-primary hover:bg-primary/10'
-                                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                                }`}
-                                title={isDefault ? 'Remove as default' : 'Set as default'}
-                              >
-                                <Star className={`h-4 w-4 ${isDefault ? 'fill-current' : ''}`} />
-                              </button>
-
-                              {/* Edit Display Name */}
-                              <button
-                                onClick={() => handleStartEdit(account)}
-                                className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                                title="Edit display name"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-
-                              {/* Open Dashboard */}
-                              <button
-                                onClick={() => shellOpen(platform.dashboardUrl)}
-                                className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                                title="Open dashboard"
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                              </button>
-
-                              {/* Remove */}
-                              <button
-                                onClick={() => handleRemoveClick(account.id)}
-                                disabled={isRemoving}
-                                className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                                title="Remove account"
-                              >
-                                {isRemoving ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
-                                )}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Remove Confirmation Dialog */}
-      <ConfirmDialog
-        open={!!confirmRemove}
-        onOpenChange={(open) => !open && setConfirmRemove(null)}
-        variant="destructive"
-        title="Remove Account"
-        description={
-          (confirmRemove?.affectedProjects?.length ?? 0) > 0
-            ? `This account is currently used by ${confirmRemove?.affectedProjects.length} project(s). Removing it will unbind all associated projects.`
-            : 'Are you sure you want to remove this account? This action cannot be undone.'
-        }
-        confirmText={
-          (confirmRemove?.affectedProjects?.length ?? 0) > 0
-            ? 'Remove Anyway'
-            : 'Yes, Remove Account'
-        }
-        onConfirm={handleConfirmRemove}
-      />
+      {/* Security Info */}
+      <SecurityInfoBox />
 
       {/* Cloudflare Token Dialog */}
       <CloudflareTokenDialog

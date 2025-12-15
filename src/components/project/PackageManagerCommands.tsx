@@ -428,8 +428,9 @@ export function PackageManagerCommands({
   // If unknown package manager, show message
   if (packageManager === 'unknown') {
     return (
-      <div className="rounded-lg border bg-muted/10 border-border p-4">
-        <h3 className="text-sm font-semibold mb-3 text-muted-foreground">
+      <div className="rounded-lg border border-border bg-card p-4 bg-gradient-to-br from-muted/20 via-muted/10 to-transparent">
+        <h3 className="text-sm font-semibold mb-3 text-muted-foreground flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-muted-foreground" />
           Package manager commands
         </h3>
         <p className="text-sm text-muted-foreground">
@@ -461,9 +462,10 @@ export function PackageManagerCommands({
 
   return (
     <>
-      <div className="rounded-lg border bg-cyan-500/10 border-cyan-500/30 p-4">
+      <div className="rounded-lg border border-border bg-card p-4 bg-gradient-to-br from-cyan-500/10 via-cyan-500/5 to-transparent">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-cyan-400">
+          <h3 className="text-sm font-semibold text-cyan-500 dark:text-cyan-400 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-500" />
             {packageManagerLabels[packageManager]} Commands
           </h3>
           {usingVolta && (

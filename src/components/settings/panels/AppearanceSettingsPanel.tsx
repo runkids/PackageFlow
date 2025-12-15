@@ -14,7 +14,7 @@ import { cn } from '../../../lib/utils';
 
 export const AppearanceSettingsPanel: React.FC = () => {
   const { pathDisplayFormat, setPathDisplayFormat, reduceMotion, setReduceMotion } = useSettings();
-  const { themeMode, setThemeMode, resolvedTheme } = useTheme();
+  const { themeMode, setThemeMode } = useTheme();
 
   // Toggle path display format
   const handlePathFormatToggle = useCallback(async () => {

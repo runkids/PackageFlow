@@ -65,32 +65,37 @@ function categorizeScript(name: string): ScriptCategory {
   return 'other';
 }
 
-// Category configuration
-const categoryConfig: Record<ScriptCategory, { label: string; color: string; bgColor: string }> = {
+// Category configuration - Subtle unified style with colored titles and gradient
+const categoryConfig: Record<ScriptCategory, { label: string; color: string; dotColor: string; gradient: string }> = {
   development: {
     label: 'Development',
-    color: 'text-green-400',
-    bgColor: 'bg-green-500/10 border-green-500/30',
+    color: 'text-green-500 dark:text-green-400',
+    dotColor: 'bg-green-500',
+    gradient: 'bg-gradient-to-br from-green-500/10 via-green-500/5 to-transparent',
   },
   build: {
     label: 'Build',
-    color: 'text-blue-400',
-    bgColor: 'bg-blue-500/10 border-blue-500/30',
+    color: 'text-amber-500 dark:text-amber-400',
+    dotColor: 'bg-amber-500',
+    gradient: 'bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent',
   },
   test: {
     label: 'Test',
-    color: 'text-purple-400',
-    bgColor: 'bg-purple-500/10 border-purple-500/30',
+    color: 'text-purple-500 dark:text-purple-400',
+    dotColor: 'bg-purple-500',
+    gradient: 'bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent',
   },
   lint: {
     label: 'Lint & Format',
-    color: 'text-yellow-400',
-    bgColor: 'bg-yellow-500/10 border-yellow-500/30',
+    color: 'text-violet-500 dark:text-violet-400',
+    dotColor: 'bg-violet-500',
+    gradient: 'bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent',
   },
   other: {
     label: 'Other',
     color: 'text-muted-foreground',
-    bgColor: 'bg-muted/10 border-border',
+    dotColor: 'bg-muted-foreground',
+    gradient: 'bg-gradient-to-br from-muted/20 via-muted/10 to-transparent',
   },
 };
 
@@ -250,9 +255,10 @@ export function ScriptCards({
           return (
             <div
               key={category}
-              className={`rounded-lg border ${config.bgColor} p-4`}
+              className={`rounded-lg border border-border bg-card p-4 ${config.gradient}`}
             >
-              <h3 className={`text-sm font-semibold mb-3 ${config.color}`}>
+              <h3 className={`text-sm font-semibold mb-3 flex items-center gap-2 ${config.color}`}>
+                <span className={`w-2 h-2 rounded-full ${config.dotColor}`} />
                 {config.label}
               </h3>
               <ul className="space-y-2">

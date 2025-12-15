@@ -257,8 +257,8 @@ pub async fn save_workflow(
     workflow: Workflow,
 ) -> Result<(), String> {
     println!(
-        "[workflow] save_workflow called: id={}, name={}",
-        workflow.id, workflow.name
+        "[workflow] save_workflow called: id={}, name={}, project_id={:?}",
+        workflow.id, workflow.name, workflow.project_id
     );
 
     // Debug: Log incoming webhook info

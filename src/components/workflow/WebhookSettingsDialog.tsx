@@ -3,12 +3,11 @@
  * Dialog for configuring webhook notifications for a workflow
  * Per-workflow server architecture: each workflow has its own HTTP server
  * @see specs/012-workflow-webhook-support
+ *
+ * Design: Following AIReviewDialog pattern with gradient header, icon badge, and refined UI
  */
 
-import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog';
-import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
+import { useState, useEffect, useRef } from 'react';
 import {
   Webhook,
   Bell,
@@ -24,7 +23,12 @@ import {
   RefreshCw,
   ArrowDownToLine,
   ArrowUpFromLine,
+  X,
 } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { isTopModal, registerModal, unregisterModal } from '../ui/modalStack';
 import type { WebhookConfig, WebhookTrigger, WebhookTestResult } from '../../types/webhook';
 import type { IncomingWebhookConfig, IncomingWebhookServerStatus } from '../../types/incoming-webhook';
 import { DEFAULT_PAYLOAD_TEMPLATE, SUPPORTED_VARIABLES } from '../../types/webhook';
@@ -69,6 +73,9 @@ export function WebhookSettingsDialog({
   onClose,
   onSave,
 }: WebhookSettingsDialogProps) {
+  const modalId = `webhook-settings-${workflowId}`;
+  const contentRef = useRef<HTMLDivElement>(null);
+
   // Tab state
   const [activeTab, setActiveTab] = useState<TabType>('outgoing');
 
@@ -164,6 +171,38 @@ export function WebhookSettingsDialog({
   const isPortUsedByOther = (status: PortStatus | null): boolean => {
     return status === 'InUseByOther';
   };
+
+  // Register/unregister modal
+  useEffect(() => {
+    if (!isOpen) return;
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId, isOpen]);
+
+  // Handle ESC key
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      onClose();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalId, onClose, isOpen]);
+
+  // Focus content area when opened
+  useEffect(() => {
+    if (isOpen && contentRef.current) {
+      const timer = setTimeout(() => {
+        contentRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
 
   // Check port when it changes
   useEffect(() => {
@@ -448,94 +487,213 @@ export function WebhookSettingsDialog({
     onClose();
   };
 
+  // Handle backdrop click
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   // ========================
   // Render
   // ========================
 
   const workflowServerStatus = getWorkflowServerStatus();
 
+  if (!isOpen) return null;
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="text-foreground flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
-              <Webhook className="w-4 h-4 text-white" />
-            </div>
-            Webhook Settings
-          </DialogTitle>
-        </DialogHeader>
+    <div
+      className={cn('fixed inset-0 z-50', 'animate-in fade-in-0 duration-200')}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="webhook-settings-dialog-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={handleBackdropClick}
+        aria-hidden="true"
+      />
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-border mt-2">
-          <button
-            type="button"
-            className={`flex-1 px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-              activeTab === 'outgoing'
-                ? 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-500'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab('outgoing')}
+      {/* Dialog container */}
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <div
+          className={cn(
+            'relative w-full max-w-lg max-h-[90vh]',
+            'bg-background rounded-2xl',
+            'border border-purple-500/30',
+            'shadow-2xl shadow-black/60',
+            'animate-in fade-in-0 zoom-in-95 duration-200',
+            'slide-in-from-bottom-4',
+            'flex flex-col overflow-hidden'
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with gradient */}
+          <div
+            className={cn(
+              'relative px-6 py-5',
+              'border-b border-border',
+              'bg-gradient-to-r',
+              'from-purple-500/10 via-purple-600/5 to-transparent',
+              'dark:from-purple-500/20 dark:via-purple-600/10 dark:to-transparent'
+            )}
           >
-            <ArrowUpFromLine className="w-4 h-4" />
-            Outgoing
-          </button>
-          <button
-            type="button"
-            className={`flex-1 px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-              activeTab === 'incoming'
-                ? 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-500'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab('incoming')}
-          >
-            <ArrowDownToLine className="w-4 h-4" />
-            Incoming
-          </button>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto min-h-0 px-1 -mx-1">
-          {activeTab === 'outgoing' ? (
-            // ========================
-            // Outgoing Webhook Tab
-            // ========================
-            <>
-              {/* Usage hint - only show when disabled */}
-              {!enabled && (
-                <div className="bg-purple-500/10 dark:bg-purple-900/20 border border-purple-500/30 dark:border-purple-800/30 rounded-lg p-3 text-xs mt-2">
-                  <p className="font-medium mb-1 text-purple-700 dark:text-purple-300">Outgoing Webhook</p>
-                  <p className="text-purple-600 dark:text-purple-400">
-                    Send a notification when this workflow completes. Use cases:
-                  </p>
-                  <ul className="mt-1 ml-4 list-disc text-purple-600/80 dark:text-purple-400/80">
-                    <li>Notify Slack or Discord channel</li>
-                    <li>Trigger downstream CI/CD pipelines</li>
-                    <li>Log results to monitoring systems</li>
-                  </ul>
-                </div>
+            {/* Close button */}
+            <button
+              onClick={onClose}
+              className={cn(
+                'absolute right-4 top-4',
+                'p-2 rounded-lg',
+                'text-muted-foreground hover:text-foreground',
+                'hover:bg-accent/50',
+                'transition-colors duration-150',
+                'focus:outline-none focus:ring-2 focus:ring-ring'
               )}
+              aria-label="Close dialog"
+            >
+              <X className="w-4 h-4" />
+            </button>
 
-              <div className="space-y-4 mt-4">
+            {/* Title area with icon badge */}
+            <div className="flex items-start gap-4 pr-10">
+              <div
+                className={cn(
+                  'flex-shrink-0',
+                  'w-12 h-12 rounded-xl',
+                  'flex items-center justify-center',
+                  'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+                  'border',
+                  'bg-purple-500/10 border-purple-500/20',
+                  'shadow-lg'
+                )}
+              >
+                <Webhook className="w-6 h-6 text-purple-500 dark:text-purple-400" />
+              </div>
+              <div className="flex-1 min-w-0 pt-1">
+                <h2
+                  id="webhook-settings-dialog-title"
+                  className="text-lg font-semibold text-foreground leading-tight"
+                >
+                  Webhook Settings
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Configure outgoing notifications and incoming triggers
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="flex border-b border-border bg-card/30">
+            <button
+              type="button"
+              className={cn(
+                'flex-1 px-4 py-3 text-sm font-medium',
+                'flex items-center justify-center gap-2',
+                'transition-all duration-150',
+                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset',
+                activeTab === 'outgoing'
+                  ? 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-500 bg-purple-500/5'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/30'
+              )}
+              onClick={() => setActiveTab('outgoing')}
+            >
+              <ArrowUpFromLine className="w-4 h-4" />
+              Outgoing
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'flex-1 px-4 py-3 text-sm font-medium',
+                'flex items-center justify-center gap-2',
+                'transition-all duration-150',
+                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset',
+                activeTab === 'incoming'
+                  ? 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-500 bg-purple-500/5'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/30'
+              )}
+              onClick={() => setActiveTab('incoming')}
+            >
+              <ArrowDownToLine className="w-4 h-4" />
+              Incoming
+            </button>
+          </div>
+
+          {/* Scrollable body */}
+          <div
+            ref={contentRef}
+            className="flex-1 overflow-y-auto min-h-0 p-6 focus:outline-none"
+            tabIndex={-1}
+          >
+            {activeTab === 'outgoing' ? (
+              // ========================
+              // Outgoing Webhook Tab
+              // ========================
+              <div className="space-y-5">
+                {/* Usage hint - only show when disabled */}
+                {!enabled && (
+                  <div
+                    className={cn(
+                      'p-4 rounded-xl',
+                      'bg-purple-500/5 dark:bg-purple-500/10',
+                      'border border-purple-500/20',
+                      'text-xs'
+                    )}
+                  >
+                    <p className="font-medium mb-1.5 text-purple-700 dark:text-purple-300">
+                      Outgoing Webhook
+                    </p>
+                    <p className="text-purple-600 dark:text-purple-400">
+                      Send a notification when this workflow completes. Use cases:
+                    </p>
+                    <ul className="mt-1.5 ml-4 list-disc text-purple-600/80 dark:text-purple-400/80 space-y-0.5">
+                      <li>Notify Slack or Discord channel</li>
+                      <li>Trigger downstream CI/CD pipelines</li>
+                      <li>Log results to monitoring systems</li>
+                    </ul>
+                  </div>
+                )}
+
                 {/* Enable/Disable Toggle */}
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-foreground">Enable Webhook</span>
+                <div
+                  className={cn(
+                    'flex items-center justify-between p-4',
+                    'bg-muted/30 dark:bg-muted/50 rounded-xl',
+                    'border border-border/50',
+                    'transition-colors duration-150'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        'w-8 h-8 rounded-lg',
+                        'flex items-center justify-center',
+                        'bg-background border border-border'
+                      )}
+                    >
+                      <Bell className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                    <span className="text-sm font-medium text-foreground">Enable Webhook</span>
                   </div>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={enabled}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${
+                    className={cn(
+                      'relative w-11 h-6 rounded-full transition-colors duration-200',
+                      'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
                       enabled ? 'bg-purple-600' : 'bg-muted'
-                    }`}
+                    )}
                     onClick={() => setEnabled(!enabled)}
                   >
                     <span
-                      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                      className={cn(
+                        'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm',
+                        'transition-transform duration-200',
                         enabled ? 'translate-x-5' : 'translate-x-0'
-                      }`}
+                      )}
                     />
                   </button>
                 </div>
@@ -543,7 +701,7 @@ export function WebhookSettingsDialog({
                 {/* URL Input */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Link className="w-4 h-4" />
+                    <Link className="w-4 h-4 text-muted-foreground" />
                     Webhook URL
                   </label>
                   <Input
@@ -551,17 +709,23 @@ export function WebhookSettingsDialog({
                     onChange={(e) => handleUrlChange(e.target.value)}
                     placeholder="https://example.com/webhook"
                     disabled={!enabled}
-                    className={`bg-background border-border text-foreground ${
-                      urlError ? 'border-red-500' : ''
-                    }`}
+                    className={cn(
+                      'bg-background border-border text-foreground',
+                      'focus:border-purple-500 focus:ring-purple-500/20',
+                      'transition-all duration-150',
+                      urlError && 'border-red-500 focus:border-red-500 focus:ring-red-500/20',
+                      !enabled && 'opacity-60'
+                    )}
                   />
                   {urlError && (
-                    <p className="text-xs text-red-400 flex items-center gap-1">
+                    <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1.5">
                       <AlertCircle className="w-3 h-3" />
                       {urlError}
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground">Only HTTPS URLs are supported for security.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Only HTTPS URLs are supported for security.
+                  </p>
                 </div>
 
                 {/* Trigger Condition */}
@@ -577,11 +741,15 @@ export function WebhookSettingsDialog({
                         key={option.value}
                         type="button"
                         disabled={!enabled}
-                        className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                        className={cn(
+                          'px-3 py-2.5 text-sm rounded-lg border',
+                          'transition-all duration-150',
+                          'focus:outline-none focus:ring-2 focus:ring-ring',
                           trigger === option.value
-                            ? 'bg-purple-500/20 border-purple-500 text-purple-700 dark:text-purple-300'
-                            : 'bg-background border-border text-muted-foreground hover:border-muted'
-                        } ${!enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            ? 'bg-purple-500/10 border-purple-500 text-purple-700 dark:text-purple-300 font-medium'
+                            : 'bg-background border-border text-muted-foreground hover:border-purple-500/50 hover:text-foreground',
+                          !enabled && 'opacity-50 cursor-not-allowed'
+                        )}
                         onClick={() => setTrigger(option.value as WebhookTrigger)}
                       >
                         {option.label}
@@ -593,16 +761,32 @@ export function WebhookSettingsDialog({
                 {/* Advanced Settings Toggle */}
                 <button
                   type="button"
-                  className="text-sm text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 flex items-center gap-1"
+                  className={cn(
+                    'text-sm font-medium',
+                    'text-purple-600 dark:text-purple-400',
+                    'hover:text-purple-700 dark:hover:text-purple-300',
+                    'flex items-center gap-2',
+                    'transition-colors duration-150',
+                    'focus:outline-none focus:underline'
+                  )}
                   onClick={() => setShowAdvanced(!showAdvanced)}
                 >
-                  {showAdvanced ? '▼' : '▶'} Advanced Settings
+                  <span
+                    className={cn(
+                      'w-4 h-4 flex items-center justify-center',
+                      'transition-transform duration-200',
+                      showAdvanced && 'rotate-90'
+                    )}
+                  >
+                    {'>'}
+                  </span>
+                  Advanced Settings
                 </button>
 
                 {showAdvanced && (
-                  <>
+                  <div className="space-y-5 pl-4 border-l-2 border-purple-500/20">
                     {/* Custom Headers */}
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <label className="text-sm font-medium text-foreground">Custom Headers</label>
                         <Button
@@ -610,7 +794,12 @@ export function WebhookSettingsDialog({
                           size="sm"
                           disabled={!enabled}
                           onClick={addHeader}
-                          className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 text-xs"
+                          className={cn(
+                            'text-purple-600 dark:text-purple-400',
+                            'hover:text-purple-700 dark:hover:text-purple-300',
+                            'hover:bg-purple-500/10',
+                            'text-xs'
+                          )}
                         >
                           <Plus className="w-3 h-3 mr-1" />
                           Add Header
@@ -623,21 +812,29 @@ export function WebhookSettingsDialog({
                             onChange={(e) => updateHeader(index, 'key', e.target.value)}
                             placeholder="Header name"
                             disabled={!enabled}
-                            className="bg-background border-border text-foreground text-sm flex-1"
+                            className={cn(
+                              'bg-background border-border text-foreground text-sm flex-1',
+                              'focus:border-purple-500 focus:ring-purple-500/20',
+                              !enabled && 'opacity-60'
+                            )}
                           />
                           <Input
                             value={header.value}
                             onChange={(e) => updateHeader(index, 'value', e.target.value)}
                             placeholder="Value"
                             disabled={!enabled}
-                            className="bg-background border-border text-foreground text-sm flex-1"
+                            className={cn(
+                              'bg-background border-border text-foreground text-sm flex-1',
+                              'focus:border-purple-500 focus:ring-purple-500/20',
+                              !enabled && 'opacity-60'
+                            )}
                           />
                           <Button
                             variant="ghost"
                             size="sm"
                             disabled={!enabled}
                             onClick={() => removeHeader(index)}
-                            className="text-red-400 hover:text-red-300 px-2"
+                            className="text-red-500 hover:text-red-400 hover:bg-red-500/10 px-2"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -649,14 +846,14 @@ export function WebhookSettingsDialog({
                     </div>
 
                     {/* Payload Template */}
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <FileCode className="w-4 h-4" />
+                        <FileCode className="w-4 h-4 text-muted-foreground" />
                         Payload Template (JSON)
                       </label>
 
                       {/* Format Presets */}
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {[
                           { value: 'custom', label: 'Custom' },
                           { value: 'discord', label: 'Discord' },
@@ -667,11 +864,15 @@ export function WebhookSettingsDialog({
                             key={option.value}
                             type="button"
                             disabled={!enabled}
-                            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                            className={cn(
+                              'px-3 py-1.5 text-xs rounded-lg border',
+                              'transition-all duration-150',
+                              'focus:outline-none focus:ring-2 focus:ring-ring',
                               payloadFormat === option.value
-                                ? 'bg-purple-500/20 border-purple-500 text-purple-700 dark:text-purple-300'
-                                : 'bg-background border-border text-muted-foreground hover:border-muted'
-                            } ${!enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                ? 'bg-purple-500/10 border-purple-500 text-purple-700 dark:text-purple-300 font-medium'
+                                : 'bg-background border-border text-muted-foreground hover:border-purple-500/50 hover:text-foreground',
+                              !enabled && 'opacity-50 cursor-not-allowed'
+                            )}
                             onClick={() => handleFormatChange(option.value as PayloadFormat)}
                           >
                             {option.label}
@@ -689,25 +890,34 @@ export function WebhookSettingsDialog({
                         autoCorrect="off"
                         autoCapitalize="off"
                         spellCheck={false}
-                        className={`w-full bg-background border rounded-lg p-3 text-foreground font-mono text-xs resize-none focus:outline-none ${
+                        className={cn(
+                          'w-full bg-background border rounded-lg p-3',
+                          'text-foreground font-mono text-xs resize-none',
+                          'transition-all duration-150',
+                          'focus:outline-none focus:ring-2',
                           jsonError
-                            ? 'border-red-500 focus:border-red-500'
-                            : 'border-border focus:border-purple-500'
-                        }`}
+                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
+                            : 'border-border focus:border-purple-500 focus:ring-purple-500/20',
+                          !enabled && 'opacity-60'
+                        )}
                       />
                       {jsonError && (
-                        <p className="text-xs text-red-400 flex items-center gap-1">
+                        <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1.5">
                           <AlertCircle className="w-3 h-3" />
                           Invalid JSON: {jsonError}
                         </p>
                       )}
                       <div className="text-xs text-muted-foreground">
-                        <p className="mb-1">Available variables:</p>
-                        <div className="flex flex-wrap gap-1">
+                        <p className="mb-1.5">Available variables:</p>
+                        <div className="flex flex-wrap gap-1.5">
                           {SUPPORTED_VARIABLES.map((v) => (
                             <code
                               key={v}
-                              className="px-1.5 py-0.5 bg-muted rounded text-foreground"
+                              className={cn(
+                                'px-1.5 py-0.5 rounded',
+                                'bg-muted/50 text-foreground',
+                                'border border-border/50'
+                              )}
                             >
                               {`{{${v}}}`}
                             </code>
@@ -715,28 +925,30 @@ export function WebhookSettingsDialog({
                         </div>
                       </div>
                     </div>
-                  </>
+                  </div>
                 )}
 
                 {/* Test Result */}
                 {testResult && (
                   <div
-                    className={`p-3 rounded-lg border ${
+                    className={cn(
+                      'p-4 rounded-xl border',
                       testResult.success
-                        ? 'bg-green-900/20 border-green-700'
-                        : 'bg-red-900/20 border-red-700'
-                    }`}
+                        ? 'bg-green-500/5 dark:bg-green-500/10 border-green-500/30'
+                        : 'bg-red-500/5 dark:bg-red-500/10 border-red-500/30'
+                    )}
                   >
                     <div className="flex items-center gap-2 mb-2">
                       {testResult.success ? (
-                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <CheckCircle className="w-4 h-4 text-green-500" />
                       ) : (
-                        <AlertCircle className="w-4 h-4 text-red-400" />
+                        <AlertCircle className="w-4 h-4 text-red-500" />
                       )}
                       <span
-                        className={`text-sm font-medium ${
-                          testResult.success ? 'text-green-400' : 'text-red-400'
-                        }`}
+                        className={cn(
+                          'text-sm font-medium',
+                          testResult.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                        )}
                       >
                         {testResult.success ? 'Test Successful' : 'Test Failed'}
                       </span>
@@ -745,244 +957,320 @@ export function WebhookSettingsDialog({
                       {testResult.statusCode && <p>Status: {testResult.statusCode}</p>}
                       <p>Response time: {testResult.responseTime}ms</p>
                       {testResult.error && (
-                        <p className="text-red-400">Error: {testResult.error}</p>
+                        <p className="text-red-500 dark:text-red-400">Error: {testResult.error}</p>
                       )}
                     </div>
                   </div>
                 )}
               </div>
-            </>
-          ) : (
-            // ========================
-            // Incoming Webhook Tab
-            // ========================
-            <div className="space-y-4 mt-4">
-              {/* Usage hint */}
-              {!incomingEnabled && !incomingToken && (
-                <div className="bg-purple-500/10 dark:bg-purple-900/20 border border-purple-500/30 dark:border-purple-800/30 rounded-lg p-3 text-xs">
-                  <p className="font-medium mb-1 text-purple-700 dark:text-purple-300">Incoming Webhook</p>
-                  <p className="text-purple-600 dark:text-purple-400">
-                    Allow external systems to trigger this workflow via HTTP request. Use cases:
-                  </p>
-                  <ul className="mt-1 ml-4 list-disc text-purple-600/80 dark:text-purple-400/80">
-                    <li>Trigger from CI/CD pipeline</li>
-                    <li>Integrate with external automation tools</li>
-                    <li>Start workflow via cron job or scheduler</li>
-                  </ul>
-                </div>
-              )}
+            ) : (
+              // ========================
+              // Incoming Webhook Tab
+              // ========================
+              <div className="space-y-5">
+                {/* Usage hint */}
+                {!incomingEnabled && !incomingToken && (
+                  <div
+                    className={cn(
+                      'p-4 rounded-xl',
+                      'bg-purple-500/5 dark:bg-purple-500/10',
+                      'border border-purple-500/20',
+                      'text-xs'
+                    )}
+                  >
+                    <p className="font-medium mb-1.5 text-purple-700 dark:text-purple-300">
+                      Incoming Webhook
+                    </p>
+                    <p className="text-purple-600 dark:text-purple-400">
+                      Allow external systems to trigger this workflow via HTTP request. Use cases:
+                    </p>
+                    <ul className="mt-1.5 ml-4 list-disc text-purple-600/80 dark:text-purple-400/80 space-y-0.5">
+                      <li>Trigger from CI/CD pipeline</li>
+                      <li>Integrate with external automation tools</li>
+                      <li>Start workflow via cron job or scheduler</li>
+                    </ul>
+                  </div>
+                )}
 
-              {/* Server Status for this workflow */}
-              <div className="p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-foreground">Server Status</span>
-                  {isLoadingServerStatus ? (
-                    <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
-                  ) : workflowServerStatus?.running ? (
-                    <span className="flex items-center gap-1 text-xs text-green-400">
-                      <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-                      Running on port {workflowServerStatus.port}
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <span className="w-2 h-2 bg-muted rounded-full"></span>
-                      {incomingEnabled ? 'Will start on save' : 'Not running'}
-                    </span>
+                {/* Server Status for this workflow */}
+                <div
+                  className={cn(
+                    'p-4 rounded-xl',
+                    'bg-muted/30 dark:bg-muted/50',
+                    'border border-border/50'
                   )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Each workflow has its own dedicated server on the configured port.
-                </p>
-              </div>
-
-              {/* Port Configuration */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Server Port</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    value={incomingPort}
-                    onChange={(e) => setIncomingPort(parseInt(e.target.value) || DEFAULT_INCOMING_WEBHOOK_PORT)}
-                    min={1024}
-                    max={65535}
-                    className={`bg-background border-border text-foreground flex-1 ${
-                      isPortUsedByOther(portStatus) ? 'border-red-500' : ''
-                    }`}
-                  />
-                  {isCheckingPort && (
-                    <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
-                  )}
-                  {!isCheckingPort && isPortAvailable(portStatus) && (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  )}
-                  {!isCheckingPort && isPortUsedByOtherWorkflow(portStatus) && (
-                    <AlertCircle className="w-4 h-4 text-yellow-500" />
-                  )}
-                  {!isCheckingPort && isPortUsedByOther(portStatus) && (
-                    <AlertCircle className="w-4 h-4 text-red-500" />
-                  )}
-                </div>
-                <p className={`text-xs ${
-                  isPortUsedByOther(portStatus) ? 'text-red-400' :
-                  isPortUsedByOtherWorkflow(portStatus) ? 'text-yellow-400' : 'text-muted-foreground'
-                }`}>
-                  {isPortUsedByOther(portStatus)
-                    ? 'This port is in use by another service. Choose a different port.'
-                    : isPortUsedByOtherWorkflow(portStatus)
-                    ? `This port is used by workflow "${getPortStatusWorkflowName(portStatus!)}". Choose a different port.`
-                    : 'Port number for this workflow\'s webhook server (1024-65535).'}
-                </p>
-              </div>
-
-              {/* Enable/Disable Toggle */}
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">Enable Incoming Webhook</span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={incomingEnabled}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${
-                    incomingEnabled ? 'bg-purple-600' : 'bg-muted'
-                  }`}
-                  onClick={() => {
-                    if (!incomingToken) {
-                      handleInitIncomingConfig();
-                    } else {
-                      handleToggleIncoming(!incomingEnabled);
-                    }
-                  }}
                 >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                      incomingEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-foreground">Server Status</span>
+                    {isLoadingServerStatus ? (
+                      <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+                    ) : workflowServerStatus?.running ? (
+                      <span className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                        Running on port {workflowServerStatus.port}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="w-2 h-2 bg-muted-foreground/50 rounded-full"></span>
+                        {incomingEnabled ? 'Will start on save' : 'Not running'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Each workflow has its own dedicated server on the configured port.
+                  </p>
+                </div>
 
-              {/* Token & URL Section */}
-              {incomingToken && (
-                <>
-                  {/* API Token */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-foreground">API Token</label>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleRegenerateToken}
-                        disabled={isRegeneratingToken}
-                        className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 text-xs"
-                      >
-                        {isRegeneratingToken ? (
-                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-3 h-3 mr-1" />
-                        )}
-                        Regenerate
-                      </Button>
+                {/* Port Configuration */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Server Port</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={incomingPort}
+                      onChange={(e) => setIncomingPort(parseInt(e.target.value) || DEFAULT_INCOMING_WEBHOOK_PORT)}
+                      min={1024}
+                      max={65535}
+                      className={cn(
+                        'bg-background border-border text-foreground flex-1',
+                        'focus:border-purple-500 focus:ring-purple-500/20',
+                        isPortUsedByOther(portStatus) && 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
+                      )}
+                    />
+                    {isCheckingPort && (
+                      <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+                    )}
+                    {!isCheckingPort && isPortAvailable(portStatus) && (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    )}
+                    {!isCheckingPort && isPortUsedByOtherWorkflow(portStatus) && (
+                      <AlertCircle className="w-4 h-4 text-yellow-500" />
+                    )}
+                    {!isCheckingPort && isPortUsedByOther(portStatus) && (
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                    )}
+                  </div>
+                  <p className={cn(
+                    'text-xs',
+                    isPortUsedByOther(portStatus)
+                      ? 'text-red-500 dark:text-red-400'
+                      : isPortUsedByOtherWorkflow(portStatus)
+                        ? 'text-yellow-600 dark:text-yellow-400'
+                        : 'text-muted-foreground'
+                  )}>
+                    {isPortUsedByOther(portStatus)
+                      ? 'This port is in use by another service. Choose a different port.'
+                      : isPortUsedByOtherWorkflow(portStatus)
+                        ? `This port is used by workflow "${getPortStatusWorkflowName(portStatus!)}". Choose a different port.`
+                        : 'Port number for this workflow\'s webhook server (1024-65535).'}
+                  </p>
+                </div>
+
+                {/* Enable/Disable Toggle */}
+                <div
+                  className={cn(
+                    'flex items-center justify-between p-4',
+                    'bg-muted/30 dark:bg-muted/50 rounded-xl',
+                    'border border-border/50',
+                    'transition-colors duration-150'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        'w-8 h-8 rounded-lg',
+                        'flex items-center justify-center',
+                        'bg-background border border-border'
+                      )}
+                    >
+                      <Bell className="w-4 h-4 text-muted-foreground" />
                     </div>
-                    <div className="flex gap-2">
+                    <span className="text-sm font-medium text-foreground">Enable Incoming Webhook</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={incomingEnabled}
+                    className={cn(
+                      'relative w-11 h-6 rounded-full transition-colors duration-200',
+                      'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
+                      incomingEnabled ? 'bg-purple-600' : 'bg-muted'
+                    )}
+                    onClick={() => {
+                      if (!incomingToken) {
+                        handleInitIncomingConfig();
+                      } else {
+                        handleToggleIncoming(!incomingEnabled);
+                      }
+                    }}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm',
+                        'transition-transform duration-200',
+                        incomingEnabled ? 'translate-x-5' : 'translate-x-0'
+                      )}
+                    />
+                  </button>
+                </div>
+
+                {/* Token & URL Section */}
+                {incomingToken && (
+                  <div className="space-y-5">
+                    {/* API Token */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-foreground">API Token</label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRegenerateToken}
+                          disabled={isRegeneratingToken}
+                          className={cn(
+                            'text-purple-600 dark:text-purple-400',
+                            'hover:text-purple-700 dark:hover:text-purple-300',
+                            'hover:bg-purple-500/10',
+                            'text-xs'
+                          )}
+                        >
+                          {isRegeneratingToken ? (
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3 mr-1" />
+                          )}
+                          Regenerate
+                        </Button>
+                      </div>
                       <Input
                         value={incomingToken}
                         readOnly
-                        className="bg-background border-border text-muted-foreground font-mono text-xs flex-1"
+                        className="bg-muted/30 border-border text-muted-foreground font-mono text-xs"
                       />
+                      {incomingTokenCreatedAt && (
+                        <p className="text-xs text-muted-foreground">
+                          Created: {new Date(incomingTokenCreatedAt).toLocaleString()}
+                        </p>
+                      )}
                     </div>
-                    {incomingTokenCreatedAt && (
+
+                    {/* Webhook URL */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Webhook URL</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={generateWebhookUrl(incomingPort, incomingToken)}
+                          readOnly
+                          className="bg-muted/30 border-border text-muted-foreground font-mono text-xs flex-1"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={handleCopyUrl}
+                          className={cn(
+                            'px-3 border-border',
+                            'transition-all duration-150',
+                            copySuccess
+                              ? 'text-green-500 border-green-500 bg-green-500/10'
+                              : 'text-foreground hover:bg-accent hover:border-purple-500/50'
+                          )}
+                        >
+                          {copySuccess ? (
+                            <CheckCircle className="w-4 h-4" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        Created: {new Date(incomingTokenCreatedAt).toLocaleString()}
+                        POST request to this URL will trigger the workflow.
                       </p>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Webhook URL */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Webhook URL</label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={generateWebhookUrl(incomingPort, incomingToken)}
-                        readOnly
-                        className="bg-background border-border text-muted-foreground font-mono text-xs flex-1"
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={handleCopyUrl}
-                        className={`px-3 ${
-                          copySuccess
-                            ? 'text-green-400 border-green-600'
-                            : 'text-foreground border-border hover:bg-accent'
-                        }`}
-                      >
-                        {copySuccess ? (
-                          <CheckCircle className="w-4 h-4" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
+                    {/* Usage Example */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Usage Example</label>
+                      <div
+                        className={cn(
+                          'bg-muted/30 border border-border rounded-lg p-3',
+                          'overflow-x-auto'
                         )}
-                      </Button>
+                      >
+                        <code className="text-xs text-foreground font-mono whitespace-pre-wrap break-all">
+                          {`curl -X POST "${generateWebhookUrl(incomingPort, incomingToken)}"`}
+                        </code>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      POST request to this URL will trigger the workflow.
-                    </p>
                   </div>
+                )}
+              </div>
+            )}
+          </div>
 
-                  {/* Usage Example */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Usage Example</label>
-                    <div className="bg-background border border-border rounded-lg p-3">
-                      <code className="text-xs text-foreground font-mono whitespace-pre-wrap break-all">
-{`curl -X POST "${generateWebhookUrl(incomingPort, incomingToken)}"`}
-                      </code>
-                    </div>
-                  </div>
-                </>
-              )}
+          {/* Footer with actions */}
+          <div
+            className={cn(
+              'px-6 py-4',
+              'border-t border-border',
+              'bg-card/50',
+              'flex items-center justify-between gap-4',
+              'flex-shrink-0'
+            )}
+          >
+            {/* Left side - Test button for outgoing tab */}
+            {activeTab === 'outgoing' ? (
+              <Button
+                variant="outline"
+                onClick={handleTest}
+                disabled={!enabled || !url || !!urlError || !!jsonError || isTesting}
+                className={cn(
+                  'border-purple-500/50 text-purple-600 dark:text-purple-400',
+                  'hover:bg-purple-500/10 hover:border-purple-500',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  'transition-all duration-150'
+                )}
+              >
+                {isTesting ? (
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4 mr-1.5" />
+                )}
+                Test Webhook
+              </Button>
+            ) : (
+              <div /> // Empty div for spacing
+            )}
+
+            {/* Right side - Action buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onClose}
+                className={cn(
+                  'px-4 py-2 rounded-lg',
+                  'text-sm font-medium',
+                  'text-muted-foreground hover:text-foreground',
+                  'hover:bg-accent',
+                  'border border-transparent hover:border-border',
+                  'transition-all duration-150',
+                  'focus:outline-none focus:ring-2 focus:ring-ring'
+                )}
+              >
+                Cancel
+              </button>
+              <Button
+                onClick={handleSave}
+                disabled={(enabled && (!url || !!urlError || !!jsonError)) || isPortUsedByOther(portStatus) || isPortUsedByOtherWorkflow(portStatus)}
+                className={cn(
+                  'bg-purple-600 hover:bg-purple-500 text-white',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  'transition-colors duration-150'
+                )}
+              >
+                <Webhook className="w-4 h-4 mr-1.5" />
+                Save Settings
+              </Button>
             </div>
-          )}
-        </div>
-
-        {/* Fixed footer */}
-        <div className="flex justify-between items-center mt-4 pt-4 border-t border-border flex-shrink-0">
-          {activeTab === 'outgoing' ? (
-            <Button
-              variant="outline"
-              onClick={handleTest}
-              disabled={!enabled || !url || !!urlError || !!jsonError || isTesting}
-              className="text-purple-600 dark:text-purple-400 border-purple-600 hover:bg-purple-600/20"
-            >
-              {isTesting ? (
-                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-              ) : (
-                <Play className="w-4 h-4 mr-1.5" />
-              )}
-              Test Webhook
-            </Button>
-          ) : (
-            <div /> // Empty div for spacing
-          )}
-
-          <div className="flex gap-3">
-            <Button
-              variant="ghost"
-              onClick={onClose}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={(enabled && (!url || !!urlError || !!jsonError)) || isPortUsedByOther(portStatus) || isPortUsedByOtherWorkflow(portStatus)}
-              className="bg-purple-600 hover:bg-purple-500 text-white"
-            >
-              <Webhook className="w-4 h-4 mr-1.5" />
-              Save Settings
-            </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

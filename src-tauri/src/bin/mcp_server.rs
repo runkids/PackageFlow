@@ -2347,7 +2347,15 @@ impl ServerHandler for PackageFlowMcp {
             let duration_ms = start_time.elapsed().as_millis() as u64;
 
             // Log the request
-            if config.log_requests {
+            // Note: Write and Execute operations are ALWAYS logged (for MCP trigger detection),
+            // regardless of log_requests setting. This enables DatabaseWatcher to distinguish
+            // MCP-triggered operations from manual UI operations for desktop notifications.
+            let tool_category = get_tool_category(&tool_name);
+            let should_log = config.log_requests
+                || tool_category == ToolCategory::Write
+                || tool_category == ToolCategory::Execute;
+
+            if should_log {
                 match &result {
                     Ok(call_result) => {
                         let result_status = if call_result.is_error.unwrap_or(false) {

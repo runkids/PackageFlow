@@ -149,29 +149,27 @@ export function ShortcutEditor({
               {recordedKey ? formatShortcutKey(recordedKey) : 'Press...'}
             </div>
             {recordedKey && (
-              <>
-                <button
-                  onClick={confirmRecording}
-                  disabled={conflict?.hasConflict}
-                  className={cn(
-                    'p-1 rounded transition-colors',
-                    conflict?.hasConflict
-                      ? 'text-muted-foreground cursor-not-allowed'
-                      : 'text-green-400 hover:bg-green-500/20'
-                  )}
-                  title="Confirm"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={cancelRecording}
-                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                  title="Cancel"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </>
+              <button
+                onClick={confirmRecording}
+                disabled={conflict?.hasConflict}
+                className={cn(
+                  'p-1 rounded transition-colors',
+                  conflict?.hasConflict
+                    ? 'text-muted-foreground cursor-not-allowed'
+                    : 'text-green-400 hover:bg-green-500/20'
+                )}
+                title="Confirm"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
             )}
+            <button
+              onClick={cancelRecording}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              title="Cancel"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </>
         ) : (
           <>

@@ -229,7 +229,7 @@ function CategoryGroup({
       {/* Category Header - Clickable to collapse */}
       <button
         onClick={onToggleCollapse}
-        className="w-full sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-secondary border border-border rounded-lg mb-1 -mx-0.5 hover:bg-secondary/80 transition-colors group"
+        className="w-full sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-muted/80 dark:bg-muted/50 border border-border rounded-lg mb-1 -mx-0.5 hover:bg-muted transition-colors group backdrop-blur-sm"
       >
         <span className="text-muted-foreground transition-transform duration-200">
           {isCollapsed ? (

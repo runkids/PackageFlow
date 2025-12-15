@@ -13,7 +13,11 @@ import { SettingsButton } from './components/settings/SettingsButton';
 import { SettingsPage } from './components/settings/SettingsPage';
 import type { SettingsSection } from './types/settings';
 import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
-import { KeyboardShortcutsHint, ShortcutToast } from './components/ui/KeyboardShortcutsHint';
+import { ShortcutToast } from './components/ui/KeyboardShortcutsHint';
+import {
+  KeyboardShortcutsDialog,
+  KeyboardShortcutsFloatingButton,
+} from './components/ui/KeyboardShortcutsDialog';
 import { ScriptPtyTerminal, type ScriptPtyTerminalRef } from './components/terminal';
 import { useUpdater } from './hooks/useUpdater';
 import { useMcpStatus } from './hooks/useMcpStatus';
@@ -89,6 +93,7 @@ function App() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('storage');
   const [dataVersion, setDataVersion] = useState(0);
   const [shortcutToast, setShortcutToast] = useState<{ message: string; key: string } | null>(null);
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const mcpStatus = useMcpStatus();
 
   const showShortcutToast = useCallback((message: string, key: string) => {
@@ -414,7 +419,7 @@ function App() {
       category: 'Help',
       enabled: isShortcutEnabled('help'),
       action: () => {
-        window.dispatchEvent(new CustomEvent('open-shortcuts-hint'));
+        setShortcutsDialogOpen(true);
       },
     },
     {
@@ -656,7 +661,15 @@ function App() {
         }}
       />
 
-      <KeyboardShortcutsHint
+      <KeyboardShortcutsFloatingButton
+        onClick={() => setShortcutsDialogOpen(true)}
+        position="bottom-right"
+        bottomOffset={64}
+      />
+
+      <KeyboardShortcutsDialog
+        open={shortcutsDialogOpen}
+        onOpenChange={setShortcutsDialogOpen}
         shortcuts={displayShortcuts}
         onCustomize={() => openSettings('shortcuts')}
       />

@@ -27,7 +27,6 @@ import {
 } from '../../../lib/tauri-api';
 import { cn } from '../../../lib/utils';
 import { Skeleton } from '../../ui/Skeleton';
-import { Toggle } from '../../ui/Toggle';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/Tabs';
 import {
   ServerStatusCard,
@@ -284,10 +283,10 @@ const PermissionsTab: React.FC<PermissionsTabProps> = ({
           {/* Read Tools */}
           {groupedTools.read.length > 0 && (
             <div>
-              <div className="sticky top-0 z-10 px-3 py-2 bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800">
+              <div className="sticky top-0 z-10 px-3 py-2 bg-muted/80 dark:bg-muted/50 border-b border-border backdrop-blur-sm">
                 <div className="flex items-center gap-2">
-                  <Eye className="w-3.5 h-3.5 text-blue-500" />
-                  <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                  <Eye className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                  <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
                     Read Tools ({groupedTools.read.length})
                   </span>
                 </div>
@@ -306,10 +305,10 @@ const PermissionsTab: React.FC<PermissionsTabProps> = ({
           {/* Execute Tools */}
           {groupedTools.execute.length > 0 && (
             <div>
-              <div className="sticky top-0 z-10 px-3 py-2 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800">
+              <div className="sticky top-0 z-10 px-3 py-2 bg-muted/80 dark:bg-muted/50 border-b border-border backdrop-blur-sm">
                 <div className="flex items-center gap-2">
-                  <Play className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                  <Play className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                  <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
                     Execute Tools ({groupedTools.execute.length})
                   </span>
                 </div>
@@ -328,10 +327,10 @@ const PermissionsTab: React.FC<PermissionsTabProps> = ({
           {/* Write Tools */}
           {groupedTools.write.length > 0 && (
             <div>
-              <div className="sticky top-0 z-10 px-3 py-2 bg-rose-50 dark:bg-rose-950 border-b border-rose-200 dark:border-rose-800">
+              <div className="sticky top-0 z-10 px-3 py-2 bg-muted/80 dark:bg-muted/50 border-b border-border backdrop-blur-sm">
                 <div className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-rose-500" />
-                  <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider">
+                  <Shield className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />
+                  <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
                     Write Tools ({groupedTools.write.length})
                   </span>
                 </div>
@@ -377,23 +376,17 @@ const SetupTab: React.FC<SetupTabProps> = ({ serverInfo }) => {
 // ============================================================================
 
 interface LogsTabProps {
-  config: McpServerConfig;
   logsResponse: McpLogsResponse | null;
   isLoadingLogs: boolean;
-  onToggleLogRequests: (enabled: boolean) => void;
   onLoadLogs: () => void;
   onClearLogs: () => void;
-  isSaving: boolean;
 }
 
 const LogsTab: React.FC<LogsTabProps> = ({
-  config,
   logsResponse,
   isLoadingLogs,
-  onToggleLogRequests,
   onLoadLogs,
   onClearLogs,
-  isSaving,
 }) => {
   const formatTimestamp = (timestamp: string): string => {
     try {
@@ -412,31 +405,8 @@ const LogsTab: React.FC<LogsTabProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Log Settings */}
-      <div className="p-4 border border-border rounded-lg bg-card/50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <FileText className="w-4 h-4 text-muted-foreground" />
-            <div>
-              <span className="text-sm font-medium text-foreground">Request Logging</span>
-              <p className="text-xs text-muted-foreground">
-                Record all MCP tool calls for debugging
-              </p>
-            </div>
-          </div>
-          <Toggle
-            checked={config.logRequests}
-            onChange={onToggleLogRequests}
-            disabled={isSaving}
-            size="sm"
-            aria-label="Enable request logging"
-          />
-        </div>
-      </div>
-
-      {/* Logs Viewer */}
-      {config.logRequests && (
-        <div className="border border-border rounded-lg overflow-hidden">
+      {/* Logs Viewer - Always visible since write/execute operations are always logged */}
+      <div className="border border-border rounded-lg overflow-hidden">
           {/* Logs Header */}
           <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b border-border">
             <div className="flex items-center gap-2">
@@ -533,16 +503,6 @@ const LogsTab: React.FC<LogsTabProps> = ({
             )}
           </div>
         </div>
-      )}
-
-      {!config.logRequests && (
-        <div className="p-6 border border-border rounded-lg bg-muted/20 text-center">
-          <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">
-            Enable request logging to view MCP tool call history
-          </p>
-        </div>
-      )}
     </div>
   );
 };
@@ -700,21 +660,6 @@ export function McpSettingsFullPanel() {
     }
   }, [config, isSaving, permissionMatrix]);
 
-  // Handle log requests toggle
-  const handleToggleLogRequests = useCallback(async (enabled: boolean) => {
-    if (!config || isSaving) return;
-
-    setIsSaving(true);
-    try {
-      const updatedConfig = await mcpAPI.updateConfig({ logRequests: enabled });
-      setConfig(updatedConfig);
-    } catch (err) {
-      console.error('Failed to toggle log requests:', err);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [config, isSaving]);
-
   // Load logs
   const handleLoadLogs = useCallback(async () => {
     setIsLoadingLogs(true);
@@ -845,13 +790,10 @@ export function McpSettingsFullPanel() {
 
           <TabsContent value="logs">
             <LogsTab
-              config={config}
               logsResponse={logsResponse}
               isLoadingLogs={isLoadingLogs}
-              onToggleLogRequests={handleToggleLogRequests}
               onLoadLogs={handleLoadLogs}
               onClearLogs={handleClearLogs}
-              isSaving={isSaving}
             />
           </TabsContent>
         </Tabs>

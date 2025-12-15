@@ -111,6 +111,79 @@ function getCategoryColorScheme(category: TemplateCategory) {
   return CATEGORY_COLOR_SCHEMES[category] || CATEGORY_COLOR_SCHEMES.custom;
 }
 
+// Get default template content for a category (extracted for initial state usage)
+function getDefaultTemplateContentForCategory(category: TemplateCategory): string {
+  const outputInstructions = `
+IMPORTANT: Output ONLY the requested content. No thinking process, no explanation, no XML tags, no markdown code blocks wrapping the output.`;
+
+  switch (category) {
+    case 'git_commit':
+      return `Generate a Git commit message following Conventional Commits format.
+
+Format: <type>(<scope>): <description>
+
+Types: feat|fix|docs|style|refactor|test|chore
+
+Changes:
+{diff}
+${outputInstructions} Just the plain commit message text.`;
+    case 'pull_request':
+      return `Generate a pull request description based on the following:
+
+Branch: {branch}
+Base branch: {base_branch}
+
+Commits:
+{commits}
+
+Code changes:
+{diff}
+
+Create a PR description with:
+1. A brief summary (1-2 sentences)
+2. Key changes (bullet points)
+3. Breaking changes if applicable
+
+Use markdown formatting for the content.`;
+    case 'code_review':
+      return `Review the following code changes:
+
+File: {file_path}
+
+{diff}
+
+Provide feedback on:
+1. Code quality
+2. Potential issues
+3. Suggestions for improvement`;
+    case 'documentation':
+      return `Generate documentation for the following code:
+
+File: {file_path}
+Function: {function_name}
+
+{code}
+
+Create clear and concise documentation.`;
+    case 'release_notes':
+      return `Generate release notes for version {version} (previous: {previous_version}):
+
+Commits:
+{commits}
+
+Create release notes with sections for:
+- New Features
+- Bug Fixes
+- Improvements
+- Breaking Changes`;
+    default:
+      return `Process the following input:
+
+{input}
+${outputInstructions}`;
+  }
+}
+
 // ============================================================================
 // Loading & Error States
 // ============================================================================
@@ -1054,14 +1127,14 @@ export function PromptTemplatePanel() {
   const [deleteTarget, setDeleteTarget] = useState<PromptTemplate | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Form state
-  const [formData, setFormData] = useState<AddTemplateRequest>({
+  // Form state - initialize with default template content for git_commit
+  const [formData, setFormData] = useState<AddTemplateRequest>(() => ({
     name: '',
     description: '',
     category: 'git_commit',
-    template: '',
+    template: getDefaultTemplateContentForCategory('git_commit'),
     outputFormat: 'conventional_commits',
-  });
+  }));
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1135,77 +1208,9 @@ export function PromptTemplatePanel() {
   const builtinCount = useMemo(() => templates.filter((t) => t.isBuiltin).length, [templates]);
   const customCount = useMemo(() => templates.filter((t) => !t.isBuiltin).length, [templates]);
 
-  // Get default template content for a category
+  // Get default template content for a category (wrapper for the extracted function)
   const getDefaultTemplateContent = useCallback((category: TemplateCategory): string => {
-    const outputInstructions = `
-IMPORTANT: Output ONLY the requested content. No thinking process, no explanation, no XML tags, no markdown code blocks wrapping the output.`;
-
-    switch (category) {
-      case 'git_commit':
-        return `Generate a Git commit message following Conventional Commits format.
-
-Format: <type>(<scope>): <description>
-
-Types: feat|fix|docs|style|refactor|test|chore
-
-Changes:
-{diff}
-${outputInstructions} Just the plain commit message text.`;
-      case 'pull_request':
-        return `Generate a pull request description based on the following:
-
-Branch: {branch}
-Base branch: {base_branch}
-
-Commits:
-{commits}
-
-Code changes:
-{diff}
-
-Create a PR description with:
-1. A brief summary (1-2 sentences)
-2. Key changes (bullet points)
-3. Breaking changes if applicable
-
-Use markdown formatting for the content.`;
-      case 'code_review':
-        return `Review the following code changes:
-
-File: {file_path}
-
-{diff}
-
-Provide feedback on:
-1. Code quality
-2. Potential issues
-3. Suggestions for improvement`;
-      case 'documentation':
-        return `Generate documentation for the following code:
-
-File: {file_path}
-Function: {function_name}
-
-{code}
-
-Create clear and concise documentation.`;
-      case 'release_notes':
-        return `Generate release notes for version {version} (previous: {previous_version}):
-
-Commits:
-{commits}
-
-Create release notes with sections for:
-- New Features
-- Bug Fixes
-- Improvements
-- Breaking Changes`;
-      default:
-        return `Process the following input:
-
-{input}
-${outputInstructions}`;
-    }
+    return getDefaultTemplateContentForCategory(category);
   }, []);
 
   // Handle category change - update template content with default

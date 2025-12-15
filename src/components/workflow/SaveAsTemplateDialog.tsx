@@ -4,10 +4,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog';
+import { Dialog, DialogContent } from '../ui/Dialog';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Star, Terminal, FolderOpen } from 'lucide-react';
+import { cn } from '../../lib/utils';
 import type { WorkflowNode } from '../../types/workflow';
 import { isScriptNodeConfig } from '../../types/workflow';
 
@@ -56,17 +57,44 @@ export function SaveAsTemplateDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-foreground flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-yellow-600 flex items-center justify-center">
-              <Star className="w-4 h-4 text-white" />
+      <DialogContent className={cn(
+        'bg-background border-yellow-500/30 max-w-md p-0 overflow-hidden',
+        'shadow-2xl shadow-black/60'
+      )}>
+        {/* Header with gradient background and icon badge */}
+        <div className={cn(
+          'relative px-6 py-5',
+          'border-b border-border',
+          'bg-gradient-to-r',
+          'dark:from-yellow-500/15 dark:via-yellow-600/5 dark:to-transparent',
+          'from-yellow-500/10 via-yellow-600/5 to-transparent'
+        )}>
+          <div className="flex items-center gap-4">
+            {/* Icon badge */}
+            <div className={cn(
+              'flex-shrink-0',
+              'w-12 h-12 rounded-xl',
+              'flex items-center justify-center',
+              'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+              'border',
+              'bg-yellow-500/10 border-yellow-500/20',
+              'shadow-lg'
+            )}>
+              <Star className="w-6 h-6 text-yellow-500" />
             </div>
-            Save as Template
-          </DialogTitle>
-        </DialogHeader>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-foreground leading-tight">
+                Save as Template
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Save this step as a reusable template for future workflows
+              </p>
+            </div>
+          </div>
+        </div>
 
-        <div className="space-y-4 mt-4" onKeyDown={handleKeyDown}>
+        {/* Content area */}
+        <div className="px-6 py-4 space-y-4" onKeyDown={handleKeyDown}>
           {/* Template Name */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -107,7 +135,13 @@ export function SaveAsTemplateDialog({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
+        {/* Footer with actions */}
+        <div className={cn(
+          'px-6 py-4',
+          'border-t border-border',
+          'bg-card/50',
+          'flex justify-end gap-3'
+        )}>
           <Button
             variant="ghost"
             onClick={onClose}

@@ -16,7 +16,7 @@ import { useWorkflow } from '../../hooks/useWorkflow';
 import { useTerminal, useExecutionListener } from '../../hooks/useTerminal';
 import { useExecutionHistoryContext } from '../../contexts/ExecutionHistoryContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/Dialog';
+import { Dialog, DialogContent } from '../ui/Dialog';
 import { SaveAsTemplateDialog } from './SaveAsTemplateDialog';
 import { WebhookSettingsDialog } from './WebhookSettingsDialog';
 import type { WebhookConfig } from '../../types/webhook';
@@ -94,26 +94,58 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="text-foreground flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-              <Plus className="w-4 h-4 text-white" />
+      <DialogContent className={cn(
+        'bg-background border-blue-500/30 max-w-2xl max-h-[90vh] p-0 overflow-hidden',
+        'shadow-2xl shadow-black/60',
+        'flex flex-col'
+      )}>
+        {/* Header with gradient background and icon badge */}
+        <div className={cn(
+          'relative px-6 py-5',
+          'border-b border-border',
+          'bg-gradient-to-r',
+          'dark:from-blue-500/15 dark:via-blue-600/5 dark:to-transparent',
+          'from-blue-500/10 via-blue-600/5 to-transparent'
+        )}>
+          <div className="flex items-center gap-4">
+            {/* Icon badge */}
+            <div className={cn(
+              'flex-shrink-0',
+              'w-12 h-12 rounded-xl',
+              'flex items-center justify-center',
+              'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+              'border',
+              'bg-blue-500/10 border-blue-500/20',
+              'shadow-lg'
+            )}>
+              <Plus className="w-6 h-6 text-blue-400" />
             </div>
-            {isInsertMode ? `Insert Step at Position ${insertIndex + 1}` : 'Add New Step'}
-          </DialogTitle>
-        </DialogHeader>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-foreground leading-tight">
+                {isInsertMode ? `Insert Step at Position ${insertIndex + 1}` : 'Add New Step'}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isInsertMode
+                  ? 'Insert a new step into your workflow at the specified position'
+                  : 'Choose a template or create a custom step for your workflow'
+                }
+              </p>
+            </div>
+          </div>
+        </div>
 
-        {/* Tab Buttons */}
-        <div className="flex border-b border-border mt-2">
+        {/* Tab Buttons - Enhanced design */}
+        <div className="flex gap-2 px-6 py-3 border-b border-border bg-card/30">
           <button
             type="button"
             onClick={() => setActiveTab('templates')}
             className={cn(
-              'flex-1 px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors',
+              'flex-1 px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2',
+              'rounded-lg transition-all duration-150',
+              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
               activeTab === 'templates'
-                ? 'text-blue-400 border-b-2 border-blue-500'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-blue-600/20 text-blue-400 ring-1 ring-blue-500/50'
+                : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary'
             )}
           >
             <LayoutTemplate className="w-4 h-4" />
@@ -123,10 +155,12 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
             type="button"
             onClick={() => setActiveTab('custom')}
             className={cn(
-              'flex-1 px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors',
+              'flex-1 px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2',
+              'rounded-lg transition-all duration-150',
+              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
               activeTab === 'custom'
-                ? 'text-blue-400 border-b-2 border-blue-500'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-blue-600/20 text-blue-400 ring-1 ring-blue-500/50'
+                : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary'
             )}
           >
             <PenLine className="w-4 h-4" />
@@ -134,7 +168,7 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 px-1 -mx-1 mt-4">
+        <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4">
         {activeTab === 'templates' ? (
           <div>
             <TemplateSelector
@@ -147,7 +181,7 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
             {selectedTemplateId && (
               <div className="flex items-center gap-2 px-3 py-2 bg-blue-600/10 border border-blue-600/30 rounded-lg">
                 <LayoutTemplate className="w-4 h-4 text-blue-400" />
-                <span className="text-xs text-blue-300">Based on template - feel free to customize</span>
+                <span className="text-xs text-blue-400 dark:text-blue-300">Based on template - feel free to customize</span>
               </div>
             )}
 
@@ -188,9 +222,9 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
                 )}
               />
               {hasRmCommand && (
-                <div className="flex items-start gap-2 mt-2 p-2.5 rounded-lg bg-amber-900/30 border border-amber-700/50">
-                  <Trash2 className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-                  <p className="text-xs text-amber-300">
+                <div className="flex items-start gap-2 mt-2 p-2.5 rounded-lg bg-amber-500/10 dark:bg-amber-900/30 border border-amber-500/30 dark:border-amber-700/50">
+                  <Trash2 className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
                     <span className="font-medium">Safe Delete:</span> Files will be moved to Trash instead of being permanently deleted.
                   </p>
                 </div>
@@ -216,9 +250,10 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
               onClick={() => setSaveAsTemplate(!saveAsTemplate)}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all w-full text-left',
+                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
                 saveAsTemplate
                   ? 'border-yellow-500/50 bg-yellow-500/10'
-                  : 'border-border bg-muted/50 hover:border-accent'
+                  : 'border-border bg-muted/50 hover:border-accent hover:bg-accent/50'
               )}
             >
               <div className={cn(
@@ -228,7 +263,7 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
                 <Star className={cn('w-3 h-3', saveAsTemplate ? 'text-background' : 'text-muted-foreground')} />
               </div>
               <div className="flex-1">
-                <span className={cn('text-sm', saveAsTemplate ? 'text-yellow-400' : 'text-foreground')}>
+                <span className={cn('text-sm', saveAsTemplate ? 'text-yellow-600 dark:text-yellow-400' : 'text-foreground')}>
                   Save as Template
                 </span>
               </div>
@@ -238,7 +273,14 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
         )}
         </div>
 
-        <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-border flex-shrink-0">
+        {/* Footer with actions */}
+        <div className={cn(
+          'px-6 py-4',
+          'border-t border-border',
+          'bg-card/50',
+          'flex justify-end gap-3',
+          'flex-shrink-0'
+        )}>
           <Button variant="ghost" onClick={onClose} className="text-muted-foreground hover:text-foreground">
             Cancel
           </Button>

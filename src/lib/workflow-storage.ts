@@ -109,6 +109,7 @@ export async function loadWorkflowsByProject(projectId: string | undefined): Pro
 export async function saveWorkflow(workflow: Workflow): Promise<SaveResponse> {
   try {
     console.log('[workflow-storage] saveWorkflow called');
+    console.log('[workflow-storage] workflow.projectId:', workflow.projectId);
     console.log('[workflow-storage] workflow.incomingWebhook:', workflow.incomingWebhook);
     console.log('[workflow-storage] workflow.incomingWebhook?.token length:', workflow.incomingWebhook?.token?.length);
 
@@ -117,6 +118,7 @@ export async function saveWorkflow(workflow: Workflow): Promise<SaveResponse> {
       updatedAt: new Date().toISOString(),
     };
 
+    console.log('[workflow-storage] updatedWorkflow.projectId:', updatedWorkflow.projectId);
     console.log('[workflow-storage] updatedWorkflow.incomingWebhook:', updatedWorkflow.incomingWebhook);
     await workflowAPI.saveWorkflow(updatedWorkflow);
 
