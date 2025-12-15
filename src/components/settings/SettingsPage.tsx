@@ -12,6 +12,7 @@ import { SettingsSidebar } from './SettingsSidebar';
 import { SettingsContent } from './SettingsContent';
 import { Toggle } from '../ui/Toggle';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface SettingsPageProps {
   isOpen: boolean;
@@ -36,37 +37,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   // Settings context for path display format
   const { pathDisplayFormat, setPathDisplayFormat } = useSettings();
-
-  // Theme state
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      return document.documentElement.classList.contains('dark')
-        ? 'dark'
-        : 'light';
-    }
-    return 'dark';
-  });
-
-  // Theme: apply changes to DOM and localStorage
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  // Theme: load from localStorage or system preference on mount
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
-    }
-  }, []);
+  const { theme, setTheme } = useTheme();
 
   // Toggle path display format
   const togglePathFormat = useCallback(async () => {

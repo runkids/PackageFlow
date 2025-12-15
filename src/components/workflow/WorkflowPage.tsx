@@ -328,6 +328,7 @@ export function WorkflowPage({
 
   return (
     <div className="flex h-full bg-background">
+      
       <div className="w-60 shrink-0 border-r border-border">
         <WorkflowSidebar
           workflows={workflows}

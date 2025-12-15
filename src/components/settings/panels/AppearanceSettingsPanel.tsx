@@ -3,42 +3,16 @@
  * Configure visual settings like theme and path display format
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { Palette, Sun, Moon, FolderTree } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
+import { useTheme } from '../../../contexts/ThemeContext';
 import { Toggle } from '../../ui/Toggle';
 import { cn } from '../../../lib/utils';
 
 export const AppearanceSettingsPanel: React.FC = () => {
   const { pathDisplayFormat, setPathDisplayFormat } = useSettings();
-
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-    }
-    return 'dark';
-  });
-
-  // Theme: apply changes to DOM and localStorage
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  // Theme: load from localStorage or system preference on mount
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
-    }
-  }, []);
+  const { theme, setTheme } = useTheme();
 
   // Toggle path display format
   const togglePathFormat = useCallback(async () => {
@@ -72,12 +46,16 @@ export const AppearanceSettingsPanel: React.FC = () => {
             icon={<Sun className="w-5 h-5" />}
             isActive={theme === 'light'}
             onClick={() => setTheme('light')}
+            activeCardClassName="border-amber-500 bg-amber-500/10 text-amber-500"
+            activeIconClassName="bg-amber-500 text-white"
           />
           <ThemeCard
             label="Dark"
             icon={<Moon className="w-5 h-5" />}
             isActive={theme === 'dark'}
             onClick={() => setTheme('dark')}
+            activeCardClassName="border-blue-400 bg-blue-400/10 text-blue-400"
+            activeIconClassName="bg-blue-400 text-white"
           />
         </div>
       </div>
@@ -107,22 +85,24 @@ interface ThemeCardProps {
   icon: React.ReactNode;
   isActive: boolean;
   onClick: () => void;
+  activeCardClassName?: string;
+  activeIconClassName?: string;
 }
 
-const ThemeCard: React.FC<ThemeCardProps> = ({ label, icon, isActive, onClick }) => (
+const ThemeCard: React.FC<ThemeCardProps> = ({ label, icon, isActive, onClick, activeCardClassName, activeIconClassName }) => (
   <button
     onClick={onClick}
     className={cn(
       'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
       isActive
-        ? 'border-primary bg-primary/10'
+        ? activeCardClassName || 'border-primary bg-primary/10'
         : 'border-border hover:border-primary/50 hover:bg-accent/50'
     )}
   >
     <div
       className={cn(
         'p-3 rounded-full',
-        isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+        isActive ? activeIconClassName || 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
       )}
     >
       {icon}
@@ -130,7 +110,7 @@ const ThemeCard: React.FC<ThemeCardProps> = ({ label, icon, isActive, onClick })
     <span
       className={cn(
         'text-sm font-medium',
-        isActive ? 'text-foreground' : 'text-muted-foreground'
+        isActive ? activeCardClassName?.split(' ').find(cls => cls.startsWith('text-')) || 'text-foreground' : 'text-muted-foreground'
       )}
     >
       {label}

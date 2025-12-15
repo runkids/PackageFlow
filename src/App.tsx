@@ -448,31 +448,9 @@ function App() {
   useKeyboardShortcuts(shortcuts);
 
   return (
-    <div className="h-screen flex flex-col">
-      <nav className="flex items-center justify-between border-b border-border bg-card">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('project-manager')}
-            className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-              activeTab === 'project-manager'
-                ? 'text-blue-400 border-b-2 border-blue-400 bg-background'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-            }`}
-          >
-            Projects
-          </button>
-          <button
-            onClick={() => setActiveTab('workflow')}
-            className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-              activeTab === 'workflow'
-                ? 'text-blue-400 border-b-2 border-blue-400 bg-background'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-            }`}
-          >
-            Workflows
-          </button>
-        </div>
-
+    <div className="h-screen flex flex-col bg-background rounded-lg overflow-hidden">
+      <header data-tauri-drag-region className="flex items-center justify-between border-b border-border bg-card h-10 flex-shrink-0">
+        <div data-tauri-drag-region className="flex-1 h-full pl-20" />
         <div className="flex items-center gap-1 px-2">
           <div className="relative group">
             <button
@@ -564,34 +542,58 @@ function App() {
           <div className="w-px h-5 bg-border mx-1" />
           <SettingsButton onClick={() => openSettings()} />
         </div>
-      </nav>
+      </header>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {activeTab === 'workflow' && (
-          <div className="flex-1 overflow-hidden">
-            <WorkflowPage
-              initialWorkflow={workflowNavState?.workflow}
-              defaultCwd={workflowNavState?.projectPath}
-              onClearNavState={handleClearWorkflowNavState}
-              dataVersion={dataVersion}
-            />
-          </div>
-        )}
+      <div className="flex-1 flex flex-row overflow-hidden">
+        <div className='flex items-center'>
+          <button
+                onClick={() => setActiveTab('project-manager')}
+                className={`w-full px-4 py-2 text-left text-sm font-medium transition-colors rounded-md ${
+                activeTab === 'project-manager'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+            >
+                Projects
+            </button>
+            <button
+                onClick={() => setActiveTab('workflow')}
+                className={`w-full px-4 py-2 text-left text-sm font-medium transition-colors rounded-md ${
+                activeTab === 'workflow'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+            >
+                Workflows
+            </button>
+        </div>
+        <main className="flex-1 flex flex-col overflow-hidden bg-background">
+            {activeTab === 'workflow' && (
+              <div className="flex-1 overflow-hidden">
+                <WorkflowPage
+                  initialWorkflow={workflowNavState?.workflow}
+                  defaultCwd={workflowNavState?.projectPath}
+                  onClearNavState={handleClearWorkflowNavState}
+                  dataVersion={dataVersion}
+                />
+              </div>
+            )}
 
-        {activeTab === 'project-manager' && (
-          <div className="flex-1 overflow-hidden">
-            <ProjectManagerPage
-              onNavigateToWorkflow={handleNavigateToWorkflow}
-              dataVersion={dataVersion}
-              ptyTerminalRef={ptyTerminalRef}
-              isTerminalCollapsed={isTerminalCollapsed}
-              onToggleTerminalCollapse={() => setIsTerminalCollapsed(!isTerminalCollapsed)}
-              onOpenSettings={openSettings}
-            />
-          </div>
-        )}
-
+            {activeTab === 'project-manager' && (
+              <div className="flex-1 overflow-hidden">
+                <ProjectManagerPage
+                  onNavigateToWorkflow={handleNavigateToWorkflow}
+                  dataVersion={dataVersion}
+                  ptyTerminalRef={ptyTerminalRef}
+                  isTerminalCollapsed={isTerminalCollapsed}
+                  onToggleTerminalCollapse={() => setIsTerminalCollapsed(!isTerminalCollapsed)}
+                  onOpenSettings={openSettings}
+                />
+              </div>
+            )}
+        </main>
       </div>
+
 
       <TerminalPortal container={terminalPortalContainer}>
         <ScriptPtyTerminal

@@ -7,6 +7,7 @@ import { ShortcutsProvider } from './contexts/ShortcutsContext';
 import { WorkflowExecutionProvider } from './contexts/WorkflowExecutionContext';
 import { ExecutionHistoryProvider } from './contexts/ExecutionHistoryContext';
 import { SettingsProvider } from './contexts/SettingsContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { tauriAPI, aiAPI } from './lib/tauri-api';
 import './styles.css';
 
@@ -14,11 +15,6 @@ import './styles.css';
 if (import.meta.env.DEV) {
   (window as unknown as { tauriAPI: typeof tauriAPI; aiAPI: typeof aiAPI }).tauriAPI = tauriAPI;
   (window as unknown as { tauriAPI: typeof tauriAPI; aiAPI: typeof aiAPI }).aiAPI = aiAPI;
-}
-
-const savedTheme = localStorage.getItem('theme');
-if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-  document.documentElement.classList.add('dark');
 }
 
 function getTerminalExecutionId(): string | null {
@@ -39,16 +35,18 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <SettingsProvider>
-      <ScriptExecutionProvider>
-        <WorkflowExecutionProvider>
-          <ExecutionHistoryProvider>
-            <ShortcutsProvider>
-              <Root />
-            </ShortcutsProvider>
-          </ExecutionHistoryProvider>
-        </WorkflowExecutionProvider>
-      </ScriptExecutionProvider>
-    </SettingsProvider>
+    <ThemeProvider>
+      <SettingsProvider>
+        <ScriptExecutionProvider>
+          <WorkflowExecutionProvider>
+            <ExecutionHistoryProvider>
+              <ShortcutsProvider>
+                <Root />
+              </ShortcutsProvider>
+            </ExecutionHistoryProvider>
+          </WorkflowExecutionProvider>
+        </ScriptExecutionProvider>
+      </SettingsProvider>
+    </ThemeProvider>
   </React.StrictMode>
 );

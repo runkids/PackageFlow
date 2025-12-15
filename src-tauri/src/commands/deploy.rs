@@ -13,74 +13,11 @@ use crate::repositories::DeployRepository;
 use crate::services::crypto;
 use crate::services::crypto::EncryptedData;
 use crate::utils::database::Database;
-use crate::utils::store::DEPLOYMENT_HISTORY_FILE;
 use crate::DatabaseState;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
-
-/// Encrypted version of DeployAccount for secure storage
-/// The access_token is encrypted using AES-256-GCM with a master key stored in OS Keychain
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EncryptedDeployAccount {
-    pub id: String,
-    pub platform: PlatformType,
-    pub platform_user_id: String,
-    pub username: String,
-    pub display_name: Option<String>,
-    pub avatar_url: Option<String>,
-    /// Encrypted access token (AES-256-GCM)
-    pub encrypted_token: Option<EncryptedData>,
-    pub connected_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-}
-
-impl EncryptedDeployAccount {
-    /// Convert from DeployAccount, encrypting the token
-    fn from_account(account: &DeployAccount) -> Result<Self, String> {
-        let encrypted_token = if account.access_token.is_empty() {
-            None
-        } else {
-            Some(crypto::encrypt(&account.access_token).map_err(|e| e.to_string())?)
-        };
-
-        Ok(Self {
-            id: account.id.clone(),
-            platform: account.platform.clone(),
-            platform_user_id: account.platform_user_id.clone(),
-            username: account.username.clone(),
-            display_name: account.display_name.clone(),
-            avatar_url: account.avatar_url.clone(),
-            encrypted_token,
-            connected_at: account.connected_at,
-            expires_at: account.expires_at,
-        })
-    }
-
-    /// Convert to DeployAccount, decrypting the token
-    fn to_account(&self) -> Result<DeployAccount, String> {
-        let access_token = match &self.encrypted_token {
-            Some(encrypted) => crypto::decrypt(encrypted).map_err(|e| e.to_string())?,
-            None => String::new(),
-        };
-
-        Ok(DeployAccount {
-            id: self.id.clone(),
-            platform: self.platform.clone(),
-            platform_user_id: self.platform_user_id.clone(),
-            username: self.username.clone(),
-            display_name: self.display_name.clone(),
-            avatar_url: self.avatar_url.clone(),
-            access_token,
-            connected_at: self.connected_at,
-            expires_at: self.expires_at,
-        })
-    }
-}
 
 #[derive(Debug, Serialize)]
 pub struct CheckAccountResult {
@@ -276,15 +213,6 @@ const NETLIFY_SITES_URL: &str = "https://api.netlify.com/api/v1/sites";
 const CLOUDFLARE_API_BASE: &str = "https://api.cloudflare.com/client/v4";
 const CLOUDFLARE_VERIFY_URL: &str = "https://api.cloudflare.com/client/v4/user/tokens/verify";
 
-// Legacy store keys (for migration only)
-const STORE_CONNECTED_PLATFORMS: &str = "connected_platforms"; // Very old: ConnectedPlatform format
-const STORE_ENCRYPTED_ACCOUNTS: &str = "encrypted_accounts"; // Legacy: encrypted tokens
-const STORE_DEPLOY_ACCOUNTS: &str = "deploy_accounts"; // Legacy: plain-text
-const STORE_DEPLOYMENT_CONFIGS: &str = "deployment_configs";
-const STORE_DEPLOYMENT_HISTORY: &str = "deployment_history";
-// T008: Deploy preferences store key (016-multi-deploy-accounts)
-const STORE_DEPLOY_PREFERENCES: &str = "deploy_preferences";
-
 // T015: Maximum accounts per platform
 const MAX_ACCOUNTS_PER_PLATFORM: usize = 5;
 
@@ -316,99 +244,15 @@ fn get_deploy_repo(app: &AppHandle) -> DeployRepository {
     DeployRepository::new(get_db(app))
 }
 
-/// Get the legacy store instance (for migration only)
-fn get_store(app: &AppHandle) -> Result<Arc<tauri_plugin_store::Store<tauri::Wry>>, String> {
-    app.store("packageflow.json")
-        .map_err(|e| format!("Failed to access store: {}", e))
-}
-
 // ============================================================================
 // T006, T007: Deploy Account Helper Functions (016-multi-deploy-accounts)
 // Now using DeployRepository for proper SQLite schema access
 // ============================================================================
 
-/// Get deploy accounts from SQLite with automatic migration from legacy JSON store
+/// Get deploy accounts from SQLite
 fn get_accounts_from_store(app: &AppHandle) -> Result<Vec<DeployAccount>, String> {
     let repo = get_deploy_repo(app);
-
-    // 1. Try to load from SQLite first (preferred)
-    let accounts = repo.list_accounts()?;
-    if !accounts.is_empty() {
-        return Ok(accounts);
-    }
-
-    // 2. Try to migrate from legacy JSON store
-    if let Ok(store) = get_store(app) {
-        // Try encrypted accounts from JSON (legacy format)
-        if let Some(value) = store.get(STORE_ENCRYPTED_ACCOUNTS) {
-            if let Ok(encrypted_accounts) =
-                serde_json::from_value::<Vec<EncryptedDeployAccount>>(value.clone())
-            {
-                if !encrypted_accounts.is_empty() {
-                    let accounts: Result<Vec<DeployAccount>, String> =
-                        encrypted_accounts.iter().map(|e| e.to_account()).collect();
-
-                    if let Ok(accts) = accounts {
-                        if !accts.is_empty() {
-                            log::info!("Migrating {} encrypted accounts from JSON to SQLite", accts.len());
-                            for account in &accts {
-                                let _ = repo.save_account(account);
-                            }
-                            // Clear legacy storage
-                            store.delete(STORE_ENCRYPTED_ACCOUNTS);
-                            let _ = store.save();
-                            return Ok(accts);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Try plain-text DeployAccounts from JSON
-        if let Some(value) = store.get(STORE_DEPLOY_ACCOUNTS) {
-            if let Ok(accounts) = serde_json::from_value::<Vec<DeployAccount>>(value.clone()) {
-                if !accounts.is_empty() {
-                    log::info!(
-                        "Migrating {} plain-text accounts from JSON to SQLite",
-                        accounts.len()
-                    );
-                    for account in &accounts {
-                        let _ = repo.save_account(account);
-                    }
-                    store.delete(STORE_DEPLOY_ACCOUNTS);
-                    let _ = store.save();
-                    return Ok(accounts);
-                }
-            }
-        }
-
-        // Try legacy ConnectedPlatform format
-        if let Some(value) = store.get(STORE_CONNECTED_PLATFORMS) {
-            if let Ok(legacy_platforms) =
-                serde_json::from_value::<Vec<ConnectedPlatform>>(value.clone())
-            {
-                let migrated: Vec<DeployAccount> = legacy_platforms
-                    .into_iter()
-                    .map(DeployAccount::from_connected_platform)
-                    .collect();
-
-                if !migrated.is_empty() {
-                    log::info!(
-                        "Migrating {} legacy ConnectedPlatform from JSON to SQLite",
-                        migrated.len()
-                    );
-                    for account in &migrated {
-                        let _ = repo.save_account(account);
-                    }
-                    store.delete(STORE_CONNECTED_PLATFORMS);
-                    let _ = store.save();
-                }
-                return Ok(migrated);
-            }
-        }
-    }
-
-    Ok(Vec::new())
+    repo.list_accounts()
 }
 
 /// Save deploy account to SQLite with encrypted token storage
@@ -458,30 +302,7 @@ fn get_decrypted_token(repo: &DeployRepository, account_id: &str) -> Result<Opti
 /// T008: Get deploy preferences from SQLite
 fn get_preferences_from_store(app: &AppHandle) -> Result<DeployPreferences, String> {
     let repo = get_deploy_repo(app);
-
-    // Try SQLite first
-    let prefs = repo.get_preferences()?;
-    if prefs.default_github_pages_account_id.is_some()
-        || prefs.default_netlify_account_id.is_some()
-        || prefs.default_cloudflare_pages_account_id.is_some()
-    {
-        return Ok(prefs);
-    }
-
-    // Try legacy JSON store for migration
-    if let Ok(store) = get_store(app) {
-        if let Some(value) = store.get(STORE_DEPLOY_PREFERENCES) {
-            if let Ok(prefs) = serde_json::from_value::<DeployPreferences>(value.clone()) {
-                log::info!("Migrating deploy preferences from JSON to SQLite");
-                let _ = repo.save_preferences(&prefs);
-                store.delete(STORE_DEPLOY_PREFERENCES);
-                let _ = store.save();
-                return Ok(prefs);
-            }
-        }
-    }
-
-    Ok(DeployPreferences::default())
+    repo.get_preferences()
 }
 
 /// T008: Save deploy preferences to SQLite
@@ -560,26 +381,7 @@ fn get_deployment_access_token(
 /// Get deployment config from SQLite
 fn get_config_from_store(app: &AppHandle, project_id: &str) -> Result<Option<DeploymentConfig>, String> {
     let repo = get_deploy_repo(app);
-
-    // Try SQLite first
-    if let Some(config) = repo.get_config(project_id)? {
-        return Ok(Some(config));
-    }
-
-    // Try legacy JSON store for migration
-    if let Ok(store) = get_store(app) {
-        if let Some(value) = store.get(STORE_DEPLOYMENT_CONFIGS) {
-            if let Ok(configs) = serde_json::from_value::<std::collections::HashMap<String, DeploymentConfig>>(value.clone()) {
-                if let Some(config) = configs.get(project_id) {
-                    log::info!("Migrating deployment config for {} from JSON to SQLite", project_id);
-                    let _ = repo.save_config(config);
-                    return Ok(Some(config.clone()));
-                }
-            }
-        }
-    }
-
-    Ok(None)
+    repo.get_config(project_id)
 }
 
 /// Save deployment config to SQLite
@@ -598,42 +400,10 @@ fn save_netlify_site_id(app: &AppHandle, project_id: &str, site_id: &str) -> Res
     Ok(())
 }
 
-/// Get the history store instance (legacy - for migration only)
-fn get_history_store(
-    app: &AppHandle,
-) -> Result<Arc<tauri_plugin_store::Store<tauri::Wry>>, String> {
-    app.store(DEPLOYMENT_HISTORY_FILE)
-        .map_err(|e| format!("Failed to access deployment history store: {}", e))
-}
-
 /// Get deployment history from SQLite
 fn get_deployments_from_store(app: &AppHandle, project_id: &str) -> Result<Vec<Deployment>, String> {
     let repo = get_deploy_repo(app);
-
-    // Try SQLite first
-    let deployments = repo.list_deployments(project_id)?;
-    if !deployments.is_empty() {
-        return Ok(deployments);
-    }
-
-    // Try legacy JSON store for migration
-    if let Ok(store) = get_history_store(app) {
-        if let Some(value) = store.get(STORE_DEPLOYMENT_HISTORY) {
-            if let Ok(history) = serde_json::from_value::<std::collections::HashMap<String, Vec<Deployment>>>(value.clone()) {
-                if let Some(project_deployments) = history.get(project_id) {
-                    if !project_deployments.is_empty() {
-                        log::info!("Migrating {} deployments for {} from JSON to SQLite", project_deployments.len(), project_id);
-                        for deployment in project_deployments {
-                            let _ = repo.save_deployment(deployment);
-                        }
-                        return Ok(project_deployments.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(Vec::new())
+    repo.list_deployments(project_id)
 }
 
 /// Save a single deployment to history

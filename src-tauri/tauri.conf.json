@@ -10,17 +10,16 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
+    "macOSPrivateApi": true,
+    "windows": [      
       {
-        "title": "PackageFlow",
-        "width": 2400,
-        "height": 1600,
+        "hiddenTitle": true,
         "minWidth": 1200,
         "minHeight": 800,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true,
         "transparent": false,
+        "titleBarStyle": "Overlay",
         "center": true
       }
     ],
