@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Save, Check, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from './ui/Dialog';
 import { Select, type SelectOption } from './ui/Select';
+import { Button } from './ui/Button';
+import { cn } from '../lib/utils';
 import type { ModalData, SigningIdentity } from '../types';
 
 interface EditDialogProps {
@@ -136,14 +138,11 @@ export const EditDialog: React.FC<EditDialogProps> = ({
 
           {!isReadOnly && (
             <div className="flex justify-end pt-2">
-              <button
+              <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  saveSuccess
-                    ? 'bg-green-600 text-white'
-                    : 'bg-blue-600 hover:bg-blue-500 text-white'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                variant={saveSuccess ? 'success' : 'default'}
+                className={cn(saveSuccess && 'bg-green-600 text-white hover:bg-green-500')}
               >
                 {saveSuccess ? (
                   <>
@@ -161,7 +160,7 @@ export const EditDialog: React.FC<EditDialogProps> = ({
                     Save
                   </>
                 )}
-              </button>
+              </Button>
             </div>
           )}
         </div>

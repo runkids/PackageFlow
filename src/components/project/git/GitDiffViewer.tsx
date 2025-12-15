@@ -4,13 +4,25 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, RefreshCw, Loader2, FileCode, FilePlus, FileX, FileSymlink, Columns2, AlignJustify, Sparkles } from 'lucide-react';
+import {
+  X,
+  RefreshCw,
+  Loader2,
+  FileCode,
+  FilePlus,
+  FileX,
+  FileSymlink,
+  Columns2,
+  AlignJustify,
+  FileSearch,
+} from 'lucide-react';
 import { useDiff, type DiffType } from '../../../hooks/useDiff';
 import { useAICodeReview } from '../../../hooks/useAIService';
 import { DiffUnifiedView } from './DiffUnifiedView';
 import { DiffSplitView } from './DiffSplitView';
 import { AIReviewDialog } from '../../ui/AIReviewDialog';
 import { cn } from '../../../lib/utils';
+import { Button } from '../../ui/Button';
 import type { FileDiffStatus } from '../../../types/git';
 
 export type ViewMode = 'unified' | 'split';
@@ -58,11 +70,12 @@ export function GitDiffViewer({
     clearError: clearReviewError,
   } = useAICodeReview({ projectPath });
 
-  const { diff, isLoading, error, refetch } = useDiff({
+  const { diff, isLoading, isRefreshing, error, refetch, lastRefreshed } = useDiff({
     projectPath,
     filePath,
     diffType,
     skip: !isOpen,
+    autoRefreshInterval: 5000, // Auto-refresh every 5 seconds to detect external changes
   });
 
   // Reset state when file changes
@@ -262,34 +275,46 @@ export function GitDiffViewer({
               </button>
             </div>
 
-            {/* AI Review Button */}
-            <button
+            {/* AI Review Button - Gentle glow effect */}
+            <Button
               onClick={handleAIReview}
               disabled={isReviewGenerating || !diff || diff.isBinary}
+              size="sm"
               className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors',
-                'bg-purple-600 hover:bg-purple-500 text-white',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
+                'group relative gap-1.5 transition-all duration-200',
+                isReviewGenerating && 'animate-ai-review-glow'
               )}
               title="AI Code Review (a)"
             >
-              {isReviewGenerating ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="w-3.5 h-3.5" />
-              )}
-              AI Review
-            </button>
+              <span className="relative">
+                <FileSearch className={cn(
+                  'w-3.5 h-3.5 transition-transform duration-200',
+                  isReviewGenerating ? 'animate-scan-glow' : 'group-hover:scale-110'
+                )} />
+                {/* Scan indicator when reviewing */}
+                {isReviewGenerating && (
+                  <span className="absolute -right-1 top-1/2 -translate-y-1/2 w-0.5 h-2.5 bg-blue-200/70 rounded-full animate-scan-line" />
+                )}
+              </span>
+              {isReviewGenerating ? 'Reviewing...' : 'AI Review'}
+            </Button>
 
             {/* Refresh Button */}
-            <button
-              onClick={handleRefresh}
-              disabled={isLoading}
-              className="p-2 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent transition-colors disabled:opacity-50"
-              title="Refresh (R)"
-            >
-              <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleRefresh}
+                disabled={isLoading}
+                className={cn(
+                  'p-2 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent transition-colors disabled:opacity-50',
+                  isRefreshing && 'text-blue-400'
+                )}
+                title={lastRefreshed ? `Last refreshed: ${lastRefreshed.toLocaleTimeString()} (R)` : 'Refresh (R)'}
+              >
+                <RefreshCw className={cn('w-4 h-4', (isLoading || isRefreshing) && 'animate-spin')} />
+              </button>
+              {/* Auto-refresh indicator */}
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" title="Auto-refreshing every 5s" />
+            </div>
 
             {/* Close Button */}
             <button
@@ -311,12 +336,9 @@ export function GitDiffViewer({
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <p className="text-red-400">{error}</p>
-              <button
-                onClick={handleRefresh}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors"
-              >
+              <Button onClick={handleRefresh}>
                 Retry
-              </button>
+              </Button>
             </div>
           ) : !diff ? (
             <div className="flex items-center justify-center h-full">
@@ -360,11 +382,11 @@ export function GitDiffViewer({
 
         {/* AI Review Error Toast */}
         {reviewError && (
-          <div className="fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-[60] flex items-center gap-2">
-            <span className="text-sm">{reviewError}</span>
+          <div className="fixed bottom-4 right-4 bg-background border border-red-500/30 px-4 py-3 rounded-lg shadow-lg z-[60] flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-200">
+            <span className="text-sm text-red-500 dark:text-red-400">{reviewError}</span>
             <button
               onClick={clearReviewError}
-              className="text-white/80 hover:text-white underline text-sm"
+              className="text-muted-foreground hover:text-foreground text-sm px-2 py-1 rounded hover:bg-accent transition-colors"
             >
               Dismiss
             </button>

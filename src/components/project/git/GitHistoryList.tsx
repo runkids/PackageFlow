@@ -32,11 +32,14 @@ export function GitHistoryList({ projectPath, pageSize = 50 }: GitHistoryListPro
   const [copiedSha, setCopiedSha] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
 
-  // Load commit history (initial load)
-  const loadHistory = useCallback(async () => {
+  // Load commit history (silent refresh when data exists)
+  const loadHistory = useCallback(async (silent = false) => {
     if (!projectPath) return;
 
-    setIsLoading(true);
+    // Only show loading spinner on initial load (no existing data)
+    if (!silent && commits.length === 0) {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -53,7 +56,7 @@ export function GitHistoryList({ projectPath, pageSize = 50 }: GitHistoryListPro
     } finally {
       setIsLoading(false);
     }
-  }, [projectPath, pageSize]);
+  }, [projectPath, pageSize, commits.length]);
 
   // Load more commits
   const loadMore = useCallback(async () => {
@@ -74,8 +77,18 @@ export function GitHistoryList({ projectPath, pageSize = 50 }: GitHistoryListPro
     }
   }, [projectPath, pageSize, commits.length, isLoading]);
 
+  // Initial load
   useEffect(() => {
     loadHistory();
+  }, [loadHistory]);
+
+  // Auto-refresh every 30 seconds (silent background update)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadHistory(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [loadHistory]);
 
   // Copy SHA to clipboard

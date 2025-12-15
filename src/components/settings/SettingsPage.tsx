@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
-import { X, Loader2, Search, HardDrive, Users, Bot, FileText, Server, Palette, Keyboard, ArrowLeftRight, Sun, Moon } from 'lucide-react';
+import { X, Loader2, Search, HardDrive, Users, Bot, FileText, Server, Palette, Keyboard, ArrowLeftRight, Sun, Moon, Wrench } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { cn } from '../../lib/utils';
 import type { SettingsSection } from '../../types/settings';
@@ -13,6 +13,10 @@ import { SETTINGS_SEARCH_INDEX, type SettingsCategory } from '../../types/settin
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { Toggle } from '../ui/Toggle';
+import { Button } from '../ui/Button';
+import { ExportDialog } from './ExportDialog';
+import { ImportDialog } from './ImportDialog';
+import type { ImportResult } from '../../types/export-import';
 
 // Lazy load panel components
 const StorageSettingsPanel = lazy(() =>
@@ -36,6 +40,9 @@ const PromptTemplatePanel = lazy(() =>
 const McpSettingsFullPanel = lazy(() =>
   import('./panels/McpSettingsFullPanel').then((m) => ({ default: m.McpSettingsFullPanel }))
 );
+const ToolchainPreferencesPanel = lazy(() =>
+  import('./panels/ToolchainPreferencesPanel').then((m) => ({ default: m.ToolchainPreferencesPanel }))
+);
 const DataSettingsPanel = lazy(() =>
   import('./panels/DataSettingsPanel').then((m) => ({ default: m.DataSettingsPanel }))
 );
@@ -44,8 +51,7 @@ interface SettingsPageProps {
   isOpen: boolean;
   onClose: () => void;
   initialSection?: SettingsSection;
-  onExport?: () => void;
-  onImport?: () => void;
+  onImportComplete?: (result: ImportResult) => void;
 }
 
 // Icon mapping
@@ -57,6 +63,7 @@ const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
   mcp: Server,
   appearance: Palette,
   shortcuts: Keyboard,
+  toolchain: Wrench,
   data: ArrowLeftRight,
 };
 
@@ -69,6 +76,7 @@ const SECTION_PANELS: Record<SettingsSection, React.LazyExoticComponent<React.Co
   mcp: McpSettingsFullPanel,
   appearance: AppearanceSettingsPanel,
   shortcuts: ShortcutsSettingsPanel,
+  toolchain: ToolchainPreferencesPanel,
   data: DataSettingsPanel,
 };
 
@@ -87,7 +95,7 @@ const SIDEBAR_CATEGORIES: { id: SettingsCategory; label: string; sections: Setti
   {
     id: 'preferences',
     label: 'Preferences',
-    sections: ['appearance', 'shortcuts'],
+    sections: ['appearance', 'shortcuts', 'toolchain'],
   },
   {
     id: 'data',
@@ -138,19 +146,54 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   isOpen,
   onClose,
   initialSection = 'storage',
-  onExport,
-  onImport,
+  onImportComplete,
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [searchQuery, setSearchQuery] = useState('');
   const [isClosing, setIsClosing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const { theme, setTheme } = useTheme();
   const { pathDisplayFormat, setPathDisplayFormat } = useSettings();
+
+  // Handlers for Export/Import dialogs
+  const handleOpenExport = useCallback(() => {
+    setExportDialogOpen(true);
+  }, []);
+
+  const handleOpenImport = useCallback(() => {
+    setImportDialogOpen(true);
+  }, []);
+
+  const handleImportComplete = useCallback((result: ImportResult) => {
+    onImportComplete?.(result);
+  }, [onImportComplete]);
+
+  // Listen for external events to open dialogs (from keyboard shortcuts)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleOpenExportEvent = () => {
+      setExportDialogOpen(true);
+    };
+
+    const handleOpenImportEvent = () => {
+      setImportDialogOpen(true);
+    };
+
+    window.addEventListener('settings-open-export', handleOpenExportEvent);
+    window.addEventListener('settings-open-import', handleOpenImportEvent);
+
+    return () => {
+      window.removeEventListener('settings-open-export', handleOpenExportEvent);
+      window.removeEventListener('settings-open-import', handleOpenImportEvent);
+    };
+  }, [isOpen]);
 
   // Search results
   const searchResults = searchQuery ? searchSections(searchQuery) : [];
@@ -277,19 +320,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           isFullscreen ? '' : 'pl-[72px]'
         )}
       >
-        <button
+        <Button
           ref={closeButtonRef}
+          variant="ghost"
+          size="icon"
           onClick={handleClose}
-          className={cn(
-            'p-1.5 rounded-md',
-            'text-muted-foreground hover:text-foreground',
-            'hover:bg-accent transition-colors',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-          )}
           aria-label="Close settings (Escape)"
         >
           <X className="w-4 h-4" />
-        </button>
+        </Button>
       </header>
 
       {/* Main Content - Two Column Layout */}
@@ -458,17 +497,29 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         {/* Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 max-w-3xl w-full mx-auto p-6 overflow-hidden flex flex-col">
+          <div className="flex-1 max-w-3xl w-full mx-auto p-6 overflow-y-auto flex flex-col">
             <Suspense fallback={<PanelLoadingFallback />}>
               <ActivePanelComponent
-                onExport={activeSection === 'data' ? onExport : undefined}
-                onImport={activeSection === 'data' ? onImport : undefined}
+                onExport={activeSection === 'data' ? handleOpenExport : undefined}
+                onImport={activeSection === 'data' ? handleOpenImport : undefined}
               />
             </Suspense>
           </div>
         </main>
       </div>
 
+      {/* Export Dialog - rendered within Settings page */}
+      <ExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+      />
+
+      {/* Import Dialog - rendered within Settings page */}
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onImportComplete={handleImportComplete}
+      />
     </div>
   );
 };

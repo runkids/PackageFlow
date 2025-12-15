@@ -20,6 +20,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button } from '../../ui/Button';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import type { GitFile } from '../../../types/git';
 
 interface GitFileListProps {
@@ -85,6 +86,41 @@ interface FileSectionProps {
   isStaged?: boolean;
   /** Handler for file click to view diff */
   onFileClick?: (file: GitFile) => void;
+  /** Handler for double-click to toggle staging */
+  onDoubleClick?: (path: string) => void;
+}
+
+// Module-level click state tracker for distinguishing single vs double clicks
+const clickState = new Map<string, { timer: ReturnType<typeof setTimeout> | null; count: number }>();
+
+function handleFileClick(
+  filePath: string,
+  file: GitFile,
+  onSingleClick?: (file: GitFile) => void,
+  onDoubleClick?: (path: string) => void
+) {
+  const state = clickState.get(filePath) || { timer: null, count: 0 };
+  state.count += 1;
+
+  if (state.count === 1) {
+    // First click - set timer for single click action
+    state.timer = setTimeout(() => {
+      const currentState = clickState.get(filePath);
+      if (currentState && currentState.count === 1) {
+        // Single click - open diff viewer
+        onSingleClick?.(file);
+      }
+      clickState.delete(filePath);
+    }, 250);
+    clickState.set(filePath, state);
+  } else if (state.count >= 2) {
+    // Double click - toggle staging
+    if (state.timer) {
+      clearTimeout(state.timer);
+    }
+    clickState.delete(filePath);
+    onDoubleClick?.(filePath);
+  }
 }
 
 function FileSection({
@@ -102,6 +138,7 @@ function FileSection({
   secondaryFileActionTitle,
   isStaged = false,
   onFileClick,
+  onDoubleClick,
 }: FileSectionProps) {
   if (files.length === 0) return null;
 
@@ -153,7 +190,8 @@ function FileSection({
               <div
                 key={file.path}
                 className="group flex items-center gap-2 py-1 px-2 rounded hover:bg-accent transition-colors cursor-pointer"
-                onClick={() => onFileClick?.(file)}
+                onClick={() => handleFileClick(file.path, file, onFileClick, onDoubleClick)}
+                title={`${file.path}\nClick: View diff | Double-click: ${isStaged ? 'Unstage' : 'Stage'}`}
               >
                 {/* Status Icon */}
                 {isStaged ? (
@@ -176,29 +214,33 @@ function FileSection({
 
                 {/* Secondary Action Button (Discard) */}
                 {onSecondaryFileAction && SecondaryFileActionIcon && (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={(e) => {
                       e.stopPropagation();
                       onSecondaryFileAction(file.path);
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 h-6 w-6 hover:bg-red-500/20 transition-opacity"
                     title={secondaryFileActionTitle}
                   >
                     <SecondaryFileActionIcon className="w-3.5 h-3.5 text-red-400" />
-                  </button>
+                  </Button>
                 )}
 
                 {/* Primary Action Button */}
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={(e) => {
                     e.stopPropagation();
                     onFileAction(file.path);
                   }}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-accent transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 h-6 w-6 transition-opacity"
                   title={fileActionTitle}
                 >
                   <FileActionIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
+                </Button>
               </div>
             );
           })}
@@ -228,6 +270,86 @@ export function GitFileList({
     changes: true,
     untracked: true,
   });
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    type: 'discard' | 'discard-all' | 'delete' | 'delete-all';
+    filePath?: string;
+  }>({ open: false, type: 'discard' });
+
+  const handleDiscardFileWithConfirm = (path: string) => {
+    setConfirmDialog({ open: true, type: 'discard', filePath: path });
+  };
+
+  const handleDiscardAllWithConfirm = () => {
+    setConfirmDialog({ open: true, type: 'discard-all' });
+  };
+
+  const handleDeleteUntrackedWithConfirm = (path: string) => {
+    setConfirmDialog({ open: true, type: 'delete', filePath: path });
+  };
+
+  const handleDeleteAllUntrackedWithConfirm = () => {
+    setConfirmDialog({ open: true, type: 'delete-all' });
+  };
+
+  const handleConfirmAction = () => {
+    switch (confirmDialog.type) {
+      case 'discard':
+        if (confirmDialog.filePath && onDiscardFile) {
+          onDiscardFile(confirmDialog.filePath);
+        }
+        break;
+      case 'discard-all':
+        onDiscardAll?.();
+        break;
+      case 'delete':
+        if (confirmDialog.filePath && onDeleteUntracked) {
+          onDeleteUntracked(confirmDialog.filePath);
+        }
+        break;
+      case 'delete-all':
+        onDeleteAllUntracked?.();
+        break;
+    }
+    setConfirmDialog({ open: false, type: 'discard' });
+  };
+
+  const getConfirmDialogProps = () => {
+    switch (confirmDialog.type) {
+      case 'discard':
+        return {
+          variant: 'warning' as const,
+          title: 'Discard Changes',
+          description: 'Are you sure you want to discard changes to this file? This action cannot be undone.',
+          itemName: confirmDialog.filePath,
+          confirmText: 'Discard',
+        };
+      case 'discard-all':
+        return {
+          variant: 'warning' as const,
+          title: 'Discard All Changes',
+          description: `Are you sure you want to discard all ${changedFiles.length} changed file(s)? This action cannot be undone.`,
+          confirmText: 'Discard All',
+        };
+      case 'delete':
+        return {
+          variant: 'destructive' as const,
+          title: 'Delete Untracked File',
+          description: 'Are you sure you want to delete this untracked file? This action cannot be undone.',
+          itemName: confirmDialog.filePath,
+          confirmText: 'Delete',
+        };
+      case 'delete-all':
+        return {
+          variant: 'destructive' as const,
+          title: 'Delete All Untracked Files',
+          description: `Are you sure you want to delete all ${untrackedFiles.length} untracked file(s)? This action cannot be undone.`,
+          confirmText: 'Delete All',
+        };
+    }
+  };
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections((prev) => ({
@@ -265,6 +387,7 @@ export function GitFileList({
         fileActionTitle="Unstage file"
         isStaged
         onFileClick={onFileClick}
+        onDoubleClick={onUnstageFile}
       />
 
       {/* Changes (Modified but not staged) */}
@@ -279,15 +402,16 @@ export function GitFileList({
         }}
         secondaryButton={onDiscardAll ? {
           label: 'Discard All',
-          onClick: onDiscardAll,
+          onClick: handleDiscardAllWithConfirm,
         } : undefined}
         onFileAction={onStageFile}
         fileActionIcon={Plus}
         fileActionTitle="Stage file"
-        onSecondaryFileAction={onDiscardFile}
+        onSecondaryFileAction={onDiscardFile ? handleDiscardFileWithConfirm : undefined}
         secondaryFileActionIcon={Undo2}
         secondaryFileActionTitle="Discard changes"
         onFileClick={onFileClick}
+        onDoubleClick={onStageFile}
       />
 
       {/* Untracked Files */}
@@ -302,15 +426,16 @@ export function GitFileList({
         }}
         secondaryButton={onDeleteAllUntracked ? {
           label: 'Delete All',
-          onClick: onDeleteAllUntracked,
+          onClick: handleDeleteAllUntrackedWithConfirm,
         } : undefined}
         onFileAction={onStageFile}
         fileActionIcon={Plus}
         fileActionTitle="Stage file"
-        onSecondaryFileAction={onDeleteUntracked}
+        onSecondaryFileAction={onDeleteUntracked ? handleDeleteUntrackedWithConfirm : undefined}
         secondaryFileActionIcon={Trash2}
         secondaryFileActionTitle="Delete file"
         onFileClick={onFileClick}
+        onDoubleClick={onStageFile}
       />
 
       {/* Stage All Button */}
@@ -324,6 +449,14 @@ export function GitFileList({
           Stage All Changes
         </Button>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+        onConfirm={handleConfirmAction}
+        {...getConfirmDialogProps()}
+      />
     </div>
   );
 }

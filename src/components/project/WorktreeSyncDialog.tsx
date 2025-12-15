@@ -182,7 +182,7 @@ export function WorktreeSyncDialog({
               <div className="flex items-center gap-2 pt-2 border-t border-border">
                 <Button
                   onClick={() => handleSync('rebase')}
-                  className="flex-1 bg-blue-600 hover:bg-blue-500"
+                  className="flex-1"
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Rebase

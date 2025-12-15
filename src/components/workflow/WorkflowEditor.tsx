@@ -285,9 +285,9 @@ function NewNodeDialog({ isOpen, defaultCwd, insertIndex, packageManager = 'npm'
             Cancel
           </Button>
           <Button
+            variant="default"
             onClick={handleSave}
             disabled={!name.trim() || !command.trim()}
-            className="bg-blue-600 hover:bg-blue-500 text-white"
           >
             {isInsertMode ? 'Insert Step' : 'Add Step'}
           </Button>

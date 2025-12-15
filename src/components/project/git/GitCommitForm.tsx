@@ -8,6 +8,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Check, Loader2, ChevronDown, Sparkles, AlertCircle, X, Settings, FileSearch } from 'lucide-react';
 import { useAICommitMessage, useAIService, useAIStagedReview } from '../../../hooks/useAIService';
 import { AIReviewDialog } from '../../ui/AIReviewDialog';
+import { Button } from '../../ui/Button';
 
 interface GitCommitFormProps {
   /** Whether there are staged changes */
@@ -216,32 +217,42 @@ export function GitCommitForm({
             ) : (
               // AI service configured - show generate and review buttons
               <>
+                {/* AI Generate Button - Gentle glow effect */}
                 <button
                   onClick={handleAIGenerate}
-                  disabled={!hasStagedChanges || aiCommit.isGenerating || isLoadingServices}
-                  title={!hasStagedChanges ? 'Stage files first' : 'Generate commit message with AI'}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors border border-purple-500/30"
+                  disabled={!hasStagedChanges || aiCommit.isGenerating || aiReview.isGenerating || isLoadingServices}
+                  title={!hasStagedChanges ? 'Stage files first' : aiReview.isGenerating ? 'Wait for AI Review to complete' : 'Generate commit message with AI'}
+                  className={`group relative flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-all duration-200 border border-purple-500/30 ${aiCommit.isGenerating ? 'animate-ai-generate-glow' : ''}`}
                 >
-                  {aiCommit.isGenerating ? (
-                    <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-4 h-4 text-purple-400" />
-                  )}
+                  <span className="relative">
+                    <Sparkles className={`w-4 h-4 text-purple-400 transition-transform duration-200 ${aiCommit.isGenerating ? 'animate-sparkle-glow' : 'group-hover:scale-110'}`} />
+                    {/* Sparkle particles when generating */}
+                    {aiCommit.isGenerating && (
+                      <>
+                        <span className="absolute -top-0.5 -right-0.5 w-1 h-1 bg-purple-400 rounded-full animate-sparkle-twinkle" />
+                        <span className="absolute -bottom-0.5 -left-0.5 w-1 h-1 bg-purple-300 rounded-full animate-sparkle-twinkle" style={{ animationDelay: '300ms' }} />
+                      </>
+                    )}
+                  </span>
                   <span className="text-purple-400">
                     {aiCommit.isGenerating ? 'Generating...' : 'AI Generate'}
                   </span>
                 </button>
+
+                {/* AI Review Button - Gentle glow effect */}
                 <button
                   onClick={handleAIReview}
-                  disabled={!hasStagedChanges || aiReview.isGenerating || isLoadingServices}
-                  title={!hasStagedChanges ? 'Stage files first' : 'Review all staged changes with AI'}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors border border-blue-500/30"
+                  disabled={!hasStagedChanges || aiReview.isGenerating || aiCommit.isGenerating || isLoadingServices}
+                  title={!hasStagedChanges ? 'Stage files first' : aiCommit.isGenerating ? 'Wait for AI Generate to complete' : 'Review all staged changes with AI'}
+                  className={`group relative flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-all duration-200 border border-blue-500/30 ${aiReview.isGenerating ? 'animate-ai-review-glow' : ''}`}
                 >
-                  {aiReview.isGenerating ? (
-                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-                  ) : (
-                    <FileSearch className="w-4 h-4 text-blue-400" />
-                  )}
+                  <span className="relative">
+                    <FileSearch className={`w-4 h-4 text-blue-400 transition-transform duration-200 ${aiReview.isGenerating ? 'animate-scan-glow' : 'group-hover:scale-110'}`} />
+                    {/* Scan indicator when reviewing */}
+                    {aiReview.isGenerating && (
+                      <span className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-1 h-3 bg-blue-400/60 rounded-full animate-scan-line" />
+                    )}
+                  </span>
                   <span className="text-blue-400">
                     {aiReview.isGenerating ? 'Reviewing...' : 'AI Review'}
                   </span>
@@ -292,10 +303,10 @@ export function GitCommitForm({
         <span className="text-xs text-muted-foreground">
           {hasStagedChanges ? 'Ready to commit' : 'No staged changes'}
         </span>
-        <button
+        <Button
           onClick={handleSubmit}
           disabled={isDisabled}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors"
+          variant="success"
         >
           {isSubmitting || isCommitting ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -303,19 +314,19 @@ export function GitCommitForm({
             <Check className="w-4 h-4" />
           )}
           Commit
-          <kbd className="hidden sm:inline-block ml-1 px-1.5 py-0.5 bg-green-700 rounded text-xs">
+          <kbd className="hidden sm:inline-block ml-1 px-1.5 py-0.5 bg-green-600/30 rounded text-xs">
             {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+↵
           </kbd>
-        </button>
+        </Button>
       </div>
 
       {/* AI Review Error Toast */}
       {aiReview.error && (
-        <div className="fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-[60] flex items-center gap-2">
-          <span className="text-sm">{aiReview.error}</span>
+        <div className="fixed bottom-4 right-4 bg-background border border-red-500/30 px-4 py-3 rounded-lg shadow-lg z-[60] flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-200">
+          <span className="text-sm text-red-500 dark:text-red-400">{aiReview.error}</span>
           <button
             onClick={aiReview.clearError}
-            className="text-white/80 hover:text-white underline text-sm"
+            className="text-muted-foreground hover:text-foreground text-sm px-2 py-1 rounded hover:bg-accent transition-colors"
           >
             Dismiss
           </button>

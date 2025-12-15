@@ -569,9 +569,9 @@ export function ProjectWorkflows({
                     Cancel
                   </Button>
                   <Button
+                    variant="default"
                     onClick={handleCreateWorkflow}
                     disabled={!newWorkflowName.trim()}
-                    className="bg-blue-600 hover:bg-blue-500 text-white"
                   >
                     Create and edit
                   </Button>

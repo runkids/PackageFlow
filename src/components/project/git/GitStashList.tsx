@@ -33,11 +33,14 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
   const [operationError, setOperationError] = useState<string | null>(null);
   const [operatingStash, setOperatingStash] = useState<number | null>(null);
 
-  // Load stashes
-  const loadStashes = useCallback(async () => {
+  // Load stashes (silent refresh when data exists)
+  const loadStashes = useCallback(async (silent = false) => {
     if (!projectPath) return;
 
-    setIsLoading(true);
+    // Only show loading spinner on initial load (no existing data)
+    if (!silent && stashes.length === 0) {
+      setIsLoading(true);
+    }
     setOperationError(null);
 
     try {
@@ -53,10 +56,20 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [projectPath]);
+  }, [projectPath, stashes.length]);
 
+  // Initial load
   useEffect(() => {
     loadStashes();
+  }, [loadStashes]);
+
+  // Auto-refresh every 30 seconds (silent background update)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadStashes(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [loadStashes]);
 
   // Create new stash
@@ -198,7 +211,7 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
         <h3 className="text-sm font-medium text-muted-foreground">Stashes</h3>
         <div className="flex items-center gap-2">
           <button
-            onClick={loadStashes}
+            onClick={() => loadStashes()}
             disabled={isLoading}
             className="p-1.5 rounded hover:bg-accent transition-colors disabled:opacity-50"
             title="Refresh stashes"
@@ -206,9 +219,9 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
             <RefreshCw className={`w-4 h-4 text-muted-foreground ${isLoading ? 'animate-spin' : ''}`} />
           </button>
           <Button
+            variant="default"
             size="sm"
             onClick={() => setShowCreateInput(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white"
             title="Create new stash"
           >
             <Plus className="w-4 h-4 mr-1.5" />
@@ -237,10 +250,11 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
             className="w-full px-2 py-1.5 bg-background border border-border rounded text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-blue-500"
           />
           <div className="flex items-center gap-2">
-            <button
+            <Button
               onClick={handleCreateStash}
               disabled={isCreating}
-              className="flex-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors"
+              variant="success"
+              className="flex-1"
             >
               {isCreating ? (
                 <span className="flex items-center justify-center gap-2">
@@ -250,7 +264,7 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
               ) : (
                 'Create Stash'
               )}
-            </button>
+            </Button>
             <button
               onClick={() => {
                 setShowCreateInput(false);

@@ -380,14 +380,54 @@ fn get_deployment_access_token(
 
 /// Get deployment config from SQLite
 fn get_config_from_store(app: &AppHandle, project_id: &str) -> Result<Option<DeploymentConfig>, String> {
+    println!("[get_config_from_store] project_id={}", project_id);
     let repo = get_deploy_repo(app);
-    repo.get_config(project_id)
+    let result = repo.get_config(project_id);
+    match &result {
+        Ok(Some(config)) => {
+            println!(
+                "[get_config_from_store] FOUND config for project_id={}, platform={:?}, account_id={:?}",
+                project_id,
+                config.platform,
+                config.account_id
+            );
+        }
+        Ok(None) => {
+            println!("[get_config_from_store] NO CONFIG for project_id={}", project_id);
+        }
+        Err(e) => {
+            println!("[get_config_from_store] ERROR for project_id={}: {}", project_id, e);
+        }
+    }
+    result
 }
 
 /// Save deployment config to SQLite
 fn save_config_to_store(app: &AppHandle, config: &DeploymentConfig) -> Result<(), String> {
+    println!(
+        "[save_config_to_store] project_id={}, platform={:?}, account_id={:?}",
+        config.project_id,
+        config.platform,
+        config.account_id
+    );
     let repo = get_deploy_repo(app);
-    repo.save_config(config)
+    let result = repo.save_config(config);
+
+    // Force WAL checkpoint to ensure data is persisted
+    if result.is_ok() {
+        let db = get_db(app);
+        if let Err(e) = db.with_connection(|conn| {
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .map_err(|e| format!("WAL checkpoint failed: {}", e))
+        }) {
+            println!("[save_config_to_store] WAL checkpoint warning: {}", e);
+        }
+        println!("[save_config_to_store] SUCCESS for project_id={}", config.project_id);
+    } else {
+        println!("[save_config_to_store] FAILED: {:?}", result);
+    }
+
+    result
 }
 
 /// Save Netlify site ID to config for reuse across deployments

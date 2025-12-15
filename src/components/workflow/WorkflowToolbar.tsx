@@ -302,7 +302,7 @@ export function WorkflowToolbar({
             size="sm"
             onClick={onExecute}
             disabled={!canExecute}
-            className="bg-green-600 hover:bg-green-500 text-white"
+            variant="success"
           >
             <Play className="w-4 h-4 mr-1.5" />
             Run
@@ -313,7 +313,7 @@ export function WorkflowToolbar({
           <Button
             size="sm"
             onClick={onCancel}
-            className="bg-red-600 hover:bg-red-500 text-white"
+            variant="destructive"
           >
             <Square className="w-4 h-4 mr-1.5" />
             Stop
@@ -323,9 +323,9 @@ export function WorkflowToolbar({
         {isPaused && (
           <>
             <Button
+              variant="default"
               size="sm"
               onClick={onContinue}
-              className="bg-blue-600 hover:bg-blue-500 text-white"
             >
               <SkipForward className="w-4 h-4 mr-1.5" />
               Continue

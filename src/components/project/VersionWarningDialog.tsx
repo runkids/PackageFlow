@@ -20,16 +20,31 @@ import {
   Copy,
   Check,
   X,
+  Loader2,
+  Settings,
+  Wrench,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { cn } from '../../lib/utils';
 import { isTopModal, registerModal, unregisterModal } from '../ui/modalStack';
 import type { VersionCompatibility } from '../../types/version';
+import type {
+  CorepackStatus,
+  PnpmHomeConflict,
+  CorepackOperationResponse,
+  ToolchainStrategy,
+} from '../../types/toolchain';
+import { toolchainAPI } from '../../lib/tauri-api';
+import { Checkbox } from '../ui/Checkbox';
+import { Button } from '../ui/Button';
 
 interface VersionWarningDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   compatibility: VersionCompatibility;
   scriptName: string;
+  /** Project path for saving preferences */
+  projectPath: string;
   onContinue: () => void;
   onCancel: () => void;
   onUseVolta?: () => void;
@@ -41,6 +56,7 @@ export function VersionWarningDialog({
   onOpenChange,
   compatibility,
   scriptName,
+  projectPath,
   onContinue,
   onCancel,
   onUseCorepack,
@@ -55,9 +71,98 @@ export function VersionWarningDialog({
   } = compatibility;
   const [copiedFix, setCopiedFix] = React.useState(false);
 
+  // Remember this choice state
+  const [rememberChoice, setRememberChoice] = React.useState(false);
+  const [isSavingPreference, setIsSavingPreference] = React.useState(false);
+
+  // Corepack and PNPM HOME conflict state
+  const [corepackStatus, setCorepackStatus] =
+    React.useState<CorepackStatus | null>(null);
+  const [pnpmHomeConflict, setPnpmHomeConflict] =
+    React.useState<PnpmHomeConflict | null>(null);
+  const [isEnablingCorepack, setIsEnablingCorepack] = React.useState(false);
+  const [isFixingConflict, setIsFixingConflict] = React.useState(false);
+  const [operationMessage, setOperationMessage] = React.useState<string | null>(
+    null
+  );
+
   const hasVolta = availableTools.includes('volta');
   const hasCorepack = availableTools.includes('corepack');
   const hasConflict = voltaCorepackConflict?.hasConflict ?? false;
+
+  // Check if corepack is truly enabled (shims installed)
+  const isCorepackEnabled = corepackStatus?.enabled ?? false;
+  // Check if there's a PNPM HOME conflict
+  const hasPnpmHomeConflict = pnpmHomeConflict?.hasConflict ?? false;
+
+  // Fetch corepack status and PNPM HOME conflict on open
+  React.useEffect(() => {
+    if (!open) return;
+
+    const fetchStatus = async () => {
+      try {
+        const [status, conflict] = await Promise.all([
+          invoke<CorepackStatus>('get_corepack_status_cmd'),
+          invoke<PnpmHomeConflict>('detect_pnpm_home_conflict_cmd'),
+        ]);
+        setCorepackStatus(status);
+        setPnpmHomeConflict(conflict);
+      } catch (error) {
+        console.error('Failed to fetch corepack status:', error);
+      }
+    };
+
+    fetchStatus();
+  }, [open]);
+
+  // Handle enable corepack
+  const handleEnableCorepack = async () => {
+    setIsEnablingCorepack(true);
+    setOperationMessage(null);
+    try {
+      const result = await invoke<CorepackOperationResponse>('enable_corepack');
+      if (result.success) {
+        setOperationMessage(result.message || 'Corepack enabled successfully');
+        // Refresh status
+        const status = await invoke<CorepackStatus>('get_corepack_status_cmd');
+        setCorepackStatus(status);
+      } else {
+        setOperationMessage(result.error || 'Failed to enable corepack');
+      }
+    } catch (error) {
+      setOperationMessage(
+        `Error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setIsEnablingCorepack(false);
+    }
+  };
+
+  // Handle fix PNPM HOME conflict
+  const handleFixPnpmHomeConflict = async () => {
+    setIsFixingConflict(true);
+    setOperationMessage(null);
+    try {
+      const result =
+        await invoke<CorepackOperationResponse>('fix_pnpm_home_conflict');
+      if (result.success) {
+        setOperationMessage(result.message || 'Conflict fixed successfully');
+        // Refresh conflict status
+        const conflict = await invoke<PnpmHomeConflict>(
+          'detect_pnpm_home_conflict_cmd'
+        );
+        setPnpmHomeConflict(conflict);
+      } else {
+        setOperationMessage(result.error || 'Failed to fix conflict');
+      }
+    } catch (error) {
+      setOperationMessage(
+        `Error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setIsFixingConflict(false);
+    }
+  };
 
   // Register/unregister modal
   React.useEffect(() => {
@@ -89,17 +194,37 @@ export function VersionWarningDialog({
     }
   };
 
+  // Save preference helper
+  const savePreference = async (strategy: ToolchainStrategy) => {
+    if (!rememberChoice || !projectPath) return;
+
+    setIsSavingPreference(true);
+    try {
+      await toolchainAPI.setPreference(projectPath, strategy, true);
+    } catch (error) {
+      console.error('Failed to save preference:', error);
+    } finally {
+      setIsSavingPreference(false);
+    }
+  };
+
   const handleClose = () => {
+    setRememberChoice(false);
     onCancel();
     onOpenChange(false);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    // system_default means continue without version management
+    await savePreference('system_default');
+    setRememberChoice(false);
     onContinue();
     onOpenChange(false);
   };
 
-  const handleUseCorepack = () => {
+  const handleUseCorepack = async () => {
+    await savePreference('corepack_priority');
+    setRememberChoice(false);
     onUseCorepack?.();
     onOpenChange(false);
   };
@@ -127,7 +252,7 @@ export function VersionWarningDialog({
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <div
           className={cn(
-            'relative w-full max-w-lg max-h-[85vh]',
+            'relative w-full max-w-xl max-h-[85vh]',
             'bg-background rounded-2xl',
             'border border-amber-500/30',
             'shadow-2xl shadow-black/60',
@@ -152,20 +277,15 @@ export function VersionWarningDialog({
             )}
           >
             {/* Close button */}
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={handleClose}
-              className={cn(
-                'absolute right-4 top-4',
-                'p-2 rounded-lg',
-                'text-muted-foreground hover:text-foreground',
-                'hover:bg-accent/50',
-                'transition-colors duration-150',
-                'focus:outline-none focus:ring-2 focus:ring-ring'
-              )}
+              className="absolute right-4 top-4"
               aria-label="Close dialog"
             >
               <X className="w-4 h-4" />
-            </button>
+            </Button>
 
             {/* Title area with icon badge */}
             <div className="flex items-center gap-4 pr-10">
@@ -372,14 +492,11 @@ export function VersionWarningDialog({
                       >
                         {voltaCorepackConflict.fixCommand}
                       </code>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={handleCopyFixCommand}
-                        className={cn(
-                          'p-2 rounded-lg flex-shrink-0',
-                          'hover:bg-muted',
-                          'text-muted-foreground hover:text-foreground',
-                          'transition-colors'
-                        )}
+                        className="flex-shrink-0"
                         title="Copy command"
                       >
                         {copiedFix ? (
@@ -387,10 +504,123 @@ export function VersionWarningDialog({
                         ) : (
                           <Copy className="w-4 h-4" />
                         )}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* PNPM HOME Conflict Warning */}
+            {hasPnpmHomeConflict && pnpmHomeConflict && (
+              <div
+                className={cn(
+                  'p-4 rounded-xl',
+                  'bg-orange-500/5 border border-orange-500/30'
+                )}
+              >
+                <div className="flex items-center gap-2 text-sm text-orange-400">
+                  <Wrench className="w-4 h-4" />
+                  <span className="font-semibold">
+                    PNPM Path Conflict Detected
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {pnpmHomeConflict.description}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="warning"
+                    size="sm"
+                    onClick={handleFixPnpmHomeConflict}
+                    disabled={isFixingConflict}
+                  >
+                    {isFixingConflict ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Fixing...
+                      </>
+                    ) : (
+                      <>
+                        <Wrench className="w-3 h-3" />
+                        Fix Automatically
+                      </>
+                    )}
+                  </Button>
+                  {pnpmHomeConflict.fixCommand && (
+                    <span className="text-[10px] text-muted-foreground break-all">
+                      or run:{' '}
+                      <code className="px-1 py-0.5 bg-muted rounded text-[10px] break-all">
+                        {pnpmHomeConflict.fixCommand}
+                      </code>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Corepack Not Enabled Warning */}
+            {recommendedAction === 'useCorepack' &&
+              hasCorepack &&
+              corepackStatus &&
+              !isCorepackEnabled && (
+                <div
+                  className={cn(
+                    'p-4 rounded-xl',
+                    'bg-purple-500/5 border border-purple-500/30'
+                  )}
+                >
+                  <div className="flex items-center gap-2 text-sm text-purple-400">
+                    <Settings className="w-4 h-4" />
+                    <span className="font-semibold">Corepack Not Enabled</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Corepack is installed but not enabled. Enable it to
+                    automatically manage package manager versions.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="info"
+                      size="sm"
+                      onClick={handleEnableCorepack}
+                      disabled={isEnablingCorepack}
+                    >
+                      {isEnablingCorepack ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Enabling...
+                        </>
+                      ) : (
+                        <>
+                          <Settings className="w-3 h-3" />
+                          Enable Corepack
+                        </>
+                      )}
+                    </Button>
+                    <span className="text-[10px] text-muted-foreground">
+                      or run:{' '}
+                      <code className="px-1 py-0.5 bg-muted rounded text-[10px]">
+                        corepack enable
+                      </code>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+            {/* Operation Message */}
+            {operationMessage && (
+              <div
+                className={cn(
+                  'p-3 rounded-lg text-xs',
+                  operationMessage.toLowerCase().includes('error') ||
+                    operationMessage.toLowerCase().includes('failed')
+                    ? 'bg-red-500/10 border border-red-500/30 text-red-400'
+                    : 'bg-green-500/10 border border-green-500/30 text-green-400'
+                )}
+              >
+                <pre className="whitespace-pre-wrap font-mono">
+                  {operationMessage}
+                </pre>
               </div>
             )}
 
@@ -509,65 +739,53 @@ export function VersionWarningDialog({
               'px-6 py-4 flex-shrink-0',
               'border-t border-border',
               'bg-card/50',
-              'flex items-center justify-end gap-3'
+              'flex items-center justify-between gap-3'
             )}
           >
-            {/* When Volta will auto-handle and no conflict */}
-            {recommendedAction === 'useVolta' && hasVolta && !hasConflict ? (
-              <button
-                onClick={handleContinue}
-                className={cn(
-                  'px-4 py-2 rounded-lg',
-                  'text-sm font-medium',
-                  'bg-green-600 hover:bg-green-500 text-white',
-                  'shadow-sm',
-                  'transition-colors duration-150',
-                  'focus:outline-none focus:ring-2 focus:ring-green-500/50'
-                )}
+            {/* Remember this choice checkbox */}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="remember-choice"
+                checked={rememberChoice}
+                onChange={(e) => setRememberChoice(e.target.checked)}
+                disabled={isSavingPreference}
+              />
+              <label
+                htmlFor="remember-choice"
+                className="text-sm text-muted-foreground cursor-pointer select-none"
               >
-                Run with Volta
-              </button>
-            ) : (
-              <>
-                {/* Corepack button */}
-                {recommendedAction === 'useCorepack' &&
-                  hasCorepack &&
-                  onUseCorepack && (
-                    <button
-                      onClick={handleUseCorepack}
-                      className={cn(
-                        'px-4 py-2 rounded-lg',
-                        'text-sm font-medium',
-                        'bg-blue-600 hover:bg-blue-500 text-white',
-                        'shadow-sm',
-                        'transition-colors duration-150',
-                        'focus:outline-none focus:ring-2 focus:ring-blue-500/50'
-                      )}
-                    >
-                      Use Corepack
-                    </button>
-                  )}
+                Remember this choice
+              </label>
+            </div>
 
-                {/* Continue button */}
-                <button
-                  onClick={handleContinue}
-                  className={cn(
-                    'px-4 py-2 rounded-lg',
-                    'text-sm font-medium',
-                    'transition-colors duration-150',
-                    hasConflict
-                      ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/30'
-                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30',
-                    'focus:outline-none focus:ring-2',
-                    hasConflict
-                      ? 'focus:ring-red-500/50'
-                      : 'focus:ring-amber-500/50'
-                  )}
-                >
-                  {hasConflict ? 'Continue (Not Recommended)' : 'Continue Anyway'}
-                </button>
-              </>
-            )}
+            {/* Action buttons */}
+            <div className="flex items-center gap-3">
+              {/* When Volta will auto-handle and no conflict */}
+              {recommendedAction === 'useVolta' && hasVolta && !hasConflict ? (
+                <Button variant="success" onClick={handleContinue}>
+                  Run with Volta
+                </Button>
+              ) : (
+                <>
+                  {/* Corepack button */}
+                  {recommendedAction === 'useCorepack' &&
+                    hasCorepack &&
+                    onUseCorepack && (
+                      <Button variant="info" onClick={handleUseCorepack}>
+                        Use Corepack
+                      </Button>
+                    )}
+
+                  {/* Continue button */}
+                  <Button
+                    variant={hasConflict ? 'outline-destructive' : 'outline-warning'}
+                    onClick={handleContinue}
+                  >
+                    {hasConflict ? 'Continue (Not Recommended)' : 'Continue Anyway'}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -77,6 +77,32 @@ export default {
           '0%, 100%': { opacity: '1', transform: 'scale(1)' },
           '50%': { opacity: '0.6', transform: 'scale(0.8)' },
         },
+        // AI Generate - Gentle sparkle effect (writing/creating feel)
+        'sparkle-glow': {
+          '0%, 100%': { transform: 'scale(1)', opacity: '1' },
+          '50%': { transform: 'scale(1.1)', opacity: '0.85' },
+        },
+        'sparkle-twinkle': {
+          '0%, 100%': { opacity: '0', transform: 'scale(0)' },
+          '50%': { opacity: '0.8', transform: 'scale(1)' },
+        },
+        'ai-generate-glow': {
+          '0%, 100%': { boxShadow: '0 0 6px rgba(147, 51, 234, 0.4)' },
+          '50%': { boxShadow: '0 0 14px rgba(147, 51, 234, 0.6)' },
+        },
+        // AI Review - Gentle scanning effect
+        'scan-glow': {
+          '0%, 100%': { transform: 'scale(1)', opacity: '1' },
+          '50%': { transform: 'scale(1.08)', opacity: '0.9' },
+        },
+        'scan-line': {
+          '0%, 100%': { opacity: '0.3' },
+          '50%': { opacity: '0.8' },
+        },
+        'ai-review-glow': {
+          '0%, 100%': { boxShadow: '0 0 6px rgba(59, 130, 246, 0.4)' },
+          '50%': { boxShadow: '0 0 14px rgba(59, 130, 246, 0.6)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -84,6 +110,14 @@ export default {
         'rocket-vibrate': 'rocket-vibrate 0.1s linear infinite',
         'rocket-fly': 'rocket-fly 1.5s ease-in-out infinite',
         'flame-flicker': 'flame-flicker 0.15s ease-in-out infinite',
+        // AI Generate animations
+        'sparkle-glow': 'sparkle-glow 1.2s ease-in-out infinite',
+        'sparkle-twinkle': 'sparkle-twinkle 1s ease-in-out infinite',
+        'ai-generate-glow': 'ai-generate-glow 1.5s ease-in-out infinite',
+        // AI Review animations
+        'scan-glow': 'scan-glow 1.2s ease-in-out infinite',
+        'scan-line': 'scan-line 1s ease-in-out infinite',
+        'ai-review-glow': 'ai-review-glow 1.5s ease-in-out infinite',
       },
     },
   },

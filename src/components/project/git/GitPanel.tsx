@@ -353,85 +353,97 @@ export function GitPanel({
         </ul>
       </div>
 
-      {/* Right Content Area */}
-      <div className="flex-1 min-w-0 overflow-auto p-4">
-        {activeTab === 'status' && status && (
-          <div className="space-y-4">
-            {/* Branch Status */}
-            <GitStatusView
-              branch={status.branch}
-              ahead={status.ahead}
-              behind={status.behind}
-              hasTrackingBranch={!!status.upstream}
-              projectPath={projectPath}
-              onPush={handlePush}
-              onPull={handlePull}
-              isLoading={isLoading}
-              onRemotesChange={loadStatus}
-            />
+      {/* Right Content Area - Keep all tabs mounted for state persistence */}
+      <div className="flex-1 min-w-0 overflow-hidden p-4 flex flex-col">
+        {/* Status Tab */}
+        <div className={cn('flex flex-col h-full', activeTab !== 'status' && 'hidden')}>
+          {status && (
+            <>
+              {/* Fixed Branch Status Header */}
+              <div className="flex-shrink-0 pb-4 border-b border-border">
+                <GitStatusView
+                  branch={status.branch}
+                  ahead={status.ahead}
+                  behind={status.behind}
+                  hasTrackingBranch={!!status.upstream}
+                  projectPath={projectPath}
+                  onPush={handlePush}
+                  onPull={handlePull}
+                  isLoading={isLoading}
+                  onRemotesChange={loadStatus}
+                />
+              </div>
 
-            {/* File List */}
-            <GitFileList
-              stagedFiles={status.files.filter(f => f.staged)}
-              changedFiles={status.files.filter(f => !f.staged && f.status !== 'untracked')}
-              untrackedFiles={status.files.filter(f => f.status === 'untracked')}
-              onStageFile={handleStageFile}
-              onUnstageFile={handleUnstageFile}
-              onStageAll={handleStageAll}
-              onUnstageAll={handleUnstageAll}
-              onDiscardFile={handleDiscardFile}
-              onDiscardAll={handleDiscardAll}
-              onDeleteUntracked={handleDeleteUntracked}
-              onDeleteAllUntracked={handleDeleteAllUntracked}
-              onFileClick={handleFileClick}
-            />
+              {/* Scrollable File List */}
+              <div className="flex-1 overflow-y-auto min-h-0 py-4">
+                <GitFileList
+                  stagedFiles={status.files.filter(f => f.staged)}
+                  changedFiles={status.files.filter(f => !f.staged && f.status !== 'untracked')}
+                  untrackedFiles={status.files.filter(f => f.status === 'untracked')}
+                  onStageFile={handleStageFile}
+                  onUnstageFile={handleUnstageFile}
+                  onStageAll={handleStageAll}
+                  onUnstageAll={handleUnstageAll}
+                  onDiscardFile={handleDiscardFile}
+                  onDiscardAll={handleDiscardAll}
+                  onDeleteUntracked={handleDeleteUntracked}
+                  onDeleteAllUntracked={handleDeleteAllUntracked}
+                  onFileClick={handleFileClick}
+                />
+              </div>
 
-            {/* Commit Form */}
-            <GitCommitForm
-              hasStagedChanges={status.stagedCount > 0}
-              onCommit={handleCommit}
-              projectPath={projectPath}
-              onOpenAISettings={() => onOpenSettings?.('ai-services')}
-            />
-          </div>
-        )}
+              {/* Fixed Commit Form at bottom */}
+              <div className="flex-shrink-0 pt-4 border-t border-border">
+                <GitCommitForm
+                  hasStagedChanges={status.stagedCount > 0}
+                  onCommit={handleCommit}
+                  projectPath={projectPath}
+                  onOpenAISettings={() => onOpenSettings?.('ai-services')}
+                />
+              </div>
+            </>
+          )}
+        </div>
 
-        {activeTab === 'branches' && (
+        {/* Branches Tab */}
+        <div className={cn('flex-1 overflow-y-auto', activeTab !== 'branches' && 'hidden')}>
           <GitBranchList
             projectPath={projectPath}
             onBranchChange={loadStatus}
           />
-        )}
+        </div>
 
-        {activeTab === 'history' && (
+        {/* History Tab */}
+        <div className={cn('flex-1 overflow-y-auto', activeTab !== 'history' && 'hidden')}>
           <GitHistoryList projectPath={projectPath} />
-        )}
+        </div>
 
-        {activeTab === 'stash' && (
+        {/* Stash Tab */}
+        <div className={cn('flex-1 overflow-y-auto', activeTab !== 'stash' && 'hidden')}>
           <GitStashList
             projectPath={projectPath}
             onStashChange={loadStatus}
           />
-        )}
+        </div>
 
-        {activeTab === 'worktrees' && (
+        {/* Worktrees Tab */}
+        <div className={cn('flex-1 overflow-y-auto', activeTab !== 'worktrees' && 'hidden')}>
           <GitWorktreeList
             project={project}
             workflows={workflows}
             onUpdateProject={onUpdateProject}
             onExecuteScript={onExecuteScript}
             onWorktreesChange={onWorktreesChange}
-            // Note: onSwitchWorkingDirectory is intentionally not passed here
-            // Worktree switching should only be done from Scripts tab
           />
-        )}
+        </div>
 
-        {activeTab === 'settings' && (
+        {/* Settings Tab */}
+        <div className={cn('flex-1 overflow-y-auto', activeTab !== 'settings' && 'hidden')}>
           <GitSettingsPanel
             projectPath={projectPath}
             onRemotesChange={loadStatus}
           />
-        )}
+        </div>
       </div>
 
       {/* Diff Viewer Modal */}

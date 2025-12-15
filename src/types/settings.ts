@@ -10,6 +10,7 @@ export type SettingsSection =
   | 'ai-services'
   | 'prompts'
   | 'mcp'
+  | 'toolchain'
   | 'data';
 
 export interface SettingsSidebarSection {
@@ -40,6 +41,7 @@ export const SETTINGS_SECTIONS: SettingsSidebarSection[] = [
     items: [
       { id: 'appearance', label: 'Appearance', icon: 'Palette' },
       { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: 'Keyboard' },
+      { id: 'toolchain', label: 'Toolchain', icon: 'Wrench' },
     ],
   },
   {

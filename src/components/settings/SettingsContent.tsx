@@ -29,6 +29,9 @@ const PromptTemplatePanel = lazy(() =>
 const McpSettingsFullPanel = lazy(() =>
   import('./panels/McpSettingsFullPanel').then((m) => ({ default: m.McpSettingsFullPanel }))
 );
+const ToolchainPreferencesPanel = lazy(() =>
+  import('./panels/ToolchainPreferencesPanel').then((m) => ({ default: m.ToolchainPreferencesPanel }))
+);
 const DataSettingsPanel = lazy(() =>
   import('./panels/DataSettingsPanel').then((m) => ({ default: m.DataSettingsPanel }))
 );
@@ -60,6 +63,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
       {section === 'ai-services' && <AIServiceSettingsPanel />}
       {section === 'prompts' && <PromptTemplatePanel />}
       {section === 'mcp' && <McpSettingsFullPanel />}
+      {section === 'toolchain' && <ToolchainPreferencesPanel />}
       {section === 'data' && <DataSettingsPanel onExport={onExport} onImport={onImport} />}
     </Suspense>
   );

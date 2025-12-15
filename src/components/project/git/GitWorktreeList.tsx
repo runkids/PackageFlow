@@ -322,8 +322,18 @@ export function GitWorktreeList({
     }
   }, [projectPath]);
 
+  // Initial load
   useEffect(() => {
     loadWorktrees(false);
+  }, [loadWorktrees]);
+
+  // Auto-refresh every 30 seconds (silent background update)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadWorktrees(false);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [loadWorktrees]);
 
   const handleOpenAddDialog = () => {
@@ -615,7 +625,7 @@ export function GitWorktreeList({
           </button>
           <Dropdown
             trigger={
-              <Button size="sm" className="bg-blue-600 hover:bg-blue-500 text-white">
+              <Button variant="default" size="sm">
                 <Plus className="w-4 h-4 mr-1.5" />
                 New
                 <ChevronDown className="w-3 h-3 ml-1" />
@@ -1013,9 +1023,9 @@ export function GitWorktreeList({
                 Cancel
               </Button>
               <Button
+                variant="default"
                 onClick={handleAddWorktree}
                 disabled={isAdding || !newWorktreePath.trim() || !newBranch.trim() || (!createNewBranch && availableBranches.length === 0)}
-                className="bg-blue-600 hover:bg-blue-500"
               >
                 {isAdding ? 'Creating...' : 'Create'}
               </Button>
@@ -1137,9 +1147,9 @@ export function GitWorktreeList({
                 Skip
               </Button>
               <Button
+                variant="default"
                 onClick={handleAddToGitignore}
                 disabled={isAddingToGitignore}
-                className="bg-blue-600 hover:bg-blue-500"
               >
                 {isAddingToGitignore ? 'Adding...' : 'Add to .gitignore'}
               </Button>

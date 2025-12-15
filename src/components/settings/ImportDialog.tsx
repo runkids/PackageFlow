@@ -1,6 +1,7 @@
 /**
  * Import Dialog Component
  * Multi-step dialog for importing exported data with preview and conflict handling
+ * Redesigned to follow UI design spec with gradient header and icon badge
  * @see specs/002-export-import-save/contracts/export-import-api.md
  */
 
@@ -20,17 +21,12 @@ import {
   Settings,
   ArrowLeft,
   Zap,
+  X,
 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-  DialogFooter,
-} from '../ui/Dialog';
+import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { useExportImport } from '../../hooks/useExportImport';
+import { isTopModal, registerModal, unregisterModal } from '../ui/modalStack';
 import type {
   ImportResult,
   ImportPreview,
@@ -85,13 +81,13 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep }) => {
           <React.Fragment key={step.key}>
             <div className="flex items-center gap-1.5">
               <div
-                className={`
-                  flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium
-                  transition-colors duration-200
-                  ${isCompleted ? 'bg-green-500/30 text-green-400 border border-green-500/50' : ''}
-                  ${isCurrent ? 'bg-blue-500/30 text-blue-400 border border-blue-500/50' : ''}
-                  ${isUpcoming ? 'bg-muted text-muted-foreground border border-border' : ''}
-                `}
+                className={cn(
+                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium',
+                  'transition-colors duration-200',
+                  isCompleted && 'bg-green-500/30 text-green-400 border border-green-500/50',
+                  isCurrent && 'bg-blue-500/30 text-blue-400 border border-blue-500/50',
+                  isUpcoming && 'bg-muted text-muted-foreground border border-border'
+                )}
               >
                 {isCompleted ? (
                   <CheckCircle className="h-3.5 w-3.5" />
@@ -100,18 +96,20 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep }) => {
                 )}
               </div>
               <span
-                className={`text-xs font-medium ${
+                className={cn(
+                  'text-xs font-medium',
                   isCurrent ? 'text-foreground' : 'text-muted-foreground'
-                }`}
+                )}
               >
                 {step.label}
               </span>
             </div>
             {index < steps.length - 1 && (
               <ChevronRight
-                className={`h-3.5 w-3.5 ${
+                className={cn(
+                  'h-3.5 w-3.5',
                   index < currentIndex ? 'text-green-500/50' : 'text-muted-foreground'
-                }`}
+                )}
               />
             )}
           </React.Fragment>
@@ -128,16 +126,14 @@ interface SelectStepProps {
   error: string | null;
   isSelecting: boolean;
   onSelectFile: () => void;
-  onClose: () => void;
 }
 
 const SelectStep: React.FC<SelectStepProps> = ({
   error,
   isSelecting,
   onSelectFile,
-  onClose,
 }) => (
-  <>
+  <div className="space-y-4">
     <div className="flex flex-col items-center py-6">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted border-2 border-dashed border-border">
         <FileText className="h-7 w-7 text-muted-foreground" />
@@ -160,25 +156,24 @@ const SelectStep: React.FC<SelectStepProps> = ({
       </div>
     )}
 
-    <DialogFooter>
-      <Button variant="outline" onClick={onClose}>
-        Cancel
-      </Button>
-      <Button onClick={onSelectFile} disabled={isSelecting}>
-        {isSelecting ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Opening...
-          </>
-        ) : (
-          <>
-            <FolderUp className="mr-2 h-4 w-4" />
-            Browse Files
-          </>
-        )}
-      </Button>
-    </DialogFooter>
-  </>
+    <Button
+      onClick={onSelectFile}
+      disabled={isSelecting}
+      className="w-full py-3"
+    >
+      {isSelecting ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Opening...
+        </>
+      ) : (
+        <>
+          <FolderUp className="h-4 w-4" />
+          Browse Files
+        </>
+      )}
+    </Button>
+  </div>
 );
 
 /**
@@ -251,7 +246,7 @@ const PreviewStepBody: React.FC<PreviewStepBodyProps> = ({
   };
 
   return (
-    <>
+    <div className="space-y-4">
       <div className="rounded-lg bg-card border border-border p-4">
         <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">
           Contents to Import
@@ -266,18 +261,22 @@ const PreviewStepBody: React.FC<PreviewStepBodyProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <div
-                    className={`flex h-6 w-6 items-center justify-center rounded ${colorClasses[item.color]}`}
+                    className={cn(
+                      'flex h-6 w-6 items-center justify-center rounded',
+                      colorClasses[item.color]
+                    )}
                   >
                     <Icon className="h-3.5 w-3.5" />
                   </div>
                   <span className="text-sm text-foreground">{item.label}</span>
                 </div>
                 <span
-                  className={`text-sm font-medium ${
+                  className={cn(
+                    'text-sm font-medium',
                     item.count > 0
                       ? colorClasses[item.color].split(' ')[1]
                       : 'text-muted-foreground'
-                  }`}
+                  )}
                 >
                   {item.showAs ?? item.count}
                 </span>
@@ -295,11 +294,12 @@ const PreviewStepBody: React.FC<PreviewStepBodyProps> = ({
         <div className="space-y-2">
           {/* Merge Mode */}
           <label
-            className={`flex items-start gap-3 rounded-lg p-3 cursor-pointer transition-colors ${
+            className={cn(
+              'flex items-start gap-3 rounded-lg p-3 cursor-pointer transition-colors',
               importMode === 'merge'
                 ? 'bg-blue-500/10 border border-blue-500/30'
                 : 'bg-muted border border-transparent hover:bg-muted/80'
-            }`}
+            )}
           >
             <input
               type="radio"
@@ -321,11 +321,12 @@ const PreviewStepBody: React.FC<PreviewStepBodyProps> = ({
 
           {/* Replace Mode */}
           <label
-            className={`flex items-start gap-3 rounded-lg p-3 cursor-pointer transition-colors ${
+            className={cn(
+              'flex items-start gap-3 rounded-lg p-3 cursor-pointer transition-colors',
               importMode === 'replace'
                 ? 'bg-red-500/10 border border-red-500/30'
                 : 'bg-muted border border-transparent hover:bg-muted/80'
-            }`}
+            )}
           >
             <input
               type="radio"
@@ -403,38 +404,9 @@ const PreviewStepBody: React.FC<PreviewStepBodyProps> = ({
           </p>
         </div>
       )}
-    </>
+    </div>
   );
 };
-
-/**
- * Preview step footer (fixed)
- */
-interface PreviewStepFooterProps {
-  importMode: ImportModeOption;
-  onBack: () => void;
-  onImport: () => void;
-}
-
-const PreviewStepFooter: React.FC<PreviewStepFooterProps> = ({
-  importMode,
-  onBack,
-  onImport,
-}) => (
-  <DialogFooter className="justify-between flex-shrink-0">
-    <Button variant="ghost" onClick={onBack}>
-      <ArrowLeft className="mr-2 h-4 w-4" />
-      Back
-    </Button>
-    <Button
-      onClick={onImport}
-      variant={importMode === 'replace' ? 'destructive' : 'default'}
-    >
-      <Upload className="mr-2 h-4 w-4" />
-      {importMode === 'replace' ? 'Replace All Data' : 'Confirm Import'}
-    </Button>
-  </DialogFooter>
-);
 
 /**
  * Importing state with progress
@@ -487,7 +459,7 @@ const ResultStepBody: React.FC<ResultStepBodyProps> = ({ result }) => {
     skipped.projects > 0 || skipped.workflows > 0 || skipped.templates > 0 || skipped.stepTemplates > 0;
 
   return (
-    <>
+    <div className="space-y-4">
       <div className="flex flex-col items-center py-4">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/20 border border-green-500/30">
           <CheckCircle className="h-7 w-7 text-green-400" />
@@ -586,25 +558,9 @@ const ResultStepBody: React.FC<ResultStepBodyProps> = ({ result }) => {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 };
-
-/**
- * Result step footer (fixed)
- */
-interface ResultStepFooterProps {
-  result: ImportResult;
-  onClose: () => void;
-}
-
-const ResultStepFooter: React.FC<ResultStepFooterProps> = ({ result, onClose }) => (
-  <DialogFooter className="flex-shrink-0">
-    <Button variant={result.success ? 'default' : 'outline'} onClick={onClose}>
-      {result.success ? 'Done' : 'Close'}
-    </Button>
-  </DialogFooter>
-);
 
 // ============================================================================
 // ImportDialog Component
@@ -615,9 +571,43 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
   onOpenChange,
   onImportComplete,
 }) => {
+  const modalId = React.useId();
+  const contentRef = React.useRef<HTMLDivElement>(null);
   const { import: importState } = useExportImport();
   const [step, setStep] = useState<ImportStep>('select');
   const [importMode, setImportMode] = useState<ImportModeOption>('merge');
+
+  // Register/unregister modal
+  React.useEffect(() => {
+    if (!open) return;
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId, open]);
+
+  // Handle ESC key
+  React.useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      handleClose();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalId, open]);
+
+  // Focus content area when opened
+  React.useEffect(() => {
+    if (open && contentRef.current) {
+      const timer = setTimeout(() => {
+        contentRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
 
   const handleSelectFile = useCallback(async () => {
     const result = await importState.selectFile();
@@ -642,6 +632,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
   const handleClose = useCallback(() => {
     importState.reset();
     setStep('select');
+    setImportMode('merge');
     onOpenChange(false);
   }, [importState, onOpenChange]);
 
@@ -651,37 +642,116 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
     importState.reset();
   }, [importState]);
 
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      handleClose();
+    }
+  };
+
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
-        <DialogClose onClick={handleClose} />
-        {/* Fixed Header */}
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/20">
-              <Upload className="h-4 w-4 text-purple-400" />
+    <div
+      className={cn('fixed inset-0 z-50', 'animate-in fade-in-0 duration-200')}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-dialog-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={handleBackdropClick}
+        aria-hidden="true"
+      />
+
+      {/* Dialog container */}
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <div
+          className={cn(
+            'relative w-full max-w-lg max-h-[85vh]',
+            'bg-background rounded-2xl',
+            'border border-blue-500/30',
+            'shadow-2xl shadow-black/60',
+            'animate-in fade-in-0 zoom-in-95 duration-200',
+            'slide-in-from-bottom-4',
+            'flex flex-col overflow-hidden'
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with gradient */}
+          <div
+            className={cn(
+              'relative px-6 py-5',
+              'border-b border-border',
+              'bg-gradient-to-r',
+              'dark:from-blue-500/20 dark:via-blue-600/10 dark:to-transparent',
+              'from-blue-500/10 via-blue-600/5 to-transparent'
+            )}
+          >
+            {/* Close button */}
+            <button
+              onClick={handleClose}
+              className={cn(
+                'absolute right-4 top-4',
+                'p-2 rounded-lg',
+                'text-muted-foreground hover:text-foreground',
+                'hover:bg-accent/50',
+                'transition-colors duration-150',
+                'focus:outline-none focus:ring-2 focus:ring-ring'
+              )}
+              aria-label="Close dialog"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Title area with icon badge */}
+            <div className="flex items-start gap-4 pr-10">
+              <div
+                className={cn(
+                  'flex-shrink-0',
+                  'w-12 h-12 rounded-xl',
+                  'flex items-center justify-center',
+                  'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+                  'border border-blue-500/20',
+                  'bg-blue-500/10',
+                  'shadow-lg'
+                )}
+              >
+                <Upload className={cn('w-6 h-6', 'text-blue-400')} />
+              </div>
+              <div className="flex-1 min-w-0 pt-1">
+                <h2
+                  id="import-dialog-title"
+                  className="text-lg font-semibold text-foreground leading-tight"
+                >
+                  Import Data
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Restore from a PackageFlow backup file
+                </p>
+              </div>
             </div>
-            Import Data
-          </DialogTitle>
-        </DialogHeader>
+          </div>
 
-        {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto mt-4 min-h-0">
-          {/* Step indicator - hide during importing */}
-          {step !== 'importing' && <StepIndicator currentStep={step} />}
+          {/* Content area */}
+          <div
+            ref={contentRef}
+            className="flex-1 overflow-y-auto min-h-0 focus:outline-none p-6"
+            tabIndex={-1}
+          >
+            {/* Step indicator - hide during importing */}
+            {step !== 'importing' && <StepIndicator currentStep={step} />}
 
-          <div className="space-y-4">
-            {/* Step 1: Select File - has its own footer */}
+            {/* Step 1: Select File */}
             {step === 'select' && (
               <SelectStep
                 error={importState.error}
                 isSelecting={importState.isSelecting}
                 onSelectFile={handleSelectFile}
-                onClose={handleClose}
               />
             )}
 
-            {/* Step 2: Preview - body only */}
+            {/* Step 2: Preview */}
             {step === 'preview' && importState.preview && (
               <PreviewStepBody
                 preview={importState.preview}
@@ -694,25 +764,81 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
             {/* Step 3: Importing */}
             {step === 'importing' && <ImportingState />}
 
-            {/* Step 4: Result - body only */}
+            {/* Step 4: Result */}
             {step === 'result' && importState.result && (
               <ResultStepBody result={importState.result} />
             )}
           </div>
-        </div>
 
-        {/* Fixed Footer - only for preview and result steps */}
-        {step === 'preview' && importState.preview && (
-          <PreviewStepFooter
-            importMode={importMode}
-            onBack={handleBack}
-            onImport={handleImport}
-          />
-        )}
-        {step === 'result' && importState.result && (
-          <ResultStepFooter result={importState.result} onClose={handleClose} />
-        )}
-      </DialogContent>
-    </Dialog>
+          {/* Footer with actions */}
+          <div
+            className={cn(
+              'px-6 py-4',
+              'border-t border-border',
+              'bg-card/50',
+              'flex items-center',
+              step === 'preview' ? 'justify-between' : 'justify-end',
+              'gap-3',
+              'flex-shrink-0'
+            )}
+          >
+            {/* Select step footer */}
+            {step === 'select' && (
+              <button
+                onClick={handleClose}
+                className={cn(
+                  'px-4 py-2 rounded-lg',
+                  'text-sm font-medium',
+                  'bg-secondary hover:bg-accent',
+                  'text-foreground',
+                  'border border-border',
+                  'transition-colors duration-150',
+                  'focus:outline-none focus:ring-2 focus:ring-ring'
+                )}
+              >
+                Cancel
+              </button>
+            )}
+
+            {/* Preview step footer */}
+            {step === 'preview' && importState.preview && (
+              <>
+                <button
+                  onClick={handleBack}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg',
+                    'text-sm font-medium',
+                    'text-muted-foreground hover:text-foreground',
+                    'hover:bg-accent',
+                    'transition-colors duration-150',
+                    'focus:outline-none focus:ring-2 focus:ring-ring'
+                  )}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </button>
+                <Button
+                  onClick={handleImport}
+                  variant={importMode === 'replace' ? 'destructive' : 'default'}
+                >
+                  <Upload className="h-4 w-4" />
+                  {importMode === 'replace' ? 'Replace All Data' : 'Confirm Import'}
+                </Button>
+              </>
+            )}
+
+            {/* Result step footer */}
+            {step === 'result' && importState.result && (
+              <Button
+                onClick={handleClose}
+                variant={importState.result.success ? 'default' : 'secondary'}
+              >
+                {importState.result.success ? 'Done' : 'Close'}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };

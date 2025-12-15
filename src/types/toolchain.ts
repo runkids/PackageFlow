@@ -109,6 +109,39 @@ export interface CorepackInfo {
   path?: string;
 }
 
+/** Detailed corepack status from backend */
+export interface CorepackStatus {
+  /** Whether corepack binary is available */
+  available: boolean;
+  /** Whether corepack shims are installed (enabled) */
+  enabled: boolean;
+  /** Corepack version */
+  version?: string;
+  /** Path to corepack binary */
+  path?: string;
+  /** List of tools with corepack shims installed */
+  enabledTools: string[];
+}
+
+/** PNPM HOME path conflict detection result */
+export interface PnpmHomeConflict {
+  /** Whether a conflict is detected */
+  hasConflict: boolean;
+  /** Description of the conflict */
+  description?: string;
+  /** The problematic path */
+  problematicPath?: string;
+  /** Suggested fix command */
+  fixCommand?: string;
+}
+
+/** Response for corepack operations */
+export interface CorepackOperationResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 export interface SystemNodeInfo {
   version?: string;
   path?: string;

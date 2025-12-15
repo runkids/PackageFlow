@@ -7,8 +7,6 @@ import { useShortcutsContext } from './contexts/ShortcutsContext';
 import type { Workflow } from './types/workflow';
 import { scriptAPI, confirm } from './lib/tauri-api';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ExportDialog } from './components/settings/ExportDialog';
-import { ImportDialog } from './components/settings/ImportDialog';
 import { SettingsButton } from './components/settings/SettingsButton';
 import { SettingsPage } from './components/settings/SettingsPage';
 import type { SettingsSection } from './types/settings';
@@ -87,8 +85,6 @@ function App() {
   const [workflowNavState, setWorkflowNavState] = useState<WorkflowNavState | null>(null);
   const [isKilling, setIsKilling] = useState(false);
   const [killSuccess, setKillSuccess] = useState(false);
-  const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [settingsPageOpen, setSettingsPageOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('storage');
   const [dataVersion, setDataVersion] = useState(0);
@@ -352,7 +348,12 @@ function App() {
       category: 'Data',
       enabled: isShortcutEnabled('export'),
       action: () => {
-        setExportDialogOpen(true);
+        // Open settings to data section and trigger export dialog
+        openSettings('data');
+        // Dispatch event to open export dialog after settings page opens
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('settings-open-export'));
+        }, 100);
       },
     },
     {
@@ -362,7 +363,12 @@ function App() {
       category: 'Data',
       enabled: isShortcutEnabled('import'),
       action: () => {
-        setImportDialogOpen(true);
+        // Open settings to data section and trigger import dialog
+        openSettings('data');
+        // Dispatch event to open import dialog after settings page opens
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('settings-open-import'));
+        }, 100);
       },
     },
     {
@@ -636,29 +642,11 @@ function App() {
         />
       </TerminalPortal>
 
-      <ExportDialog
-        open={exportDialogOpen}
-        onOpenChange={setExportDialogOpen}
-      />
-
-      <ImportDialog
-        open={importDialogOpen}
-        onOpenChange={setImportDialogOpen}
-        onImportComplete={handleImportComplete}
-      />
-
       <SettingsPage
         isOpen={settingsPageOpen}
         onClose={() => setSettingsPageOpen(false)}
         initialSection={settingsInitialSection}
-        onExport={() => {
-          setSettingsPageOpen(false);
-          setExportDialogOpen(true);
-        }}
-        onImport={() => {
-          setSettingsPageOpen(false);
-          setImportDialogOpen(true);
-        }}
+        onImportComplete={handleImportComplete}
       />
 
       <KeyboardShortcutsFloatingButton

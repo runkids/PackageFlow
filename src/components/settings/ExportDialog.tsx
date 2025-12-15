@@ -1,6 +1,7 @@
 /**
  * Export Dialog Component
  * Provides a clean, desktop-native experience for exporting application data
+ * Redesigned to follow UI design spec with gradient header and icon badge
  * @see specs/002-export-import-save/contracts/export-import-api.md
  */
 
@@ -16,17 +17,12 @@ import {
   GitBranch,
   Workflow,
   Zap,
+  X,
 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-  DialogFooter,
-} from '../ui/Dialog';
+import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { useExportImport } from '../../hooks/useExportImport';
+import { isTopModal, registerModal, unregisterModal } from '../ui/modalStack';
 import type { ExportResult } from '../../types/export-import';
 
 // ============================================================================
@@ -92,9 +88,9 @@ const ExportInfoCard: React.FC = () => (
 const ExportingState: React.FC = () => (
   <div className="flex flex-col items-center justify-center py-10">
     <div className="relative">
-      <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-ping" />
-      <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/30">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+      <div className="absolute inset-0 rounded-full bg-green-500/20 animate-ping" />
+      <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-green-500/10 border border-green-500/30">
+        <Loader2 className="h-8 w-8 animate-spin text-green-400" />
       </div>
     </div>
     <p className="mt-4 text-sm text-foreground">Preparing your export...</p>
@@ -182,13 +178,13 @@ interface ExportErrorProps {
 }
 
 const ExportError: React.FC<ExportErrorProps> = ({ error }) => (
-  <div className="rounded-lg bg-red-900/20 border border-red-700/50 p-4">
+  <div className="rounded-lg bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700/50 p-4">
     <div className="flex items-start gap-3">
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-red-500/20">
-        <XCircle className="h-5 w-5 text-red-400" />
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-red-200 dark:bg-red-500/20">
+        <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
       </div>
       <div className="flex-1 min-w-0">
-        <h4 className="text-sm font-medium text-red-300">Export Failed</h4>
+        <h4 className="text-sm font-medium text-red-700 dark:text-red-300">Export Failed</h4>
         <p className="mt-1 text-sm text-muted-foreground">{error}</p>
         <p className="mt-2 text-xs text-muted-foreground">
           Please try again or check your disk space and permissions.
@@ -207,7 +203,41 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
   onOpenChange,
   onExportComplete,
 }) => {
+  const modalId = React.useId();
+  const contentRef = React.useRef<HTMLDivElement>(null);
   const { export: exportState } = useExportImport();
+
+  // Register/unregister modal
+  React.useEffect(() => {
+    if (!open) return;
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId, open]);
+
+  // Handle ESC key
+  React.useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      handleClose();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalId, open]);
+
+  // Focus content area when opened
+  React.useEffect(() => {
+    if (open && contentRef.current) {
+      const timer = setTimeout(() => {
+        contentRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
 
   const handleExport = useCallback(async () => {
     const result = await exportState.execute();
@@ -221,84 +251,192 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
     onOpenChange(false);
   }, [exportState, onOpenChange]);
 
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      handleClose();
+    }
+  };
+
   const isInitialState =
     !exportState.isExporting && !exportState.result && !exportState.error;
   const showSuccess = exportState.result?.success;
   const showError =
     exportState.error || (exportState.result && !exportState.result.success);
 
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
-        <DialogClose onClick={handleClose} />
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/20">
-              <Archive className="h-4 w-4 text-blue-400" />
+    <div
+      className={cn('fixed inset-0 z-50', 'animate-in fade-in-0 duration-200')}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="export-dialog-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={handleBackdropClick}
+        aria-hidden="true"
+      />
+
+      {/* Dialog container */}
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <div
+          className={cn(
+            'relative w-full max-w-lg max-h-[85vh]',
+            'bg-background rounded-2xl',
+            'border border-green-500/30',
+            'shadow-2xl shadow-black/60',
+            'animate-in fade-in-0 zoom-in-95 duration-200',
+            'slide-in-from-bottom-4',
+            'flex flex-col overflow-hidden'
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with gradient */}
+          <div
+            className={cn(
+              'relative px-6 py-5',
+              'border-b border-border',
+              'bg-gradient-to-r',
+              'dark:from-green-500/20 dark:via-green-600/10 dark:to-transparent',
+              'from-green-500/10 via-green-600/5 to-transparent'
+            )}
+          >
+            {/* Close button */}
+            <button
+              onClick={handleClose}
+              className={cn(
+                'absolute right-4 top-4',
+                'p-2 rounded-lg',
+                'text-muted-foreground hover:text-foreground',
+                'hover:bg-accent/50',
+                'transition-colors duration-150',
+                'focus:outline-none focus:ring-2 focus:ring-ring'
+              )}
+              aria-label="Close dialog"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Title area with icon badge */}
+            <div className="flex items-start gap-4 pr-10">
+              <div
+                className={cn(
+                  'flex-shrink-0',
+                  'w-12 h-12 rounded-xl',
+                  'flex items-center justify-center',
+                  'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+                  'border border-green-500/20',
+                  'bg-green-500/10',
+                  'shadow-lg'
+                )}
+              >
+                <Archive className={cn('w-6 h-6', 'text-green-400')} />
+              </div>
+              <div className="flex-1 min-w-0 pt-1">
+                <h2
+                  id="export-dialog-title"
+                  className="text-lg font-semibold text-foreground leading-tight"
+                >
+                  Export Data
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Create a backup of your PackageFlow configuration
+                </p>
+              </div>
             </div>
-            Export Data
-          </DialogTitle>
-        </DialogHeader>
+          </div>
 
-        <div className="mt-5 space-y-4">
-          {/* Initial state - show info and export button */}
-          {isInitialState && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Create a backup of your PackageFlow configuration. You can restore
-                this file on another device or use it to recover your settings.
-              </p>
-              <ExportInfoCard />
-            </>
-          )}
+          {/* Content area */}
+          <div
+            ref={contentRef}
+            className="flex-1 overflow-y-auto min-h-0 focus:outline-none p-6"
+            tabIndex={-1}
+          >
+            <div className="space-y-4">
+              {/* Initial state - show info */}
+              {isInitialState && (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    You can restore this file on another device or use it to recover your settings.
+                  </p>
+                  <ExportInfoCard />
+                </>
+              )}
 
-          {/* Exporting state */}
-          {exportState.isExporting && <ExportingState />}
+              {/* Exporting state */}
+              {exportState.isExporting && <ExportingState />}
 
-          {/* Success state */}
-          {showSuccess && exportState.result && (
-            <ExportSuccess result={exportState.result} />
-          )}
+              {/* Success state */}
+              {showSuccess && exportState.result && (
+                <ExportSuccess result={exportState.result} />
+              )}
 
-          {/* Error state */}
-          {showError && (
-            <ExportError
-              error={
-                exportState.error ||
-                exportState.result?.error ||
-                'An unknown error occurred'
-              }
-            />
-          )}
+              {/* Error state */}
+              {showError && (
+                <ExportError
+                  error={
+                    exportState.error ||
+                    exportState.result?.error ||
+                    'An unknown error occurred'
+                  }
+                />
+              )}
+            </div>
+          </div>
 
-          {/* Action buttons */}
-          <DialogFooter>
-            <Button variant="outline" onClick={handleClose}>
+          {/* Footer with actions */}
+          <div
+            className={cn(
+              'px-6 py-4',
+              'border-t border-border',
+              'bg-card/50',
+              'flex items-center justify-end gap-3',
+              'flex-shrink-0'
+            )}
+          >
+            <button
+              onClick={handleClose}
+              className={cn(
+                'px-4 py-2 rounded-lg',
+                'text-sm font-medium',
+                'bg-secondary hover:bg-accent',
+                'text-foreground',
+                'border border-border',
+                'transition-colors duration-150',
+                'focus:outline-none focus:ring-2 focus:ring-ring'
+              )}
+            >
               {showSuccess ? 'Done' : 'Cancel'}
-            </Button>
+            </button>
             {!showSuccess && (
-              <Button onClick={handleExport} disabled={exportState.isExporting}>
+              <Button
+                onClick={handleExport}
+                disabled={exportState.isExporting}
+                variant="success"
+              >
                 {exportState.isExporting ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Exporting...
                   </>
                 ) : showError ? (
                   <>
-                    <Download className="mr-2 h-4 w-4" />
+                    <Download className="h-4 w-4" />
                     Try Again
                   </>
                 ) : (
                   <>
-                    <Download className="mr-2 h-4 w-4" />
+                    <Download className="h-4 w-4" />
                     Choose Location & Export
                   </>
                 )}
               </Button>
             )}
-          </DialogFooter>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 };

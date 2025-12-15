@@ -278,11 +278,14 @@ export function useDeploy(): UseDeployReturn {
   // ========================================================================
 
   const loadConfig = useCallback(async (projectId: string) => {
+    console.log('[useDeploy] loadConfig called for projectId:', projectId);
     setIsLoadingConfig(true);
     try {
       const config = await deployAPI.getDeploymentConfig(projectId);
+      console.log('[useDeploy] loadConfig result:', config ? JSON.stringify(config, null, 2) : 'null');
       setDeploymentConfig(config);
     } catch (err) {
+      console.error('[useDeploy] loadConfig error:', err);
       setError(`Failed to load deployment config: ${err}`);
     } finally {
       setIsLoadingConfig(false);
@@ -291,10 +294,14 @@ export function useDeploy(): UseDeployReturn {
 
   const saveConfig = useCallback(async (config: DeploymentConfig) => {
     try {
+      console.log('[useDeploy] saveConfig called with:', JSON.stringify(config, null, 2));
       await deployAPI.saveDeploymentConfig(config);
+      console.log('[useDeploy] saveConfig success');
       setDeploymentConfig(config);
     } catch (err) {
+      console.error('[useDeploy] saveConfig error:', err);
       setError(`Failed to save deployment config: ${err}`);
+      throw err; // Re-throw to prevent dialog from closing on error
     }
   }, []);
 

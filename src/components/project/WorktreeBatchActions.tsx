@@ -467,7 +467,7 @@ export function WorktreeBatchActions({ worktrees, projectPath, onComplete }: Wor
                     <span className="text-red-400">{fetchErrorCount} failed</span>
                   )}
                 </div>
-                <Button onClick={handleCloseFetch} className="bg-blue-600 hover:bg-blue-500">
+                <Button variant="default" onClick={handleCloseFetch}>
                   Done
                 </Button>
               </div>
@@ -555,7 +555,7 @@ export function WorktreeBatchActions({ worktrees, projectPath, onComplete }: Wor
                     <span className="text-red-400">{pullErrorCount} failed</span>
                   )}
                 </div>
-                <Button onClick={handleClosePull} className="bg-blue-600 hover:bg-blue-500">
+                <Button variant="default" onClick={handleClosePull}>
                   Done
                 </Button>
               </div>
@@ -714,7 +714,7 @@ export function WorktreeBatchActions({ worktrees, projectPath, onComplete }: Wor
                         <span className="text-red-400">{cleanErrorCount} failed</span>
                       )}
                     </div>
-                    <Button onClick={handleCloseClean} className="bg-blue-600 hover:bg-blue-500">
+                    <Button variant="default" onClick={handleCloseClean}>
                       Done
                     </Button>
                   </div>

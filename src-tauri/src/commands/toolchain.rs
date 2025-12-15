@@ -78,7 +78,7 @@ fn parse_package_manager_string(pm_string: &str) -> Result<ParsedPackageManager,
     }
 }
 
-/// Check if corepack is enabled
+/// Check if corepack is enabled (shims installed)
 pub fn detect_corepack_enabled() -> bool {
     // Use detect_corepack from version module which handles PATH correctly
     let corepack_status = crate::commands::version::detect_corepack();
@@ -86,13 +86,160 @@ pub fn detect_corepack_enabled() -> bool {
         return false;
     }
 
-    // Corepack is available, check if it's enabled by trying to run it
-    // Use path_resolver for proper PATH handling in macOS GUI apps
+    // Corepack is available, now check if shims are actually installed
+    // by checking if pnpm/yarn in common locations are symlinks to corepack
+    let shim_paths = [
+        "/usr/local/bin/pnpm",
+        "/usr/local/bin/yarn",
+        "/opt/homebrew/bin/pnpm",
+        "/opt/homebrew/bin/yarn",
+    ];
+
+    for path in &shim_paths {
+        let path = std::path::Path::new(path);
+        if path.exists() {
+            // Check if it's a symlink pointing to corepack
+            if let Ok(target) = std::fs::read_link(path) {
+                let target_str = target.to_string_lossy();
+                if target_str.contains("corepack") {
+                    return true;
+                }
+            }
+            // Also check if it's a script that calls corepack
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if content.contains("corepack") {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Fallback: Check if corepack can run successfully
     let output = crate::utils::path_resolver::create_command("corepack")
         .arg("--version")
         .output();
 
     output.map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// Detailed corepack status including shim information
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorepackStatus {
+    /// Whether corepack binary is available
+    pub available: bool,
+    /// Whether corepack shims are installed (enabled)
+    pub enabled: bool,
+    /// Corepack version
+    pub version: Option<String>,
+    /// Path to corepack binary
+    pub path: Option<String>,
+    /// List of tools with corepack shims installed
+    pub enabled_tools: Vec<String>,
+}
+
+/// Get detailed corepack status
+pub fn get_corepack_status() -> CorepackStatus {
+    let corepack_status = crate::commands::version::detect_corepack();
+    if !corepack_status.available {
+        return CorepackStatus {
+            available: false,
+            enabled: false,
+            version: None,
+            path: None,
+            enabled_tools: vec![],
+        };
+    }
+
+    let mut enabled_tools = Vec::new();
+    let shim_checks = [
+        ("/usr/local/bin/pnpm", "pnpm"),
+        ("/usr/local/bin/yarn", "yarn"),
+        ("/usr/local/bin/npm", "npm"),
+        ("/opt/homebrew/bin/pnpm", "pnpm"),
+        ("/opt/homebrew/bin/yarn", "yarn"),
+    ];
+
+    for (path, tool) in &shim_checks {
+        let p = std::path::Path::new(path);
+        if p.exists() {
+            let is_corepack = if let Ok(target) = std::fs::read_link(p) {
+                target.to_string_lossy().contains("corepack")
+            } else if let Ok(content) = std::fs::read_to_string(p) {
+                content.contains("corepack")
+            } else {
+                false
+            };
+
+            if is_corepack && !enabled_tools.contains(&tool.to_string()) {
+                enabled_tools.push(tool.to_string());
+            }
+        }
+    }
+
+    CorepackStatus {
+        available: true,
+        enabled: !enabled_tools.is_empty(),
+        version: corepack_status.version,
+        path: corepack_status.path,
+        enabled_tools,
+    }
+}
+
+/// PNPM HOME path conflict detection result
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PnpmHomeConflict {
+    /// Whether a conflict is detected
+    pub has_conflict: bool,
+    /// Description of the conflict
+    pub description: Option<String>,
+    /// The problematic path
+    pub problematic_path: Option<String>,
+    /// Suggested fix command
+    pub fix_command: Option<String>,
+}
+
+/// Detect PNPM_HOME path conflicts
+/// This detects the case where $PNPM_HOME/pnpm is a file instead of directory
+pub fn detect_pnpm_home_conflict() -> PnpmHomeConflict {
+    // Check common PNPM_HOME locations
+    let home = crate::utils::path_resolver::get_home_dir().unwrap_or_default();
+    let pnpm_home_candidates = [
+        std::env::var("PNPM_HOME").ok(),
+        Some(format!("{}/Library/pnpm", home)),
+        Some(format!("{}/.local/share/pnpm", home)),
+    ];
+
+    for pnpm_home in pnpm_home_candidates.into_iter().flatten() {
+        let pnpm_path = std::path::Path::new(&pnpm_home).join("pnpm");
+
+        // Check if pnpm is a file (not directory)
+        if pnpm_path.exists() && pnpm_path.is_file() {
+            // This is the problematic case: pnpm is a file but corepack expects directory
+            return PnpmHomeConflict {
+                has_conflict: true,
+                description: Some(format!(
+                    "Found file at '{}' which conflicts with Corepack's expected directory structure. \
+                    This typically happens when standalone pnpm was installed alongside Corepack.",
+                    pnpm_path.display()
+                )),
+                problematic_path: Some(pnpm_path.to_string_lossy().to_string()),
+                fix_command: Some(format!(
+                    "rm '{}' && rm '{}x'",
+                    pnpm_path.display(),
+                    pnpm_path.display()
+                )),
+            };
+        }
+    }
+
+    PnpmHomeConflict {
+        has_conflict: false,
+        description: None,
+        problematic_path: None,
+        fix_command: None,
+    }
 }
 
 // ============================================================================
@@ -550,6 +697,21 @@ pub async fn get_toolchain_preference(
     Ok(preferences.get(&project_path).cloned())
 }
 
+/// Get all toolchain preferences from SQLite
+#[tauri::command]
+pub async fn get_all_toolchain_preferences(
+    db: tauri::State<'_, crate::DatabaseState>,
+) -> Result<std::collections::HashMap<String, ProjectPreference>, String> {
+    use crate::repositories::SettingsRepository;
+
+    let repo = SettingsRepository::new(db.0.as_ref().clone());
+    let preferences: std::collections::HashMap<String, ProjectPreference> = repo
+        .get(TOOLCHAIN_PREFERENCES_KEY)?
+        .unwrap_or_default();
+
+    Ok(preferences)
+}
+
 /// Set project toolchain preference to SQLite
 #[tauri::command]
 pub async fn set_toolchain_preference(
@@ -693,5 +855,115 @@ pub async fn get_environment_diagnostics(
         system_node,
         package_managers,
         path_analysis,
+    })
+}
+
+// ============================================================================
+// Corepack Management Commands
+// ============================================================================
+
+/// Response for corepack operations
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorepackOperationResponse {
+    pub success: bool,
+    pub message: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Get detailed corepack status
+#[tauri::command]
+pub async fn get_corepack_status_cmd() -> Result<CorepackStatus, String> {
+    Ok(get_corepack_status())
+}
+
+/// Detect PNPM HOME path conflicts
+#[tauri::command]
+pub async fn detect_pnpm_home_conflict_cmd() -> Result<PnpmHomeConflict, String> {
+    Ok(detect_pnpm_home_conflict())
+}
+
+/// Enable corepack (run `corepack enable`)
+#[tauri::command]
+pub async fn enable_corepack() -> Result<CorepackOperationResponse, String> {
+    // Check if corepack is available first
+    let corepack_status = crate::commands::version::detect_corepack();
+    if !corepack_status.available {
+        return Ok(CorepackOperationResponse {
+            success: false,
+            message: None,
+            error: Some("Corepack is not installed. Please install Node.js 16+ which includes Corepack.".to_string()),
+        });
+    }
+
+    // Run corepack enable
+    let output = crate::utils::path_resolver::create_command("corepack")
+        .arg("enable")
+        .output()
+        .map_err(|e| format!("Failed to run corepack enable: {}", e))?;
+
+    if output.status.success() {
+        Ok(CorepackOperationResponse {
+            success: true,
+            message: Some("Corepack enabled successfully. Package manager shims have been installed.".to_string()),
+            error: None,
+        })
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Check if it's a permission error
+        if stderr.contains("EACCES") || stderr.contains("permission denied") {
+            Ok(CorepackOperationResponse {
+                success: false,
+                message: None,
+                error: Some(format!(
+                    "Permission denied. Please run manually with sudo: sudo corepack enable\n\nError: {}",
+                    stderr.trim()
+                )),
+            })
+        } else {
+            Ok(CorepackOperationResponse {
+                success: false,
+                message: None,
+                error: Some(format!("Failed to enable corepack: {}", stderr.trim())),
+            })
+        }
+    }
+}
+
+/// Fix PNPM HOME conflict by removing problematic files
+#[tauri::command]
+pub async fn fix_pnpm_home_conflict() -> Result<CorepackOperationResponse, String> {
+    let conflict = detect_pnpm_home_conflict();
+
+    if !conflict.has_conflict {
+        return Ok(CorepackOperationResponse {
+            success: true,
+            message: Some("No PNPM HOME conflict detected.".to_string()),
+            error: None,
+        });
+    }
+
+    let problematic_path = conflict.problematic_path.unwrap_or_default();
+    let pnpx_path = format!("{}x", problematic_path);
+
+    // Remove the problematic pnpm file
+    if std::path::Path::new(&problematic_path).exists() {
+        std::fs::remove_file(&problematic_path)
+            .map_err(|e| format!("Failed to remove {}: {}", problematic_path, e))?;
+    }
+
+    // Also remove pnpx if it exists
+    if std::path::Path::new(&pnpx_path).exists() {
+        std::fs::remove_file(&pnpx_path)
+            .map_err(|e| format!("Failed to remove {}: {}", pnpx_path, e))?;
+    }
+
+    Ok(CorepackOperationResponse {
+        success: true,
+        message: Some(format!(
+            "Removed conflicting files: {} and {}. Corepack should now work correctly.",
+            problematic_path, pnpx_path
+        )),
+        error: None,
     })
 }

@@ -82,6 +82,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchIndexItem[] = [
     keywords: ['keyboard', 'shortcut', 'hotkey', 'keybinding', 'key', 'binding'],
   },
   {
+    id: 'toolchain',
+    category: 'preferences',
+    title: 'Toolchain',
+    description: 'Manage saved version management preferences for projects',
+    keywords: ['toolchain', 'volta', 'corepack', 'node', 'version', 'npm', 'pnpm', 'yarn', 'package manager'],
+  },
+  {
     id: 'data',
     category: 'data',
     title: 'Import / Export',
@@ -97,7 +104,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
   {
     id: 'all',
     label: 'All',
-    sections: ['storage', 'deploy-accounts', 'ai-services', 'prompts', 'mcp', 'appearance', 'shortcuts', 'data'],
+    sections: ['storage', 'deploy-accounts', 'ai-services', 'prompts', 'mcp', 'appearance', 'shortcuts', 'toolchain', 'data'],
   },
   {
     id: 'project',
@@ -112,7 +119,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
   {
     id: 'preferences',
     label: 'Preferences',
-    sections: ['appearance', 'shortcuts'],
+    sections: ['appearance', 'shortcuts', 'toolchain'],
   },
   {
     id: 'data',

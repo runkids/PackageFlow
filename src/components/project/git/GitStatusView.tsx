@@ -359,10 +359,10 @@ export function GitStatusView({
             Pull
           </Button>
           <Button
+            variant="default"
             size="sm"
             onClick={handlePush}
             disabled={isPushing || isPulling || isFetching || isLoading || !hasRemotes || ahead === 0}
-            className="bg-blue-600 hover:bg-blue-500 text-white"
             title={!hasRemotes ? 'Configure remote in Settings' : ahead === 0 ? 'Nothing to push' : 'Push to remote'}
           >
             {isPushing ? (
@@ -431,9 +431,9 @@ export function GitStatusView({
               Cancel
             </Button>
             <Button
+              variant="default"
               onClick={handleSetUpstream}
               disabled={!selectedRemote || isPushing || isPulling || isFetching || isLoading}
-              className="bg-blue-600 hover:bg-blue-500 text-white"
               title={!selectedRemote ? 'Select a remote' : `Set upstream to ${selectedRemote}/${branch}`}
             >
               {isPushing ? (

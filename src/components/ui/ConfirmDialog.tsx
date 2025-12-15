@@ -65,7 +65,7 @@ const variantConfig: Record<
     iconBgClass: 'bg-blue-500/10',
     iconClass: 'text-blue-400',
     confirmButtonClass:
-      'bg-blue-600 hover:bg-blue-500 focus:ring-blue-500/50 text-white shadow-lg shadow-blue-500/20',
+      'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 focus:ring-blue-500/50',
     accentColor: 'border-blue-500/20',
   },
   default: {

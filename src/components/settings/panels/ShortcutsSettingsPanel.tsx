@@ -13,6 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { Button } from '../../ui/Button';
 import { ShortcutEditor } from '../ShortcutEditor';
 import { useShortcutsContext } from '../../../contexts/ShortcutsContext';
 import { formatShortcutKey, type KeyboardShortcut } from '../../../hooks/useKeyboardShortcuts';
@@ -251,13 +252,13 @@ export const ShortcutsSettingsPanel: React.FC = () => {
                   ? formatShortcutKey(recordedGlobalKey)
                   : 'Press keys...'}
               </div>
-              <button
+              <Button
                 onClick={handleSaveGlobalShortcut}
                 disabled={!recordedGlobalKey}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-muted disabled:text-muted-foreground text-white rounded-lg text-sm font-medium transition-colors"
+                variant="success"
               >
                 Save
-              </button>
+              </Button>
               <button
                 onClick={() => {
                   setIsRecordingGlobal(false);

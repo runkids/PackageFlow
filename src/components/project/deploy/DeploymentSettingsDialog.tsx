@@ -408,26 +408,50 @@ export function DeploymentSettingsDialog({
       setFramework(initialConfig.frameworkPreset ?? '');
       setRootDirectory(initialConfig.rootDirectory ?? '');
       setInstallCommand(initialConfig.installCommand ?? '');
-      setBuildCommand(initialConfig.buildCommand ?? '');
-      setOutputDirectory(initialConfig.outputDirectory ?? '');
       setNetlifySiteName(initialConfig.netlifySiteName ?? '');
       setCloudflareProjectName(initialConfig.cloudflareProjectName ?? '');
       setEnvVariables(initialConfig.envVariables);
+
+      // Auto-fill build command and output directory from preset if not set
+      const fw = initialConfig.frameworkPreset;
+      const preset = fw ? FRAMEWORK_PRESETS.find((p) => p.key === fw) : null;
+      setBuildCommand(initialConfig.buildCommand ?? preset?.buildCommand ?? '');
+      setOutputDirectory(initialConfig.outputDirectory ?? preset?.outputDirectory ?? '');
     } else {
       // Reset to defaults
       setPlatform('github_pages');
       setAccountId(undefined);
       setEnvironment('production');
-      setFramework(detectedFramework ?? '');
       setRootDirectory('');
       setInstallCommand('');
-      setBuildCommand('');
-      setOutputDirectory('');
       setNetlifySiteName('');
       setCloudflareProjectName('');
       setEnvVariables([]);
+
+      // Use detected framework and auto-fill preset values
+      const fw = detectedFramework ?? '';
+      setFramework(fw);
+      const preset = fw ? FRAMEWORK_PRESETS.find((p) => p.key === fw) : null;
+      setBuildCommand(preset?.buildCommand ?? '');
+      setOutputDirectory(preset?.outputDirectory ?? '');
     }
   }, [initialConfig, detectedFramework, isOpen]);
+
+  // Handle framework change - auto-fill build command and output directory
+  const handleFrameworkChange = useCallback((newFramework: string) => {
+    setFramework(newFramework);
+
+    const preset = FRAMEWORK_PRESETS.find((p) => p.key === newFramework);
+    if (preset) {
+      // Auto-fill with preset values
+      if (preset.buildCommand) {
+        setBuildCommand(preset.buildCommand);
+      }
+      if (preset.outputDirectory) {
+        setOutputDirectory(preset.outputDirectory);
+      }
+    }
+  }, []);
 
   // Auto-detect framework when dialog opens
   useEffect(() => {
@@ -441,7 +465,7 @@ export function DeploymentSettingsDialog({
     try {
       const detected = await onDetectFramework(projectPath);
       if (detected) {
-        setFramework(detected);
+        handleFrameworkChange(detected);
       }
     } finally {
       setIsDetecting(false);
@@ -493,12 +517,22 @@ export function DeploymentSettingsDialog({
         installCommand: installCommand || undefined,
         buildCommand: buildCommand || undefined,
         outputDirectory: outputDirectory || undefined,
+        // Preserve auto-generated IDs from initialConfig (set by backend after deployment)
+        netlifySiteId: initialConfig?.netlifySiteId,
         netlifySiteName: netlifySiteName || undefined,
+        cloudflareAccountId: initialConfig?.cloudflareAccountId,
         cloudflareProjectName: cloudflareProjectName || undefined,
         envVariables: envVariables.filter((v) => v.key.trim()),
       };
+      console.log('[DeploymentSettingsDialog] Saving config:', JSON.stringify(config, null, 2));
       await onSave(config);
+      console.log('[DeploymentSettingsDialog] Save successful');
       onClose();
+    } catch (err) {
+      console.error('[DeploymentSettingsDialog] Save failed:', err);
+      setValidationError(
+        err instanceof Error ? err.message : 'Failed to save deployment settings. Please try again.'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -856,7 +890,7 @@ export function DeploymentSettingsDialog({
                 </div>
                 <Select
                   value={framework}
-                  onValueChange={setFramework}
+                  onValueChange={handleFrameworkChange}
                   options={frameworkOptions}
                   placeholder="Select Framework..."
                   aria-label="Framework"
@@ -1077,9 +1111,9 @@ export function DeploymentSettingsDialog({
                 Cancel
               </Button>
               <Button
+                variant="default"
                 onClick={handleSave}
                 disabled={isSaving || !isPlatformConnected(platform)}
-                className="bg-blue-600 hover:bg-blue-500 text-white"
               >
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save Settings

@@ -552,9 +552,9 @@ export function WorktreeTemplateDialog({
                   Cancel
                 </Button>
                 <Button
+                  variant="default"
                   onClick={handleCreateFromTemplate}
                   disabled={isCreating || !featureName.trim()}
-                  className="bg-blue-600 hover:bg-blue-500"
                 >
                   {isCreating ? 'Creating...' : 'Create Worktree'}
                 </Button>
@@ -719,9 +719,9 @@ export function WorktreeTemplateDialog({
                   Cancel
                 </Button>
                 <Button
+                  variant="default"
                   onClick={handleSaveTemplate}
                   disabled={isSaving || !editingTemplate.name || !editingTemplate.branchPattern || !editingTemplate.pathPattern}
-                  className="bg-blue-600 hover:bg-blue-500"
                 >
                   {isSaving ? 'Saving...' : 'Save Template'}
                 </Button>

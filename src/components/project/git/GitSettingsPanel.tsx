@@ -37,11 +37,14 @@ export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPa
   const [isFetching, setIsFetching] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
 
-  // Load remotes
-  const loadRemotes = useCallback(async () => {
+  // Load remotes (silent refresh when data exists)
+  const loadRemotes = useCallback(async (silent = false) => {
     if (!projectPath) return;
 
-    setIsLoadingRemotes(true);
+    // Only show loading spinner on initial load (no existing data)
+    if (!silent && remotes.length === 0) {
+      setIsLoadingRemotes(true);
+    }
     try {
       const response = await gitAPI.getRemotes(projectPath);
       if (response.success && response.remotes) {
@@ -52,10 +55,20 @@ export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPa
     } finally {
       setIsLoadingRemotes(false);
     }
-  }, [projectPath]);
+  }, [projectPath, remotes.length]);
 
+  // Initial load
   useEffect(() => {
     loadRemotes();
+  }, [loadRemotes]);
+
+  // Auto-refresh every 30 seconds (silent background update)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadRemotes(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [loadRemotes]);
 
   // Fetch from remote
@@ -186,9 +199,9 @@ export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPa
                 Fetch All
               </Button>
               <Button
+                variant="default"
                 size="sm"
                 onClick={() => setShowAddRemote(!showAddRemote)}
-                className="bg-blue-600 hover:bg-blue-500 text-white"
               >
                 <Plus className="w-4 h-4 mr-1.5" />
                 Add Remote
@@ -216,10 +229,10 @@ export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPa
                 />
               </div>
               <div className="flex gap-2">
-                <button
+                <Button
                   onClick={handleAddRemote}
                   disabled={!newRemoteName.trim() || !newRemoteUrl.trim() || isAddingRemote}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors"
+                  variant="success"
                 >
                   {isAddingRemote ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -227,7 +240,7 @@ export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPa
                     <Check className="w-4 h-4" />
                   )}
                   Add
-                </button>
+                </Button>
                 <button
                   onClick={() => {
                     setShowAddRemote(false);

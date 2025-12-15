@@ -376,7 +376,7 @@ function NotScannedState({ projectName, onScan, isScanning }: NotScannedStatePro
         Run a security audit to check <strong className="text-foreground">{projectName}</strong> for
         known vulnerabilities in its dependencies.
       </p>
-      <Button onClick={onScan} disabled={isScanning} className="bg-blue-600 hover:bg-blue-500">
+      <Button variant="default" onClick={onScan} disabled={isScanning}>
         <RefreshCw className={cn('w-4 h-4 mr-2', isScanning && 'animate-spin')} />
         {isScanning ? 'Scanning...' : 'Run Security Scan'}
       </Button>

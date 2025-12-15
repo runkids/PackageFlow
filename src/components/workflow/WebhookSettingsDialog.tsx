@@ -520,7 +520,7 @@ export function WebhookSettingsDialog({
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <div
           className={cn(
-            'relative w-full max-w-lg max-h-[90vh]',
+            'relative w-full max-w-xl max-h-[90vh]',
             'bg-background rounded-2xl',
             'border border-purple-500/30',
             'shadow-2xl shadow-black/60',
@@ -1258,11 +1258,7 @@ export function WebhookSettingsDialog({
               <Button
                 onClick={handleSave}
                 disabled={(enabled && (!url || !!urlError || !!jsonError)) || isPortUsedByOther(portStatus) || isPortUsedByOtherWorkflow(portStatus)}
-                className={cn(
-                  'bg-purple-600 hover:bg-purple-500 text-white',
-                  'disabled:opacity-50 disabled:cursor-not-allowed',
-                  'transition-colors duration-150'
-                )}
+                variant="success"
               >
                 <Webhook className="w-4 h-4 mr-1.5" />
                 Save Settings

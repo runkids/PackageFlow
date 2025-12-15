@@ -4,8 +4,9 @@
  * @see specs/006-node-package-manager/spec.md - US2 (version check before execution)
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Play, Square } from 'lucide-react';
+import { listen } from '@tauri-apps/api/event';
 import type { ScriptCategory, PackageManager } from '../../types/project';
 import type { Worktree, WorktreeStatus, EditorDefinition } from '../../lib/tauri-api';
 import type { VersionCompatibility } from '../../types/version';
@@ -13,6 +14,8 @@ import { PackageManagerCommands } from './PackageManagerCommands';
 import { WorkingDirectorySelector } from './WorkingDirectorySelector';
 import { VersionWarningDialog } from './VersionWarningDialog';
 import { useVersionCheck } from '../../hooks/useVersionCheck';
+import { toolchainAPI as toolchainAPIImport } from '../../lib/tauri-api';
+import { Button } from '../ui/Button';
 
 interface ScriptCardsProps {
   scripts: Record<string, string>;
@@ -127,6 +130,27 @@ export function ScriptCards({
   const [showVersionWarning, setShowVersionWarning] = useState(false);
   const [pendingScript, setPendingScript] = useState<string | null>(null);
   const [currentCompatibility, setCurrentCompatibility] = useState<VersionCompatibility | null>(null);
+  // Track preference cleared for current worktree to force re-check
+  const [preferenceCleared, setPreferenceCleared] = useState(false);
+
+  // Listen for toolchain-preference-cleared event
+  useEffect(() => {
+    const unlisten = listen<{ paths: string[] }>('toolchain-preference-cleared', (event) => {
+      const clearedPaths = event.payload.paths;
+      if (clearedPaths.includes(currentWorktreePath) || clearedPaths.includes(projectPath)) {
+        setPreferenceCleared(true);
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [currentWorktreePath, projectPath]);
+
+  // Reset preference cleared flag when worktree changes
+  useEffect(() => {
+    setPreferenceCleared(false);
+  }, [currentWorktreePath]);
 
   // Check if a script is currently running in the selected worktree
   const isScriptRunningInWorktree = (scriptName: string): boolean => {
@@ -144,6 +168,22 @@ export function ScriptCards({
 
   // Handle script execution with version check
   const handleExecuteWithVersionCheck = useCallback(async (scriptName: string) => {
+    // Check for saved preference first (unless recently cleared)
+    if (!preferenceCleared) {
+      try {
+        const savedPreference = await toolchainAPIImport.getPreference(currentWorktreePath);
+        if (savedPreference) {
+          // Has saved preference - execute directly using the saved strategy
+          // The backend will use the appropriate version management
+          onExecute(scriptName, currentWorktreePath);
+          return;
+        }
+      } catch (err) {
+        // Preference check failed - continue with compatibility check
+        console.error('Failed to check preference:', err);
+      }
+    }
+
     // Check version compatibility before execution
     const compatibility = await checkCompatibility(currentWorktreePath);
 
@@ -152,11 +192,13 @@ export function ScriptCards({
       setCurrentCompatibility(compatibility);
       setPendingScript(scriptName);
       setShowVersionWarning(true);
+      // Reset preference cleared flag after showing dialog
+      setPreferenceCleared(false);
     } else {
       // Version compatible or no requirements - execute directly
       onExecute(scriptName, currentWorktreePath);
     }
-  }, [checkCompatibility, currentWorktreePath, onExecute]);
+  }, [checkCompatibility, currentWorktreePath, onExecute, preferenceCleared]);
 
   // Handle continue despite version mismatch
   const handleContinueAnyway = useCallback(() => {
@@ -276,16 +318,13 @@ export function ScriptCards({
                             {script.command}
                           </div>
                         </div>
-                        <button
+                        <Button
+                          variant={isRunning ? 'outline-destructive' : 'ghost'}
+                          size="icon"
                           onClick={() => isRunning
                             ? onCancel(script.name, currentWorktreePath)
                             : handleExecuteWithVersionCheck(script.name)
                           }
-                          className={`p-1.5 rounded transition-colors flex-shrink-0 ${
-                            isRunning
-                              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                              : 'bg-muted text-foreground hover:bg-accent'
-                          }`}
                           title={isRunning ? 'Stop' : 'Run'}
                         >
                           {isRunning ? (
@@ -293,7 +332,7 @@ export function ScriptCards({
                           ) : (
                             <Play className="w-4 h-4" />
                           )}
-                        </button>
+                        </Button>
                       </div>
                     </li>
                   );
@@ -311,6 +350,7 @@ export function ScriptCards({
           onOpenChange={setShowVersionWarning}
           compatibility={currentCompatibility}
           scriptName={pendingScript}
+          projectPath={currentWorktreePath}
           onContinue={handleContinueAnyway}
           onCancel={handleCancelExecution}
           onUseVolta={handleUseVolta}

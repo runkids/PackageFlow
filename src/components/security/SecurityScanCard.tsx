@@ -9,6 +9,7 @@ import type { VulnScanResult, VulnSummary } from '../../types/security';
 import { SeveritySummaryBar, RiskLevelIndicator } from './SeverityBadge';
 import { cn } from '../../lib/utils';
 import { formatDate } from '../../lib/utils';
+import { Button } from '../ui/Button';
 
 interface SecurityScanCardProps {
   /** Project name */
@@ -197,20 +198,15 @@ export function SecurityScanCard({
 
         {/* Scan Button */}
         {onScan && (
-          <button
+          <Button
             onClick={onScan}
             disabled={isScanning}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5',
-              'text-sm rounded-lg transition-colors',
-              'bg-blue-600 hover:bg-blue-500 text-white',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
+            size="sm"
             aria-label={isScanning ? 'Scanning in progress' : 'Run security scan'}
           >
             <RefreshCw className={cn('w-4 h-4', isScanning && 'animate-spin')} aria-hidden="true" />
             <span>{isScanning ? 'Scanning...' : 'Scan'}</span>
-          </button>
+          </Button>
         )}
       </div>
 

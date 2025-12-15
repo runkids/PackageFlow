@@ -166,17 +166,43 @@ pub async fn load_workflows(db: tauri::State<'_, DatabaseState>) -> Result<Vec<W
         }
     }
 
+    // DEBUG: Log project_id for each workflow before returning
+    println!("=== [load_workflows] RETURNING {} workflows ===", workflows.len());
+    for w in &workflows {
+        println!("[load_workflows] - id={}, name={}, project_id={:?}", w.id, w.name, w.project_id);
+    }
+
     Ok(workflows)
 }
 
 /// Save workflows to SQLite database
-/// Note: This replaces ALL workflows - use save_workflow for single workflow updates
-/// Encrypts webhook tokens to separate storage
+///
+/// # Important: Data Integrity Warning
+/// This function REPLACES ALL workflows in the database with the provided list.
+/// If the workflows parameter contains stale data (e.g., missing project_id),
+/// it will OVERWRITE the correct data in the database.
+///
+/// # Recommended Usage
+/// - For single workflow updates, use `save_workflow` instead
+/// - Only use this function for bulk operations like import/export
+/// - Always ensure workflows loaded from `load_workflows` are used immediately
+///   without modification to avoid data loss
+///
+/// # Token Encryption
+/// Encrypts webhook tokens to separate storage for security
 #[tauri::command]
 pub async fn save_workflows(
     db: tauri::State<'_, DatabaseState>,
     workflows: Vec<Workflow>,
 ) -> Result<(), String> {
+    // DEBUG: Track who is calling save_workflows and with what data
+    println!("=== [save_workflows] CALLED ===");
+    println!("[save_workflows] workflow count: {}", workflows.len());
+    for w in &workflows {
+        println!("[save_workflows] - id={}, name={}, project_id={:?}", w.id, w.name, w.project_id);
+    }
+    println!("=== [save_workflows] END ===");
+
     let repo = WorkflowRepository::new(db.0.as_ref().clone());
 
     // Get existing workflows to determine which ones to delete

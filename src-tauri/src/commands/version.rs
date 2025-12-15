@@ -147,6 +147,23 @@ pub fn detect_volta() -> ToolStatus {
         }
     }
 
+    // Additional fallback: Check if Volta tools directory exists
+    // This indicates Volta is installed and managing Node.js even if volta binary is not found
+    let volta_tools_dir = format!("{}/.volta/tools/image/node", home);
+    if std::path::Path::new(&volta_tools_dir).exists() {
+        // Volta is managing Node.js, try to find volta binary via which
+        let volta_bin = format!("{}/.volta/bin/volta", home);
+        return ToolStatus {
+            available: true,
+            version: None, // Could not get version, but Volta is installed
+            path: if std::path::Path::new(&volta_bin).exists() {
+                Some(volta_bin)
+            } else {
+                Some(volta_tools_dir) // Use tools dir as indicator
+            },
+        };
+    }
+
     ToolStatus::default()
 }
 
@@ -255,6 +272,21 @@ pub fn detect_corepack() -> ToolStatus {
     let nvm_dir = format!("{}/.nvm/versions/node", home);
     if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
         for entry in entries.flatten() {
+            let corepack_path = entry.path().join("bin/corepack");
+            if corepack_path.exists() {
+                paths_to_check.push(corepack_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Try to find Volta-managed corepack
+    let volta_tools_dir = format!("{}/.volta/tools/image/node", home);
+    if let Ok(entries) = std::fs::read_dir(&volta_tools_dir) {
+        // Sort entries to get the latest version first
+        let mut versions: Vec<_> = entries.flatten().collect();
+        versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+        for entry in versions {
             let corepack_path = entry.path().join("bin/corepack");
             if corepack_path.exists() {
                 paths_to_check.push(corepack_path.to_string_lossy().to_string());

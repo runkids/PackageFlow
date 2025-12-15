@@ -6,12 +6,14 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Square, Download, RefreshCw, Plus, Trash2, X, Zap, FolderX, Loader2 } from 'lucide-react';
+import { listen } from '@tauri-apps/api/event';
 import type { PackageManager } from '../../types/project';
 import type { VersionCompatibility } from '../../types/version';
-import { versionAPI, projectAPI } from '../../lib/tauri-api';
+import { versionAPI, projectAPI, toolchainAPI } from '../../lib/tauri-api';
 import { useVersionCheck } from '../../hooks/useVersionCheck';
 import { VersionWarningDialog } from './VersionWarningDialog';
 import { Checkbox } from '../ui/Checkbox';
+import { Button } from '../ui/Button';
 
 interface PackageManagerCommandsProps {
   packageManager: PackageManager;
@@ -224,21 +226,23 @@ function CommandItem({
               spellCheck={false}
               className="flex-1 px-2 py-1.5 text-sm bg-background border border-border rounded focus:border-cyan-500 focus:outline-none text-foreground placeholder-muted-foreground"
             />
-            <button
+            <Button
+              variant="info"
+              size="icon"
               onClick={handleSubmit}
               disabled={!packageName.trim()}
-              className="p-1.5 rounded bg-cyan-600 text-white hover:bg-cyan-500 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed transition-colors"
               title="Run"
             >
               <Play className="w-4 h-4" />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
               onClick={handleCancel}
-              className="p-1.5 rounded bg-muted text-foreground hover:bg-accent transition-colors"
               title="Cancel"
             >
               <X className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
           {/* devDependencies option */}
           {cmd.hasDevOption && (
@@ -276,13 +280,10 @@ function CommandItem({
             </div>
           </div>
         </div>
-        <button
+        <Button
+          variant={isRunning ? 'outline-destructive' : 'ghost'}
+          size="icon"
           onClick={() => isRunning ? onCancel(cmd.id) : handleExecute()}
-          className={`p-1.5 rounded transition-colors flex-shrink-0 ${
-            isRunning
-              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-              : 'bg-muted text-foreground hover:bg-accent'
-          }`}
           title={isRunning ? 'Stop' : cmd.needsPackageName ? 'Enter package name' : 'Run'}
         >
           {isRunning ? (
@@ -290,7 +291,7 @@ function CommandItem({
           ) : (
             <Play className="w-4 h-4" />
           )}
-        </button>
+        </Button>
       </div>
     </li>
   );
@@ -332,6 +333,27 @@ export function PackageManagerCommands({
   const [showVersionWarning, setShowVersionWarning] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<{ command: string; args: string[] } | null>(null);
   const [currentCompatibility, setCurrentCompatibility] = useState<VersionCompatibility | null>(null);
+  // Track preference cleared for current project to force re-check
+  const [preferenceCleared, setPreferenceCleared] = useState(false);
+
+  // Listen for toolchain-preference-cleared event
+  useEffect(() => {
+    const unlisten = listen<{ paths: string[] }>('toolchain-preference-cleared', (event) => {
+      const clearedPaths = event.payload.paths;
+      if (clearedPaths.includes(projectPath)) {
+        setPreferenceCleared(true);
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [projectPath]);
+
+  // Reset preference cleared flag when project changes
+  useEffect(() => {
+    setPreferenceCleared(false);
+  }, [projectPath]);
 
   // Check if project uses Volta
   useEffect(() => {
@@ -376,6 +398,22 @@ export function PackageManagerCommands({
 
   // Execute command with version check
   const handleExecuteWithVersionManager = useCallback(async (command: string, args: string[]) => {
+    // Check for saved preference first (unless recently cleared)
+    if (!preferenceCleared) {
+      try {
+        const savedPreference = await toolchainAPI.getPreference(projectPath);
+        if (savedPreference) {
+          // Has saved preference - execute directly using the saved strategy
+          // The backend will use the appropriate version management
+          executeCommand(command, args);
+          return;
+        }
+      } catch (err) {
+        // Preference check failed - continue with compatibility check
+        console.error('Failed to check preference:', err);
+      }
+    }
+
     // Check version compatibility before execution
     const compatibility = await checkCompatibility(projectPath);
 
@@ -384,11 +422,13 @@ export function PackageManagerCommands({
       setCurrentCompatibility(compatibility);
       setPendingCommand({ command, args });
       setShowVersionWarning(true);
+      // Reset preference cleared flag after showing dialog
+      setPreferenceCleared(false);
     } else {
       // Version compatible or no requirements - execute directly
       executeCommand(command, args);
     }
-  }, [projectPath, checkCompatibility, executeCommand]);
+  }, [projectPath, checkCompatibility, executeCommand, preferenceCleared]);
 
   // Handle continue despite version mismatch
   const handleContinueAnyway = useCallback(() => {
@@ -502,14 +542,11 @@ export function PackageManagerCommands({
                   </div>
                 </div>
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={handleTrashNodeModules}
                 disabled={isTrashingNodeModules}
-                className={`p-1.5 rounded transition-colors flex-shrink-0 ${
-                  isTrashingNodeModules
-                    ? 'bg-cyan-500/20 text-cyan-400 cursor-wait'
-                    : 'bg-muted text-foreground hover:bg-accent'
-                }`}
                 title="Move node_modules to Trash"
               >
                 {isTrashingNodeModules ? (
@@ -517,7 +554,7 @@ export function PackageManagerCommands({
                 ) : (
                   <Play className="w-4 h-4" />
                 )}
-              </button>
+              </Button>
             </div>
           </li>
         </ul>
@@ -530,6 +567,7 @@ export function PackageManagerCommands({
           onOpenChange={setShowVersionWarning}
           compatibility={currentCompatibility}
           scriptName={`${pendingCommand.command} ${pendingCommand.args.join(' ')}`}
+          projectPath={projectPath}
           onContinue={handleContinueAnyway}
           onCancel={handleCancelExecution}
           onUseVolta={handleUseVolta}

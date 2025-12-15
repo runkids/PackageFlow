@@ -348,8 +348,16 @@ impl DeployRepository {
         let env_vars_json = serde_json::to_string(&config.env_variables)
             .map_err(|e| format!("Failed to serialize env_variables: {}", e))?;
 
+        log::debug!(
+            "deploy_repo.save_config: project_id={}, platform={}, account_id={:?}, env_vars_count={}",
+            config.project_id,
+            platform_str,
+            config.account_id,
+            config.env_variables.len()
+        );
+
         self.db.with_connection(|conn| {
-            conn.execute(
+            let rows_affected = conn.execute(
                 r#"
                 INSERT OR REPLACE INTO deployment_configs
                 (project_id, platform, account_id, environment, framework_preset,
@@ -375,8 +383,12 @@ impl DeployRepository {
                     config.cloudflare_project_name,
                 ],
             )
-            .map_err(|e| format!("Failed to save deployment config: {}", e))?;
+            .map_err(|e| {
+                log::error!("deploy_repo.save_config SQL error: {}", e);
+                format!("Failed to save deployment config: {}", e)
+            })?;
 
+            log::debug!("deploy_repo.save_config: rows_affected={}", rows_affected);
             Ok(())
         })
     }

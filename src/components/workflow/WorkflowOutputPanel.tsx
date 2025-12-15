@@ -8,6 +8,7 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { X, Terminal, Copy, Check, Workflow, Loader2, CheckCircle2, XCircle, AlertCircle, List, Layers } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Button } from '../ui/Button';
 import type { WorkflowExecutionState, OutputLine } from '../../hooks/useWorkflowExecution';
 import type { ChildExecutionState } from '../../hooks/useChildExecution';
 import { ExecutionStatusIcon } from './WorkflowExecutionStatus';
@@ -283,17 +284,18 @@ export function WorkflowOutputPanel({
 
         {/* Auto-scroll indicator */}
         {!autoScroll && isActive && (
-          <button
+          <Button
             onClick={() => {
               setAutoScroll(true);
               if (outputRef.current) {
                 outputRef.current.scrollTop = outputRef.current.scrollHeight;
               }
             }}
-            className="absolute bottom-16 right-6 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-full shadow-lg transition-colors"
+            size="sm"
+            className="absolute bottom-16 right-6 rounded-full shadow-lg"
           >
             Scroll to bottom
-          </button>
+          </Button>
         )}
       </div>
     </div>

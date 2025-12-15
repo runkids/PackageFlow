@@ -48,11 +48,14 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
   const [rebaseTarget, setRebaseTarget] = useState<string | null>(null);
   const [rebaseConflict, setRebaseConflict] = useState(false);
 
-  // Load branches
-  const loadBranches = useCallback(async () => {
+  // Load branches (silent refresh when data exists)
+  const loadBranches = useCallback(async (silent = false) => {
     if (!projectPath) return;
 
-    setIsLoading(true);
+    // Only show loading spinner on initial load (no existing data)
+    if (!silent && branches.length === 0) {
+      setIsLoading(true);
+    }
     setOperationError(null);
 
     try {
@@ -72,10 +75,20 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
     } finally {
       setIsLoading(false);
     }
-  }, [projectPath]);
+  }, [projectPath, branches.length]);
 
+  // Initial load
   useEffect(() => {
     loadBranches();
+  }, [loadBranches]);
+
+  // Auto-refresh every 30 seconds (silent background update)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadBranches(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [loadBranches]);
 
   // Handle checkout branch
@@ -272,7 +285,7 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
           <Button
             variant="ghost"
             size="icon"
-            onClick={loadBranches}
+            onClick={() => loadBranches()}
             disabled={isLoading}
             className="h-8 w-8"
             title="Refresh branches"
@@ -280,9 +293,9 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
             <RefreshCw className={`w-4 h-4 text-muted-foreground ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
           <Button
+            variant="default"
             size="sm"
             onClick={() => setShowNewBranchInput(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white"
             title="Create new branch"
           >
             <Plus className="w-4 h-4 mr-1" />
@@ -307,7 +320,7 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
               size="sm"
               onClick={handleRebaseContinue}
               disabled={isRebasing}
-              className="bg-green-600 hover:bg-green-500 text-white"
+              variant="success"
             >
               {isRebasing ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Check className="w-4 h-4 mr-1.5" />}
               Continue
@@ -316,7 +329,7 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
               size="sm"
               onClick={handleRebaseAbort}
               disabled={isRebasing}
-              className="bg-red-600 hover:bg-red-500 text-white"
+              variant="destructive"
             >
               {isRebasing ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <X className="w-4 h-4 mr-1.5" />}
               Abort
@@ -348,7 +361,7 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
             size="sm"
             onClick={handleCreateBranch}
             disabled={!newBranchName.trim() || isCreating}
-            className="bg-green-600 hover:bg-green-500 text-white"
+            variant="success"
           >
             {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
           </Button>

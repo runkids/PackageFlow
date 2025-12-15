@@ -310,6 +310,12 @@ pub fn run() {
             toolchain::clear_toolchain_preference,
             toolchain::get_environment_diagnostics,
             toolchain::humanize_toolchain_error,
+            // Corepack management
+            toolchain::get_corepack_status_cmd,
+            toolchain::detect_pnpm_home_conflict_cmd,
+            toolchain::enable_corepack,
+            toolchain::fix_pnpm_home_conflict,
+            toolchain::get_all_toolchain_preferences,
             // AI Integration (020-ai-cli-integration)
             ai::ai_list_services,
             ai::ai_add_service,

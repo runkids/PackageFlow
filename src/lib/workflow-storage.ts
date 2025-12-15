@@ -93,6 +93,11 @@ export async function loadWorkflows(): Promise<Workflow[]> {
 /**
  * Load workflows for a specific project
  * @param projectId Project ID (if undefined, loads global workflows)
+ *
+ * Important: This function filters workflows by projectId.
+ * The projectId is stored in the database and must be preserved during saves.
+ * Using settingsAPI.saveWorkflows() with stale data will OVERWRITE project_id values.
+ * For single workflow updates, always use saveWorkflow() instead of saveWorkflows().
  */
 export async function loadWorkflowsByProject(projectId: string | undefined): Promise<Workflow[]> {
   const allWorkflows = await loadWorkflows();
