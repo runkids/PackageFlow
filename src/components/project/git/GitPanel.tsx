@@ -26,11 +26,11 @@ import { GitStashList } from './GitStashList';
 import { GitSettingsPanel } from './GitSettingsPanel';
 import { GitWorktreeList } from './GitWorktreeList';
 import { GitDiffViewer } from './GitDiffViewer';
-import { AIServiceSettingsDialog } from '../../settings/AIServiceSettingsDialog';
 import { cn } from '../../../lib/utils';
 import type { GitFile } from '../../../types/git';
 import type { Project } from '../../../types/project';
 import type { Workflow } from '../../../types/workflow';
+import type { SettingsSection } from '../../../types/settings';
 
 type GitTab = 'status' | 'branches' | 'history' | 'stash' | 'worktrees' | 'settings';
 
@@ -43,6 +43,8 @@ interface GitPanelProps {
   onWorktreesChange?: () => void;
   /** Additional CSS classes */
   className?: string;
+  /** Open the global settings page */
+  onOpenSettings?: (section?: SettingsSection) => void;
 }
 
 export function GitPanel({
@@ -52,6 +54,7 @@ export function GitPanel({
   onUpdateProject,
   onWorktreesChange,
   className = '',
+  onOpenSettings,
 }: GitPanelProps) {
   const projectPath = project.path;
   const [activeTab, setActiveTab] = useState<GitTab>('status');
@@ -60,11 +63,6 @@ export function GitPanel({
   const [error, setError] = useState<string | null>(null);
   // Diff viewer state
   const [selectedFileForDiff, setSelectedFileForDiff] = useState<GitFile | null>(null);
-  // AI settings dialog state
-  const [showAISettings, setShowAISettings] = useState(false);
-  // Trigger to refresh AI services in GitCommitForm after settings change
-  const [aiRefreshTrigger, setAiRefreshTrigger] = useState(0);
-
   // Load Git status (with loading indicator)
   const loadStatus = useCallback(async (silent = false) => {
     if (!projectPath) return;
@@ -393,8 +391,7 @@ export function GitPanel({
               hasStagedChanges={status.stagedCount > 0}
               onCommit={handleCommit}
               projectPath={projectPath}
-              onOpenAISettings={() => setShowAISettings(true)}
-              aiRefreshTrigger={aiRefreshTrigger}
+              onOpenAISettings={() => onOpenSettings?.('ai-services')}
             />
           </div>
         )}
@@ -447,15 +444,6 @@ export function GitPanel({
         onStagingChange={handleStagingChange}
       />
 
-      {/* AI Service Settings Dialog */}
-      <AIServiceSettingsDialog
-        isOpen={showAISettings}
-        onClose={() => {
-          setShowAISettings(false);
-          // Trigger refresh of AI services in GitCommitForm
-          setAiRefreshTrigger((prev) => prev + 1);
-        }}
-      />
     </div>
   );
 }

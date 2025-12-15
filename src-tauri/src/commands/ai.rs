@@ -6,7 +6,7 @@
 
 use std::path::Path;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::models::ai::{
     AIProvider, AIServiceConfig, AddServiceRequest, AddTemplateRequest, ChatMessage, ChatOptions,
@@ -90,7 +90,7 @@ pub async fn ai_add_service(
     config: AddServiceRequest,
 ) -> Result<ApiResponse<AIServiceConfig>, String> {
     let repo = get_ai_repo(&app);
-    let keychain = AIKeychain::new(app);
+    let keychain = AIKeychain::new(app.clone());
 
     // Check for duplicate name
     if repo.service_name_exists(&config.name, None).unwrap_or(false) {
@@ -121,6 +121,8 @@ pub async fn ai_add_service(
         }
     }
 
+    let _ = app.emit("ai:services-updated", ());
+
     Ok(ApiResponse::success(service))
 }
 
@@ -131,7 +133,7 @@ pub async fn ai_update_service(
     config: UpdateServiceRequest,
 ) -> Result<ApiResponse<AIServiceConfig>, String> {
     let repo = get_ai_repo(&app);
-    let keychain = AIKeychain::new(app);
+    let keychain = AIKeychain::new(app.clone());
 
     // Get existing service
     let existing = match repo.get_service(&config.id) {
@@ -171,7 +173,10 @@ pub async fn ai_update_service(
 
     // Save updated config
     match repo.save_service(&updated) {
-        Ok(()) => Ok(ApiResponse::success(updated)),
+        Ok(()) => {
+            let _ = app.emit("ai:services-updated", ());
+            Ok(ApiResponse::success(updated))
+        }
         Err(e) => Ok(ApiResponse::error(e)),
     }
 }
@@ -183,14 +188,17 @@ pub async fn ai_delete_service(
     id: String,
 ) -> Result<ApiResponse<()>, String> {
     let repo = get_ai_repo(&app);
-    let keychain = AIKeychain::new(app);
+    let keychain = AIKeychain::new(app.clone());
 
     // Delete API key
     let _ = keychain.delete_api_key(&id);
 
     // Delete service config
     match repo.delete_service(&id) {
-        Ok(_) => Ok(ApiResponse::success(())),
+        Ok(_) => {
+            let _ = app.emit("ai:services-updated", ());
+            Ok(ApiResponse::success(()))
+        }
         Err(e) => Ok(ApiResponse::error(e)),
     }
 }
@@ -203,7 +211,10 @@ pub async fn ai_set_default_service(
 ) -> Result<ApiResponse<()>, String> {
     let repo = get_ai_repo(&app);
     match repo.set_default_service(&id) {
-        Ok(()) => Ok(ApiResponse::success(())),
+        Ok(()) => {
+            let _ = app.emit("ai:services-updated", ());
+            Ok(ApiResponse::success(()))
+        }
         Err(e) => Ok(ApiResponse::error(e)),
     }
 }

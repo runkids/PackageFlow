@@ -20,6 +20,7 @@ import { ProjectExplorer } from './ProjectExplorer';
 import type { ScriptPtyTerminalRef } from '../terminal';
 import type { Workflow } from '../../types/workflow';
 import type { Project } from '../../types/project';
+import type { SettingsSection } from '../../types/settings';
 
 interface ProjectManagerPageProps {
   onNavigateToWorkflow?: (workflow: Workflow, projectPath: string) => void;
@@ -31,6 +32,8 @@ interface ProjectManagerPageProps {
   isTerminalCollapsed?: boolean;
   /** Toggle terminal collapse state */
   onToggleTerminalCollapse?: () => void;
+  /** Callback to open the global settings page */
+  onOpenSettings?: (section?: SettingsSection) => void;
 }
 
 export function ProjectManagerPage({
@@ -39,6 +42,7 @@ export function ProjectManagerPage({
   ptyTerminalRef,
   isTerminalCollapsed = false,
   onToggleTerminalCollapse,
+  onOpenSettings,
 }: ProjectManagerPageProps) {
   // Project state
   const {
@@ -455,9 +459,9 @@ export function ProjectManagerPage({
         {/* Main content */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Project explorer */}
-          <ProjectExplorer
-            project={activeProject}
-            workspaces={activeWorkspaces}
+            <ProjectExplorer
+              project={activeProject}
+              workspaces={activeWorkspaces}
             runningScriptsMap={runningScriptsMap}
             runningCommands={currentProjectRunningCommands}
             isLoading={isProjectLoading}
@@ -469,13 +473,14 @@ export function ProjectManagerPage({
             onUpdateProject={handleUpdateActiveProject}
             onExecuteScript={handleExecuteScript}
             onCancelScript={handleCancelScript}
-            onExecuteCommand={handleExecuteCommand}
-            onCancelCommand={handleCancelCommand}
-            onOpenInFinder={handleOpenInFinder}
-            onOpenInVSCode={handleOpenInVSCode}
-            onOpenTerminal={handleOpenTerminal}
-            onNavigateToWorkflow={onNavigateToWorkflow}
-          />
+              onExecuteCommand={handleExecuteCommand}
+              onCancelCommand={handleCancelCommand}
+              onOpenInFinder={handleOpenInFinder}
+              onOpenInVSCode={handleOpenInVSCode}
+              onOpenTerminal={handleOpenTerminal}
+              onOpenSettings={onOpenSettings}
+              onNavigateToWorkflow={onNavigateToWorkflow}
+            />
           {/* PTY Terminal Portal container - Terminal renders here via Portal */}
           <div id="terminal-portal-container" />
         </div>

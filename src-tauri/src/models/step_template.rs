@@ -16,6 +16,7 @@ pub enum TemplateCategory {
     Kubernetes,
     Database,
     Cloud,
+    Ai,
     Security,
     Nodejs,
     Custom,

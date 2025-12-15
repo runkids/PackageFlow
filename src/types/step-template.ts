@@ -14,6 +14,7 @@ export type TemplateCategory =
   | 'kubernetes'
   | 'database'
   | 'cloud'
+  | 'ai'
   | 'security'
   | 'nodejs'
   | 'custom';

@@ -10,13 +10,14 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ExportDialog } from './components/settings/ExportDialog';
 import { ImportDialog } from './components/settings/ImportDialog';
 import { SettingsButton } from './components/settings/SettingsButton';
-import { KeyboardShortcutsDialog } from './components/settings/KeyboardShortcutsDialog';
 import { SettingsPage } from './components/settings/SettingsPage';
 import type { SettingsSection } from './types/settings';
 import { useKeyboardShortcuts, type KeyboardShortcut } from './hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsHint, ShortcutToast } from './components/ui/KeyboardShortcutsHint';
 import { ScriptPtyTerminal, type ScriptPtyTerminalRef } from './components/terminal';
 import { useUpdater } from './hooks/useUpdater';
+import { useMcpStatus } from './hooks/useMcpStatus';
+import { McpIcon } from './components/ui/McpIcon';
 
 type AppTab = 'workflow' | 'project-manager';
 
@@ -84,11 +85,11 @@ function App() {
   const [killSuccess, setKillSuccess] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [settingsPageOpen, setSettingsPageOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('storage');
   const [dataVersion, setDataVersion] = useState(0);
   const [shortcutToast, setShortcutToast] = useState<{ message: string; key: string } | null>(null);
+  const mcpStatus = useMcpStatus();
 
   const showShortcutToast = useCallback((message: string, key: string) => {
     setShortcutToast({ message, key });
@@ -446,12 +447,6 @@ function App() {
 
   useKeyboardShortcuts(shortcuts);
 
-  useEffect(() => {
-    const handleOpenSettings = () => setShortcutsDialogOpen(true);
-    window.addEventListener('open-shortcuts-settings', handleOpenSettings);
-    return () => window.removeEventListener('open-shortcuts-settings', handleOpenSettings);
-  }, []);
-
   return (
     <div className="h-screen flex flex-col">
       <nav className="flex items-center justify-between border-b border-border bg-card">
@@ -479,10 +474,6 @@ function App() {
         </div>
 
         <div className="flex items-center gap-1 px-2">
-          <SettingsButton onClick={() => openSettings()} />
-
-          <div className="w-px h-5 bg-border mx-1" />
-
           <div className="relative group">
             <button
               onClick={handleKillAllNodeProcesses}
@@ -558,6 +549,20 @@ function App() {
               </div>
             )}
           </div>
+          {mcpStatus.isEnabled && (
+            <div className="relative group mr-1">
+              <McpIcon className="w-4 h-4 text-gray" />
+              <div className="absolute right-0 top-full mt-2 px-3 py-2 bg-background border border-border rounded-lg shadow-lg text-sm text-foreground whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                <div className="font-medium text-green-400 mb-1">MCP Server Enabled</div>
+                <div className="text-xs text-muted-foreground">
+                  AI tools can access PackageFlow
+                </div>
+                <div className="absolute -top-1 right-4 w-2 h-2 bg-background border-l border-t border-border transform rotate-45" />
+              </div>
+            </div>
+          )}
+          <div className="w-px h-5 bg-border mx-1" />
+          <SettingsButton onClick={() => openSettings()} />
         </div>
       </nav>
 
@@ -581,6 +586,7 @@ function App() {
               ptyTerminalRef={ptyTerminalRef}
               isTerminalCollapsed={isTerminalCollapsed}
               onToggleTerminalCollapse={() => setIsTerminalCollapsed(!isTerminalCollapsed)}
+              onOpenSettings={openSettings}
             />
           </div>
         )}
@@ -613,12 +619,6 @@ function App() {
         onImportComplete={handleImportComplete}
       />
 
-      <KeyboardShortcutsDialog
-        open={shortcutsDialogOpen}
-        onOpenChange={setShortcutsDialogOpen}
-        shortcuts={displayShortcuts}
-      />
-
       <SettingsPage
         isOpen={settingsPageOpen}
         onClose={() => setSettingsPageOpen(false)}
@@ -635,7 +635,7 @@ function App() {
 
       <KeyboardShortcutsHint
         shortcuts={displayShortcuts}
-        onCustomize={() => setShortcutsDialogOpen(true)}
+        onCustomize={() => openSettings('shortcuts')}
       />
 
       <ShortcutToast

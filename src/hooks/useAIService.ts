@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { aiAPI } from '../lib/tauri-api';
+import { listen } from '@tauri-apps/api/event';
 import type {
   AIServiceConfig,
   PromptTemplate,
@@ -480,6 +481,16 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
       loadProjectSettings();
     }
   }, [autoLoad, projectPath, loadProjectSettings]);
+
+  useEffect(() => {
+    const unlistenPromise = listen('ai:services-updated', () => {
+      loadServices();
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [loadServices]);
 
   // ============================================================================
   // Return

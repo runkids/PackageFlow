@@ -133,14 +133,8 @@ export function KeyboardShortcutsHint({
   }, []);
 
   const handleCustomize = () => {
-    if (onCustomize) {
-      setIsOpen(false);
-      onCustomize();
-    } else {
-      // Emit event for other components to handle
-      window.dispatchEvent(new CustomEvent('open-shortcuts-settings'));
-      setIsOpen(false);
-    }
+    setIsOpen(false);
+    onCustomize?.();
   };
 
   if (!showFloatingButton) return null;

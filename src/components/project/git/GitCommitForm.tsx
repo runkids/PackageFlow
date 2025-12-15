@@ -21,8 +21,6 @@ interface GitCommitFormProps {
   projectPath?: string;
   /** Callback to open AI settings */
   onOpenAISettings?: () => void;
-  /** Trigger to refresh AI services (increment to reload) */
-  aiRefreshTrigger?: number;
 }
 
 // Conventional Commits templates
@@ -44,7 +42,6 @@ export function GitCommitForm({
   isCommitting = false,
   projectPath = '',
   onOpenAISettings,
-  aiRefreshTrigger = 0,
 }: GitCommitFormProps) {
   const [message, setMessage] = useState(defaultMessage);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,13 +55,6 @@ export function GitCommitForm({
 
   // Check if AI service is configured
   const { defaultService, isLoadingServices, loadServices } = useAIService({ autoLoad: true });
-
-  // Refresh services when trigger changes (e.g., after AI settings dialog closes)
-  useEffect(() => {
-    if (aiRefreshTrigger > 0) {
-      loadServices();
-    }
-  }, [aiRefreshTrigger, loadServices]);
 
   // Handle AI commit message generation
   const handleAIGenerate = useCallback(async () => {

@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown, Rocket, Search } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
+import type { SettingsSection } from '../../types/settings';
 import { ipaAPI, apkAPI, worktreeAPI, tauriEvents, type Worktree, type EditorDefinition } from '../../lib/tauri-api';
 import { TerminalSelector } from './TerminalSelector';
 import { ScriptCards } from './ScriptCards';
@@ -62,6 +63,7 @@ interface ProjectExplorerProps {
   onOpenTerminal?: () => void;
   onEditWorkflow?: (workflow: Workflow) => void;
   onNavigateToWorkflow?: (workflow: Workflow, projectPath: string) => void;
+  onOpenSettings?: (section?: SettingsSection) => void;
 }
 
 const packageManagerLabels: Record<PackageManager, string> = {
@@ -104,6 +106,7 @@ export function ProjectExplorer({
   onOpenInVSCode,
   onOpenTerminal,
   onEditWorkflow,
+  onOpenSettings,
   onNavigateToWorkflow,
 }: ProjectExplorerProps) {
   const [activeTab, setActiveTab] = useState<TabType>('scripts');
@@ -816,6 +819,7 @@ export function ProjectExplorer({
             onExecuteScript={onExecuteScript}
             onUpdateProject={onUpdateProject}
             onWorktreesChange={onWorktreesChange}
+            onOpenSettings={onOpenSettings}
             className="h-full -m-4 -mb-4"
           />
         )}

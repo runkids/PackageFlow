@@ -1656,6 +1656,7 @@ export type StepTemplateCategory =
   | 'kubernetes'
   | 'database'
   | 'cloud'
+  | 'ai'
   | 'security'
   | 'nodejs'
   | 'custom';

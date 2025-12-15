@@ -211,7 +211,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             ref={closeButtonRef}
             onClick={handleClose}
             className={cn(
-              'p-2 rounded-lg',
+              'p-1 rounded-lg',
               'text-muted-foreground hover:text-foreground',
               'hover:bg-accent transition-colors',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'

@@ -27,6 +27,7 @@ export const TEMPLATE_CATEGORIES: TemplateCategoryInfo[] = [
   { id: 'kubernetes', name: 'Kubernetes', icon: 'Server' },
   { id: 'database', name: 'Database', icon: 'Database' },
   { id: 'cloud', name: 'Cloud', icon: 'Cloud' },
+  { id: 'ai', name: 'AI Assistants', icon: 'Robot' },
   { id: 'security', name: 'Security', icon: 'Shield' },
   { id: 'nodejs', name: 'Node.js', icon: 'Cpu' },
 ];
@@ -888,6 +889,49 @@ export const STEP_TEMPLATES: StepTemplate[] = [
     category: 'nodejs',
     description: 'Clear npm cache',
   },
+  // AI Assistants
+  {
+    id: 'ai-codex-analysis',
+    name: 'Codex Analysis',
+    command: 'codex analyze --path <file-or-dir> --prompt "Summarize issues and improvements" --format markdown',
+    category: 'ai',
+    description: 'Run the Codex CLI to review a file or folder and get annotated feedback',
+  },
+  {
+    id: 'ai-claude-brainstorm',
+    name: 'Claude Brainstorm',
+    command: 'claude brainstorm --prompt "<topic-or-problem>" --length short',
+    category: 'ai',
+    description: 'Ask Claude for ideas, summaries, or follow-up questions on a topic',
+  },
+  {
+    id: 'ai-claude-release-notes',
+    name: 'Claude Release Notes',
+    command: 'claude write --style "release notes" --input "<summary-of-changes>" --tone upbeat',
+    category: 'ai',
+    description: 'Generate polished release note bullets from a change summary',
+  },
+  {
+    id: 'ai-gemini-plan',
+    name: 'Gemini Planning',
+    command: 'gemini plan --goal "<project goal>" --output plan.md',
+    category: 'ai',
+    description: 'Generate structured steps for a goal via the Gemini CLI and persist to markdown',
+  },
+  {
+    id: 'ai-gemini-summary',
+    name: 'Gemini Summary',
+    command: 'gemini summarize --input "<diff-or-notes>" --length concise --format bullet',
+    category: 'ai',
+    description: 'Create a concise bullet summary for a diff or meeting notes',
+  },
+  {
+    id: 'ai-codex-debug',
+    name: 'Codex Debug Context',
+    command: 'codex explain --path <file> --focus "<error-or-log>" --format steps',
+    category: 'ai',
+    description: 'Ask Codex to explain logs, failures, or error messages with actionable steps',
+  },
 ];
 
 /**
@@ -1006,6 +1050,7 @@ export function parseImportedTemplates(jsonString: string): {
       'kubernetes',
       'database',
       'cloud',
+      'ai',
       'security',
       'nodejs',
       'custom',
