@@ -4,7 +4,6 @@ pub mod database;
 pub mod error;
 pub mod ipa_extractor;
 pub mod migration;
-pub mod migration_sqlite;
 pub mod path_resolver;
 pub mod plist_parser;
 pub mod schema;

@@ -20,7 +20,6 @@ use commands::{
 };
 use services::{FileWatcherManager, IncomingWebhookManager};
 use utils::database::{Database, get_database_path};
-use utils::migration_sqlite;
 
 /// Database state wrapper for Tauri
 pub struct DatabaseState(pub Arc<Database>);
@@ -370,29 +369,6 @@ fn initialize_database() -> Result<Database, String> {
     // Create or open database (this also runs migrations internally)
     let db = Database::new(db_path.clone())?;
     log::info!("[PackageFlow] Database schema migrations complete");
-
-    // Check if JSON migration is needed
-    // Use shared_store::get_store_path() for correct JSON path
-    let json_path = utils::shared_store::get_store_path()
-        .unwrap_or_else(|_| db_path.with_file_name("packageflow.json"));
-    let migrated_path = json_path.with_extension("json.migrated");
-
-    if json_path.exists() && !migrated_path.exists() {
-        log::info!("[PackageFlow] Found existing JSON store, starting migration...");
-        match migration_sqlite::migrate_from_json(&db) {
-            Ok(result) => {
-                log::info!(
-                    "[PackageFlow] Migration complete: {} projects, {} workflows migrated",
-                    result.stats.projects,
-                    result.stats.workflows
-                );
-            }
-            Err(e) => {
-                log::error!("[PackageFlow] Migration failed: {}", e);
-                // Continue anyway - user can still use the app with empty database
-            }
-        }
-    }
 
     Ok(db)
 }

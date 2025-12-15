@@ -1972,40 +1972,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Debug: Log startup info
     eprintln!("[MCP Server] Starting PackageFlow MCP Server (PID: {})...", std::process::id());
 
-    // Debug: Check store path at startup
-    match packageflow_lib::utils::shared_store::get_store_path() {
-        Ok(path) => {
-            eprintln!("[MCP Server] Store path: {:?}", path);
-            eprintln!("[MCP Server] Store file exists: {}", path.exists());
-
-            // Try to read and log the actual config
-            if path.exists() {
-                match std::fs::read_to_string(&path) {
-                    Ok(contents) => {
-                        // Try to extract just the mcp_server_config portion
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) {
-                            if let Some(mcp_config) = json.get("mcp_server_config") {
-                                eprintln!("[MCP Server] Raw mcp_server_config JSON: {}", mcp_config);
-                            } else {
-                                eprintln!("[MCP Server] No mcp_server_config key in store file!");
-                            }
-                        }
-                    }
-                    Err(e) => eprintln!("[MCP Server] Failed to read store file: {}", e),
-                }
-            }
-        }
-        Err(e) => eprintln!("[MCP Server] Failed to get store path: {}", e),
-    }
-
-    // Also test the full read_store_data function
+    // Debug: Check database at startup
     match read_store_data() {
         Ok(data) => {
-            eprintln!("[MCP Server] Store read successful at startup");
+            eprintln!("[MCP Server] Database read successful");
             eprintln!("[MCP Server] Config - is_enabled: {}", data.mcp_config.is_enabled);
             eprintln!("[MCP Server] Config - permission_mode: {:?}", data.mcp_config.permission_mode);
         }
-        Err(e) => eprintln!("[MCP Server] Store read failed at startup: {}", e),
+        Err(e) => eprintln!("[MCP Server] Database read failed: {}", e),
     }
 
     // Create the MCP server
