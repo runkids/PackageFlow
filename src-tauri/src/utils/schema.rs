@@ -4,7 +4,7 @@
 use rusqlite::{Connection, params};
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 10;
+pub const CURRENT_VERSION: i32 = 11;
 
 /// Migration struct containing version and SQL statements
 struct Migration {
@@ -396,6 +396,30 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_cli_logs_tool ON cli_execution_logs(tool_type);
         "#,
     },
+    Migration {
+        version: 11,
+        description: "Add notifications table for notification center",
+        up: r#"
+            -- Notifications history for notification center
+            -- Stores all notifications sent by the app for history viewing
+            CREATE TABLE IF NOT EXISTS notifications (
+                id TEXT PRIMARY KEY,
+                notification_type TEXT NOT NULL,
+                category TEXT NOT NULL CHECK(category IN (
+                    'webhooks', 'workflow_execution', 'git_operations',
+                    'security_scans', 'deployments'
+                )),
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                is_read INTEGER DEFAULT 0,
+                metadata TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(is_read, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);
+        "#,
+    },
 ];
 
 /// Run all pending migrations using Database wrapper
@@ -498,6 +522,7 @@ mod tests {
         assert!(table_exists(&conn, "deploy_accounts").unwrap());
         assert!(table_exists(&conn, "deploy_account_tokens").unwrap());
         assert!(table_exists(&conn, "webhook_tokens").unwrap());
+        assert!(table_exists(&conn, "notifications").unwrap());
         // incoming_webhooks was dropped in migration 6
         assert!(!table_exists(&conn, "incoming_webhooks").unwrap());
     }

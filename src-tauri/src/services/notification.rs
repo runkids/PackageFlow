@@ -2,14 +2,24 @@
 //! Provides system-level notifications for various application events
 //! Uses SQLite for settings storage and supports category-based filtering.
 
-use chrono::{Local, NaiveTime};
-use tauri::{AppHandle, Manager};
+use chrono::{Local, NaiveTime, Utc};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
+use uuid::Uuid;
 
-use crate::repositories::SettingsRepository;
+use crate::repositories::{NotificationRecord, NotificationRepository, SettingsRepository};
 use crate::utils::database::Database;
 use crate::utils::store::NotificationSettings;
 use crate::DatabaseState;
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/// Maximum number of notifications to keep in database
+const MAX_NOTIFICATION_COUNT: usize = 100;
+/// Number of days to keep old notifications
+const NOTIFICATION_RETENTION_DAYS: u32 = 30;
 
 // ============================================================================
 // Notification Types
@@ -83,6 +93,67 @@ impl NotificationType {
 
             NotificationType::DeploymentSuccess { .. }
             | NotificationType::DeploymentFailed { .. } => "deployments",
+        }
+    }
+
+    /// Get the notification type name for database storage
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            NotificationType::WebhookIncomingTriggered { .. } => "webhook_incoming_triggered",
+            NotificationType::WebhookOutgoingSuccess { .. } => "webhook_outgoing_success",
+            NotificationType::WebhookOutgoingFailure { .. } => "webhook_outgoing_failure",
+            NotificationType::WorkflowCompleted { .. } => "workflow_completed",
+            NotificationType::WorkflowFailed { .. } => "workflow_failed",
+            NotificationType::GitPushSuccess { .. } => "git_push_success",
+            NotificationType::GitPushFailed { .. } => "git_push_failed",
+            NotificationType::SecurityScanCompleted { .. } => "security_scan_completed",
+            NotificationType::DeploymentSuccess { .. } => "deployment_success",
+            NotificationType::DeploymentFailed { .. } => "deployment_failed",
+        }
+    }
+
+    /// Generate metadata JSON for database storage
+    pub fn metadata(&self) -> Option<serde_json::Value> {
+        match self {
+            NotificationType::WebhookIncomingTriggered { workflow_name } => {
+                Some(serde_json::json!({ "workflowName": workflow_name }))
+            }
+            NotificationType::WebhookOutgoingSuccess { workflow_name, url } => {
+                Some(serde_json::json!({ "workflowName": workflow_name, "url": url }))
+            }
+            NotificationType::WebhookOutgoingFailure {
+                workflow_name,
+                error,
+            } => Some(serde_json::json!({ "workflowName": workflow_name, "error": error })),
+            NotificationType::WorkflowCompleted {
+                workflow_name,
+                duration_ms,
+            } => Some(serde_json::json!({ "workflowName": workflow_name, "durationMs": duration_ms })),
+            NotificationType::WorkflowFailed {
+                workflow_name,
+                error,
+            } => Some(serde_json::json!({ "workflowName": workflow_name, "error": error })),
+            NotificationType::GitPushSuccess {
+                project_name,
+                branch,
+            } => Some(serde_json::json!({ "projectName": project_name, "branch": branch })),
+            NotificationType::GitPushFailed {
+                project_name,
+                error,
+            } => Some(serde_json::json!({ "projectName": project_name, "error": error })),
+            NotificationType::SecurityScanCompleted {
+                project_name,
+                vulnerability_count,
+            } => Some(serde_json::json!({ "projectName": project_name, "vulnerabilityCount": vulnerability_count })),
+            NotificationType::DeploymentSuccess {
+                project_name,
+                platform,
+            } => Some(serde_json::json!({ "projectName": project_name, "platform": platform })),
+            NotificationType::DeploymentFailed {
+                project_name,
+                platform,
+                error,
+            } => Some(serde_json::json!({ "projectName": project_name, "platform": platform, "error": error })),
         }
     }
 
@@ -312,18 +383,46 @@ pub fn send_notification(
     notification_type: NotificationType,
 ) -> Result<(), String> {
     let settings = get_notification_settings(app);
+    let (title, body) = notification_type.to_notification();
+    let category = notification_type.category();
 
-    // Check master toggle
+    // Always store notification to database for history (regardless of settings)
+    let record = NotificationRecord {
+        id: Uuid::new_v4().to_string(),
+        notification_type: notification_type.type_name().to_string(),
+        category: category.to_string(),
+        title: title.clone(),
+        body: body.clone(),
+        is_read: false,
+        metadata: notification_type.metadata(),
+        created_at: Utc::now(),
+    };
+
+    // Store to database
+    let repo = NotificationRepository::new(get_db(app));
+    if let Err(e) = repo.create(&record) {
+        log::warn!("[notification] Failed to store notification: {}", e);
+    } else {
+        // Emit event to frontend for real-time updates
+        let _ = app.emit("notification:new", &record);
+        log::debug!("[notification] Stored and emitted: {}", record.id);
+
+        // Prune old notifications to keep max 500
+        if let Err(e) = repo.prune(MAX_NOTIFICATION_COUNT) {
+            log::warn!("[notification] Failed to prune notifications: {}", e);
+        }
+    }
+
+    // Check master toggle for system notification
     if !settings.enabled {
-        log::debug!("[notification] Notifications disabled globally, skipping");
+        log::debug!("[notification] Notifications disabled globally, skipping system notification");
         return Ok(());
     }
 
     // Check category toggle
-    let category = notification_type.category();
     if !is_category_enabled(&settings, category) {
         log::debug!(
-            "[notification] Category '{}' disabled, skipping",
+            "[notification] Category '{}' disabled, skipping system notification",
             category
         );
         return Ok(());
@@ -331,13 +430,11 @@ pub fn send_notification(
 
     // Check Do Not Disturb
     if is_in_dnd_period(&settings) {
-        log::debug!("[notification] In DND period, skipping");
+        log::debug!("[notification] In DND period, skipping system notification");
         return Ok(());
     }
 
-    let (title, body) = notification_type.to_notification();
-
-    log::info!("[notification] Sending: {} - {}", title, body);
+    log::info!("[notification] Sending system notification: {} - {}", title, body);
 
     let builder = app.notification().builder().title(&title).body(&body);
 
@@ -371,4 +468,39 @@ pub fn send_webhook_notification(
 pub fn are_notifications_enabled(app: &AppHandle) -> bool {
     let settings = get_notification_settings(app);
     settings.enabled && settings.categories.webhooks
+}
+
+// ============================================================================
+// Startup Cleanup
+// ============================================================================
+
+/// Clean up old notifications on app startup
+///
+/// This function should be called once when the app starts to:
+/// 1. Delete notifications older than NOTIFICATION_RETENTION_DAYS
+/// 2. Prune excess notifications beyond MAX_NOTIFICATION_COUNT
+pub fn cleanup_old_notifications(app: &AppHandle) {
+    let repo = NotificationRepository::new(get_db(app));
+
+    // Delete notifications older than retention period
+    match repo.delete_old(NOTIFICATION_RETENTION_DAYS) {
+        Ok(count) if count > 0 => {
+            log::info!("[notification] Cleaned up {} old notifications (>{} days)", count, NOTIFICATION_RETENTION_DAYS);
+        }
+        Err(e) => {
+            log::warn!("[notification] Failed to delete old notifications: {}", e);
+        }
+        _ => {}
+    }
+
+    // Prune to max count
+    match repo.prune(MAX_NOTIFICATION_COUNT) {
+        Ok(count) if count > 0 => {
+            log::info!("[notification] Pruned {} notifications (keeping max {})", count, MAX_NOTIFICATION_COUNT);
+        }
+        Err(e) => {
+            log::warn!("[notification] Failed to prune notifications: {}", e);
+        }
+        _ => {}
+    }
 }

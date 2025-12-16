@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Cable, Loader2, Check } from 'lucide-react';
 import { WorkflowPage } from './components/workflow/WorkflowPage';
 import { ProjectManagerPage } from './components/project/ProjectManagerPage';
 import { useScriptExecutionContext } from './contexts/ScriptExecutionContext';
@@ -21,7 +20,7 @@ import { ScriptPtyTerminal, type ScriptPtyTerminalRef } from './components/termi
 import { useUpdater } from './hooks/useUpdater';
 import { UpdateDialog } from './components/ui/UpdateDialog';
 import { useMcpStatus } from './hooks/useMcpStatus';
-import { McpIcon } from './components/ui/McpIcon';
+import { NotificationButton, BackgroundTasksButton, StopProcessesButton, McpStatusButton } from './components/status-bar';
 
 type AppTab = 'workflow' | 'project-manager';
 
@@ -477,116 +476,25 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-background rounded-lg overflow-hidden select-none">
-      <header data-tauri-drag-region className="flex items-center justify-between border-b border-border bg-card h-10 flex-shrink-0">
+      <header data-tauri-drag-region className="flex items-center justify-between border-b border-border bg-card h-12 flex-shrink-0">
         <div data-tauri-drag-region className="flex-1 h-full pl-20" />
         <div className="flex items-center gap-1 px-2">
-          <div className="relative group">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleKillAllNodeProcesses}
-              disabled={isKilling || runningProcessInfo.count === 0}
-              className={`h-8 w-8 relative ${
-                killSuccess
-                  ? 'bg-gradient-to-r from-green-500/20 to-blue-500/20'
-                  : isKilling
-                  ? 'bg-amber-500/20 cursor-wait'
-                  : runningProcessInfo.count > 0
-                  ? 'hover:bg-red-500/20'
-                  : ''
-              }`}
-              aria-label="Stop all running processes"
-            >
-              {killSuccess ? (
-                <Check className="w-4 h-4 text-green-500" />
-              ) : isKilling ? (
-                <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-              ) : (
-                <Cable className={`w-4 h-4 ${runningProcessInfo.count > 0 ? 'text-blue-400' : 'text-muted-foreground'}`} />
-              )}
-              {runningProcessInfo.count > 0 && !killSuccess && !isKilling && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-0.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[10px] leading-[14px] rounded-full flex items-center justify-center shadow-sm">
-                  {runningProcessInfo.count}
-                </span>
-              )}
-            </Button>
-            {!isKilling && !killSuccess && (
-              <div className="absolute right-0 top-full mt-2 px-3 py-2 bg-background border border-border rounded-lg shadow-lg text-sm text-foreground whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 min-w-[200px]">
-                <div className="font-medium text-red-400 mb-1">Stop All Processes</div>
-                {runningProcessInfo.count > 0 ? (
-                  <>
-                    <div className="text-xs text-muted-foreground mb-2">
-                      {runningProcessInfo.count} running process{runningProcessInfo.count > 1 ? 'es' : ''}:
-                    </div>
-                    <div className="text-xs space-y-1">
-                      {runningProcessInfo.scripts.map((script, i) => (
-                        <div key={i} className="flex items-start gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse mt-1 flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1">
-                              {script.projectName && (
-                                <span className="text-blue-400 text-[10px] truncate">
-                                  {script.projectName}:
-                                </span>
-                              )}
-                              <span className="text-green-400 truncate">
-                                {script.scriptName}
-                              </span>
-                              {script.port && (
-                                <span className="text-yellow-400 text-[10px] ml-auto flex-shrink-0">
-                                  :{script.port}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {runningProcessInfo.hasMore && (
-                        <div className="text-muted-foreground pl-3">
-                          ...and {runningProcessInfo.count - 5} more
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    No processes running
-                  </div>
-                )}
-                <div className="absolute -top-1 right-4 w-2 h-2 bg-background border-l border-t border-border transform rotate-45" />
-              </div>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => openSettings('mcp')}
-            className="relative group mr-1 h-8 w-8"
-          >
-            <McpIcon
-              className={`w-4 h-4 ${!mcpStatus.isEnabled ? 'text-muted-foreground' : ''}`}
-              gradient={mcpStatus.isEnabled}
-              gradientColors={['#22c55e', '#3b82f6']}
-            />
-            <div className="absolute right-0 top-full mt-2 px-3 py-2 bg-background border border-border rounded-lg shadow-lg text-sm text-foreground whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-              {mcpStatus.isEnabled ? (
-                <>
-                  <div className="font-medium text-green-400 mb-1">MCP Server Enabled</div>
-                  <div className="text-xs text-muted-foreground">
-                    AI tools can access PackageFlow
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="font-medium text-muted-foreground mb-1">MCP Server Disabled</div>
-                  <div className="text-xs text-muted-foreground">
-                    Click to configure
-                  </div>
-                </>
-              )}
-              <div className="absolute -top-1 right-4 w-2 h-2 bg-background border-l border-t border-border transform rotate-45" />
-            </div>
-          </Button>
+          {/* Background Tasks */}
+          <BackgroundTasksButton />
+          {/* Stop All Processes */}
+          <StopProcessesButton
+            runningProcessInfo={runningProcessInfo}
+            onStopAll={handleKillAllNodeProcesses}
+            isKilling={isKilling}
+            killSuccess={killSuccess}
+          />
+          <McpStatusButton
+            config={mcpStatus.config}
+            isLoading={mcpStatus.isLoading}
+            onOpenSettings={() => openSettings('mcp')}
+          />
+          {/* Notification Center */}
+          <NotificationButton />
           <div className="w-px h-5 bg-border mx-1" />
           <SettingsButton onClick={() => openSettings()} />
         </div>

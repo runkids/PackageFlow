@@ -115,3 +115,59 @@ export const NOTIFICATION_CATEGORIES: NotificationCategoryInfo[] = [
     icon: 'Rocket',
   },
 ];
+
+// ============================================================================
+// Notification History Types (for Notification Center)
+// ============================================================================
+
+/**
+ * Notification type identifier
+ */
+export type NotificationTypeName =
+  | 'webhook_incoming_triggered'
+  | 'webhook_outgoing_success'
+  | 'webhook_outgoing_failure'
+  | 'workflow_completed'
+  | 'workflow_failed'
+  | 'git_push_success'
+  | 'git_push_failed'
+  | 'security_scan_completed'
+  | 'deployment_success'
+  | 'deployment_failed';
+
+/**
+ * Notification metadata for different notification types
+ */
+export interface NotificationMetadata {
+  workflowName?: string;
+  projectName?: string;
+  url?: string;
+  error?: string;
+  branch?: string;
+  platform?: string;
+  durationMs?: number;
+  vulnerabilityCount?: number;
+}
+
+/**
+ * A single notification record from the database
+ */
+export interface NotificationRecord {
+  id: string;
+  notificationType: NotificationTypeName;
+  category: NotificationCategoryId;
+  title: string;
+  body: string;
+  isRead: boolean;
+  metadata?: NotificationMetadata;
+  createdAt: string; // ISO 8601 datetime string
+}
+
+/**
+ * Response from get_notifications API
+ */
+export interface NotificationListResponse {
+  notifications: NotificationRecord[];
+  totalCount: number;
+  unreadCount: number;
+}

@@ -1112,9 +1112,9 @@ export const settingsAPI = {
 // Notification Settings Commands
 // ============================================================================
 
-import type { NotificationSettings } from '../types/notification';
+import type { NotificationSettings, NotificationRecord, NotificationListResponse } from '../types/notification';
 
-export type { NotificationSettings };
+export type { NotificationSettings, NotificationRecord, NotificationListResponse };
 
 export const notificationAPI = {
   /** Load notification settings from database */
@@ -1124,6 +1124,40 @@ export const notificationAPI = {
   /** Save notification settings to database */
   saveSettings: (settings: NotificationSettings): Promise<void> =>
     invoke('save_notification_settings', { settings }),
+};
+
+// ============================================================================
+// Notification History API (Notification Center)
+// ============================================================================
+
+export const notificationHistoryAPI = {
+  /** Get recent notifications with pagination */
+  getNotifications: (limit?: number, offset?: number): Promise<NotificationListResponse> =>
+    invoke<NotificationListResponse>('get_notifications', { limit, offset }),
+
+  /** Get unread notification count */
+  getUnreadCount: (): Promise<number> =>
+    invoke<number>('get_unread_notification_count'),
+
+  /** Mark a notification as read */
+  markAsRead: (id: string): Promise<boolean> =>
+    invoke<boolean>('mark_notification_read', { id }),
+
+  /** Mark all notifications as read */
+  markAllAsRead: (): Promise<number> =>
+    invoke<number>('mark_all_notifications_read'),
+
+  /** Delete a notification */
+  deleteNotification: (id: string): Promise<boolean> =>
+    invoke<boolean>('delete_notification', { id }),
+
+  /** Cleanup old notifications (default: older than 30 days) */
+  cleanupOld: (retentionDays?: number): Promise<number> =>
+    invoke<number>('cleanup_old_notifications', { retentionDays }),
+
+  /** Clear all notifications */
+  clearAll: (): Promise<number> =>
+    invoke<number>('clear_all_notifications'),
 };
 
 // ============================================================================
@@ -1199,6 +1233,10 @@ export const tauriEvents = {
   // File watcher events (package.json monitoring)
   onPackageJsonChanged: (callback: (data: PackageJsonChangedPayload) => void): Promise<UnlistenFn> =>
     listen<PackageJsonChangedPayload>('package-json-changed', (event) => callback(event.payload)),
+
+  // Notification Center events (021-mcp-actions)
+  onNewNotification: (callback: (data: NotificationRecord) => void): Promise<UnlistenFn> =>
+    listen<NotificationRecord>('notification:new', (event) => callback(event.payload)),
 };
 
 // ============================================================================
@@ -2471,6 +2509,7 @@ export const tauriAPI = {
   ...versionAPI,
   ...settingsAPI,
   ...notificationAPI,
+  ...notificationHistoryAPI,
   ...monorepoAPI,
   ...gitAPI,
   ...stepTemplateAPI,

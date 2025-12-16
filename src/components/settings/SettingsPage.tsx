@@ -321,7 +321,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       <header
         data-tauri-drag-region
         className={cn(
-          'h-10 shrink-0 flex items-center justify-end pr-3',
+          'h-12 shrink-0 flex items-center justify-end pr-3',
           isFullscreen ? '' : 'pl-[72px]'
         )}
       >

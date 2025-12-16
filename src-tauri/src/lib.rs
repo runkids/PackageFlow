@@ -16,7 +16,7 @@ use commands::script::ScriptExecutionState;
 use commands::workflow::WorkflowExecutionState;
 use commands::ai_cli::CLIExecutorState;
 use commands::{
-    ai, ai_cli, apk, deploy, file_watcher, git, incoming_webhook, ipa, mcp, monorepo, project, script, security,
+    ai, ai_cli, apk, deploy, file_watcher, git, incoming_webhook, ipa, mcp, monorepo, notification, project, script, security,
     settings, shortcuts, step_template, toolchain, version, webhook, workflow, worktree,
 };
 use services::{DatabaseWatcher, FileWatcherManager, IncomingWebhookManager};
@@ -366,6 +366,14 @@ pub fn run() {
             mcp::get_mcp_tools_with_permissions,
             mcp::get_mcp_logs,
             mcp::clear_mcp_logs,
+            // Notification Center (021-mcp-actions)
+            notification::get_notifications,
+            notification::get_unread_notification_count,
+            notification::mark_notification_read,
+            notification::mark_all_notifications_read,
+            notification::delete_notification,
+            notification::cleanup_old_notifications,
+            notification::clear_all_notifications,
         ])
         // Setup hook - sync incoming webhook server and start database watcher on app start
         .setup(|app| {
@@ -378,6 +386,9 @@ pub fn run() {
                     log::warn!("[setup] Failed to start database watcher: {}", e);
                 }
             }
+
+            // Cleanup old notifications on startup
+            services::notification::cleanup_old_notifications(app.handle());
 
             // Sync incoming webhook server
             tauri::async_runtime::spawn(async move {

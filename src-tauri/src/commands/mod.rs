@@ -11,6 +11,7 @@ pub mod git;
 pub mod incoming_webhook;
 pub mod ipa;
 pub mod monorepo;
+pub mod notification;
 pub mod project;
 pub mod script;
 pub mod security;
