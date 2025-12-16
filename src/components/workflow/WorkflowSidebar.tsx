@@ -11,7 +11,7 @@ import {
   ArrowUpFromLine,
   ArrowDownToLine,
 } from 'lucide-react';
-import { Button } from '../ui/Button';
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '../ui/ContextMenu';
 import type { ExecutionStatus } from '../../types/workflow';
 import {
   DndContext,
@@ -359,43 +359,30 @@ export function WorkflowSidebar({
 
       {/* Context menu */}
       {contextMenu && (
-        <>
-          {/* Transparent overlay - click anywhere to close */}
-          <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
-          <div
-            className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px] animate-in fade-in-0 zoom-in-95 duration-150"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-          >
-            {onDuplicateWorkflow && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  const workflow = workflows.find(
-                    (w) => w.id === contextMenu.workflowId
-                  );
-                  if (workflow) handleDuplicateClick(workflow);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent justify-start h-auto rounded-none"
-              >
-                <Copy className="w-4 h-4" />
-                Duplicate
-              </Button>
-            )}
-            <Button
-              variant="ghost"
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeContextMenu}>
+          {onDuplicateWorkflow && (
+            <ContextMenuItem
               onClick={() => {
-                const workflow = workflows.find(
-                  (w) => w.id === contextMenu.workflowId
-                );
-                if (workflow) handleDeleteClick(workflow);
+                const workflow = workflows.find((w) => w.id === contextMenu.workflowId);
+                if (workflow) handleDuplicateClick(workflow);
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-accent justify-start h-auto rounded-none"
+              icon={<Copy className="w-4 h-4" />}
             >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </Button>
-          </div>
-        </>
+              Duplicate
+            </ContextMenuItem>
+          )}
+          {onDuplicateWorkflow && <ContextMenuSeparator />}
+          <ContextMenuItem
+            onClick={() => {
+              const workflow = workflows.find((w) => w.id === contextMenu.workflowId);
+              if (workflow) handleDeleteClick(workflow);
+            }}
+            icon={<Trash2 className="w-4 h-4" />}
+            destructive
+          >
+            Delete
+          </ContextMenuItem>
+        </ContextMenu>
       )}
 
       {/* Delete confirmation dialog */}

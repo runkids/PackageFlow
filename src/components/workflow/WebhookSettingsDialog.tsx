@@ -254,11 +254,29 @@ export function WebhookSettingsDialog({
         setIncomingPort(DEFAULT_INCOMING_WEBHOOK_PORT);
       }
 
-      setUrlError(null);
-      setJsonError(null);
       setTestResult(null);
       setCopySuccess(false);
       setPortStatus(null);
+
+      // Validate existing URL if enabled
+      if (config?.enabled && config?.url) {
+        // Defer validation to next tick to ensure state is set
+        setTimeout(() => {
+          try {
+            const parsed = new URL(config.url);
+            if (parsed.protocol !== 'https:') {
+              setUrlError('Only HTTPS URLs are supported');
+            } else {
+              setUrlError(null);
+            }
+          } catch {
+            setUrlError('Invalid URL format');
+          }
+        }, 0);
+      } else {
+        setUrlError(null);
+      }
+      setJsonError(null);
 
       // Load server status
       loadServerStatus();
@@ -465,10 +483,6 @@ export function WebhookSettingsDialog({
     }
 
     // Build incoming config (now includes port)
-    console.log('[WebhookSettingsDialog] handleSave - building incoming config');
-    console.log('[WebhookSettingsDialog] incomingToken:', incomingToken);
-    console.log('[WebhookSettingsDialog] incomingEnabled:', incomingEnabled);
-    console.log('[WebhookSettingsDialog] incomingPort:', incomingPort);
     let newIncomingConfig: IncomingWebhookConfig | undefined;
     if (incomingToken) {
       newIncomingConfig = {
@@ -477,9 +491,6 @@ export function WebhookSettingsDialog({
         tokenCreatedAt: incomingTokenCreatedAt,
         port: incomingPort,
       };
-      console.log('[WebhookSettingsDialog] newIncomingConfig created:', newIncomingConfig);
-    } else {
-      console.log('[WebhookSettingsDialog] incomingToken is falsy, newIncomingConfig will be undefined');
     }
 
     // Save workflow (this triggers server sync which will start/stop/restart servers as needed)
@@ -541,20 +552,15 @@ export function WebhookSettingsDialog({
             )}
           >
             {/* Close button */}
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={onClose}
-              className={cn(
-                'absolute right-4 top-4',
-                'p-2 rounded-lg',
-                'text-muted-foreground hover:text-foreground',
-                'hover:bg-accent/50',
-                'transition-colors duration-150',
-                'focus:outline-none focus:ring-2 focus:ring-ring'
-              )}
+              className="absolute right-4 top-4"
               aria-label="Close dialog"
             >
               <X className="w-4 h-4" />
-            </button>
+            </Button>
 
             {/* Title area with icon badge */}
             <div className="flex items-start gap-4 pr-10">
@@ -1241,23 +1247,20 @@ export function WebhookSettingsDialog({
 
             {/* Right side - Action buttons */}
             <div className="flex items-center gap-2">
-              <button
+              <Button
+                variant="ghost"
                 onClick={onClose}
-                className={cn(
-                  'px-4 py-2 rounded-lg',
-                  'text-sm font-medium',
-                  'text-muted-foreground hover:text-foreground',
-                  'hover:bg-accent',
-                  'border border-transparent hover:border-border',
-                  'transition-all duration-150',
-                  'focus:outline-none focus:ring-2 focus:ring-ring'
-                )}
               >
                 Cancel
-              </button>
+              </Button>
               <Button
                 onClick={handleSave}
-                disabled={(enabled && (!url || !!urlError || !!jsonError)) || isPortUsedByOther(portStatus) || isPortUsedByOtherWorkflow(portStatus)}
+                disabled={
+                  // Outgoing validation: if enabled, must have valid URL and JSON
+                  (enabled && (!url || !!urlError || !!jsonError))
+                  // Note: Port conflicts for incoming webhook are just warnings, not blockers
+                  // The server will fail to start but the config can still be saved
+                }
                 variant="success"
               >
                 <Webhook className="w-4 h-4 mr-1.5" />

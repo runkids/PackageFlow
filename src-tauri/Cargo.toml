@@ -74,6 +74,9 @@ futures = "0.3"
 async-stream = "0.3"
 reqwest-eventsource = "0.6"
 
+# PTY for AI CLI streaming
+portable-pty = "0.8"
+
 # MCP Server
 rmcp = { version = "0.8", features = ["server", "macros", "schemars"] }
 schemars = "1.0"

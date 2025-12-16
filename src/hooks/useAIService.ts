@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { aiAPI } from '../lib/tauri-api';
+import { aiAPI, aiCLIAPI } from '../lib/tauri-api';
 import { listen } from '@tauri-apps/api/event';
 import type {
   AIServiceConfig,
@@ -23,7 +23,97 @@ import type {
   ProjectAISettings,
   UpdateProjectSettingsRequest,
   ProbeModelsRequest,
+  CLIToolType,
 } from '../types/ai';
+
+// ============================================================================
+// AI Execution Mode & Preference Utilities
+// ============================================================================
+
+const CLI_PREFERENCE_KEY = 'packageflow:defaultCliTool';
+const AI_EXECUTION_MODE_KEY = 'packageflow:aiExecutionMode';
+
+/** AI execution mode: API uses cloud services, CLI uses local CLI tools */
+export type AIExecutionMode = 'api' | 'cli';
+
+/** Get the AI execution mode from localStorage */
+export function getAIExecutionMode(): AIExecutionMode {
+  const saved = localStorage.getItem(AI_EXECUTION_MODE_KEY);
+  return (saved === 'cli') ? 'cli' : 'api'; // Default to 'api'
+}
+
+/** Set the AI execution mode in localStorage */
+export function setAIExecutionMode(mode: AIExecutionMode): void {
+  localStorage.setItem(AI_EXECUTION_MODE_KEY, mode);
+}
+
+/** Get the default CLI tool preference from localStorage */
+export function getDefaultCliTool(): CLIToolType | null {
+  const saved = localStorage.getItem(CLI_PREFERENCE_KEY);
+  return saved ? (saved as CLIToolType) : null;
+}
+
+/** Set the default CLI tool preference in localStorage */
+export function setDefaultCliTool(tool: CLIToolType | null): void {
+  if (tool) {
+    localStorage.setItem(CLI_PREFERENCE_KEY, tool);
+  } else {
+    localStorage.removeItem(CLI_PREFERENCE_KEY);
+  }
+}
+
+/** Check if CLI mode should be used based on current settings */
+export function shouldUseCLI(): boolean {
+  return getAIExecutionMode() === 'cli' && getDefaultCliTool() !== null;
+}
+
+/** Execute CLI tool and get the complete output */
+async function executeCLITool(
+  tool: CLIToolType,
+  prompt: string,
+  projectPath: string
+): Promise<{ success: boolean; output: string; error?: string }> {
+  try {
+    const response = await aiCLIAPI.execute({
+      tool,
+      prompt,
+      projectPath,
+    });
+
+    if (!response.success || !response.data) {
+      return {
+        success: false,
+        output: '',
+        error: response.error || 'CLI execution failed',
+      };
+    }
+
+    const result = response.data;
+
+    if (result.cancelled) {
+      return {
+        success: false,
+        output: '',
+        error: 'CLI execution was cancelled',
+      };
+    }
+
+    // Combine stdout and stderr, preferring stdout
+    const output = result.stdout || result.stderr || '';
+
+    return {
+      success: result.exitCode === 0,
+      output,
+      error: result.exitCode !== 0 ? `CLI exited with code ${result.exitCode}` : undefined,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      output: '',
+      error: err instanceof Error ? err.message : 'Unknown CLI error',
+    };
+  }
+}
 
 // ============================================================================
 // Types
@@ -547,11 +637,18 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
 
 export interface UseAICommitMessageOptions {
   projectPath: string;
+  /** Whether to use CLI tool instead of API (defaults to checking localStorage preference) */
+  useCli?: boolean;
 }
 
 export interface UseAICommitMessageResult {
   /** Generate a commit message */
-  generate: (options?: { serviceId?: string; templateId?: string }) => Promise<string | null>;
+  generate: (options?: {
+    serviceId?: string;
+    templateId?: string;
+    /** Override CLI usage for this generation */
+    useCli?: boolean;
+  }) => Promise<string | null>;
   /** Whether generation is in progress */
   isGenerating: boolean;
   /** Error message if generation failed */
@@ -560,20 +657,33 @@ export interface UseAICommitMessageResult {
   tokensUsed: number | null;
   /** Clear the current error */
   clearError: () => void;
+  /** Whether CLI mode is being used */
+  isCliMode: boolean;
 }
 
 /**
  * Simplified hook for commit message generation only.
  * Use this when you just need to generate commit messages without service management.
+ * Supports both API and CLI tool modes.
  */
 export function useAICommitMessage(options: UseAICommitMessageOptions): UseAICommitMessageResult {
-  const { projectPath } = options;
+  const { projectPath, useCli: useCliOption } = options;
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokensUsed, setTokensUsed] = useState<number | null>(null);
 
+  // Determine if CLI mode should be used
+  const isCliMode = useMemo(() => {
+    if (useCliOption !== undefined) return useCliOption;
+    return shouldUseCLI();
+  }, [useCliOption]);
+
   const generate = useCallback(async (
-    genOptions?: { serviceId?: string; templateId?: string }
+    genOptions?: {
+      serviceId?: string;
+      templateId?: string;
+      useCli?: boolean;
+    }
   ): Promise<string | null> => {
     if (!projectPath) {
       setError('Please select a project first');
@@ -584,7 +694,35 @@ export function useAICommitMessage(options: UseAICommitMessageOptions): UseAICom
     setError(null);
     setTokensUsed(null);
 
+    // Determine if this specific call should use CLI
+    const useCliForThisCall = genOptions?.useCli ?? isCliMode;
+    const cliTool = getDefaultCliTool();
+
     try {
+      // Use CLI tool if enabled and available
+      if (useCliForThisCall && cliTool) {
+        const prompt = `Generate a concise git commit message for the staged changes in this repository.
+
+Follow the Conventional Commits specification:
+- Use format: <type>[optional scope]: <description>
+- Types: feat, fix, docs, style, refactor, test, chore, perf
+- Keep the first line under 50 characters
+- Use imperative mood ("add" not "added")
+
+Only output the commit message, nothing else.`;
+
+        const result = await executeCLITool(cliTool, prompt, projectPath);
+
+        if (result.success) {
+          // Clean up the output (remove any extra whitespace)
+          return result.output.trim();
+        } else {
+          setError(result.error || 'CLI commit message generation failed');
+          return null;
+        }
+      }
+
+      // Fall back to API
       const request: GenerateCommitMessageRequest = {
         projectPath,
         serviceId: genOptions?.serviceId,
@@ -609,7 +747,7 @@ export function useAICommitMessage(options: UseAICommitMessageOptions): UseAICom
     } finally {
       setIsGenerating(false);
     }
-  }, [projectPath]);
+  }, [projectPath, isCliMode]);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -621,6 +759,7 @@ export function useAICommitMessage(options: UseAICommitMessageOptions): UseAICom
     error,
     tokensUsed,
     clearError,
+    isCliMode,
   };
 }
 
@@ -630,6 +769,8 @@ export function useAICommitMessage(options: UseAICommitMessageOptions): UseAICom
 
 export interface UseAICodeReviewOptions {
   projectPath: string;
+  /** Whether to use CLI tool instead of API (defaults to checking localStorage preference) */
+  useCli?: boolean;
 }
 
 export interface UseAICodeReviewResult {
@@ -639,6 +780,8 @@ export interface UseAICodeReviewResult {
     staged: boolean;
     serviceId?: string;
     templateId?: string;
+    /** Override CLI usage for this generation */
+    useCli?: boolean;
   }) => Promise<string | null>;
   /** Whether generation is in progress */
   isGenerating: boolean;
@@ -650,18 +793,27 @@ export interface UseAICodeReviewResult {
   isTruncated: boolean;
   /** Clear the current error */
   clearError: () => void;
+  /** Whether CLI mode is being used */
+  isCliMode: boolean;
 }
 
 /**
  * Hook for AI code review generation.
  * Use this to generate code reviews for file diffs.
+ * Supports both API and CLI tool modes.
  */
 export function useAICodeReview(options: UseAICodeReviewOptions): UseAICodeReviewResult {
-  const { projectPath } = options;
+  const { projectPath, useCli: useCliOption } = options;
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokensUsed, setTokensUsed] = useState<number | null>(null);
   const [isTruncated, setIsTruncated] = useState(false);
+
+  // Determine if CLI mode should be used
+  const isCliMode = useMemo(() => {
+    if (useCliOption !== undefined) return useCliOption;
+    return shouldUseCLI();
+  }, [useCliOption]);
 
   const generate = useCallback(async (
     genOptions: {
@@ -669,6 +821,7 @@ export function useAICodeReview(options: UseAICodeReviewOptions): UseAICodeRevie
       staged: boolean;
       serviceId?: string;
       templateId?: string;
+      useCli?: boolean;
     }
   ): Promise<string | null> => {
     if (!projectPath) {
@@ -686,7 +839,36 @@ export function useAICodeReview(options: UseAICodeReviewOptions): UseAICodeRevie
     setTokensUsed(null);
     setIsTruncated(false);
 
+    // Determine if this specific call should use CLI
+    const useCliForThisCall = genOptions.useCli ?? isCliMode;
+    const cliTool = getDefaultCliTool();
+
     try {
+      // Use CLI tool if enabled and available
+      if (useCliForThisCall && cliTool) {
+        const diffType = genOptions.staged ? 'staged' : 'unstaged';
+        const prompt = `Review the ${diffType} changes in the file: ${genOptions.filePath}
+
+Provide a comprehensive code review covering:
+1. Code quality and best practices
+2. Potential bugs or issues
+3. Performance considerations
+4. Security concerns
+5. Suggestions for improvement
+
+Be specific and actionable in your feedback.`;
+
+        const result = await executeCLITool(cliTool, prompt, projectPath);
+
+        if (result.success) {
+          return result.output;
+        } else {
+          setError(result.error || 'CLI review failed');
+          return null;
+        }
+      }
+
+      // Fall back to API
       const request: GenerateCodeReviewRequest = {
         projectPath,
         filePath: genOptions.filePath,
@@ -714,7 +896,7 @@ export function useAICodeReview(options: UseAICodeReviewOptions): UseAICodeRevie
     } finally {
       setIsGenerating(false);
     }
-  }, [projectPath]);
+  }, [projectPath, isCliMode]);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -727,6 +909,7 @@ export function useAICodeReview(options: UseAICodeReviewOptions): UseAICodeRevie
     tokensUsed,
     isTruncated,
     clearError,
+    isCliMode,
   };
 }
 
@@ -736,6 +919,8 @@ export function useAICodeReview(options: UseAICodeReviewOptions): UseAICodeRevie
 
 export interface UseAIStagedReviewOptions {
   projectPath: string;
+  /** Whether to use CLI tool instead of API (defaults to checking localStorage preference) */
+  useCli?: boolean;
 }
 
 export interface UseAIStagedReviewResult {
@@ -743,6 +928,8 @@ export interface UseAIStagedReviewResult {
   generate: (options?: {
     serviceId?: string;
     templateId?: string;
+    /** Override CLI usage for this generation */
+    useCli?: boolean;
   }) => Promise<string | null>;
   /** Whether generation is in progress */
   isGenerating: boolean;
@@ -754,23 +941,33 @@ export interface UseAIStagedReviewResult {
   isTruncated: boolean;
   /** Clear the current error */
   clearError: () => void;
+  /** Whether CLI mode is being used */
+  isCliMode: boolean;
 }
 
 /**
  * Hook for AI staged review generation.
  * Use this to generate code reviews for all staged changes before committing.
+ * Supports both API and CLI tool modes.
  */
 export function useAIStagedReview(options: UseAIStagedReviewOptions): UseAIStagedReviewResult {
-  const { projectPath } = options;
+  const { projectPath, useCli: useCliOption } = options;
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokensUsed, setTokensUsed] = useState<number | null>(null);
   const [isTruncated, setIsTruncated] = useState(false);
 
+  // Determine if CLI mode should be used
+  const isCliMode = useMemo(() => {
+    if (useCliOption !== undefined) return useCliOption;
+    return shouldUseCLI();
+  }, [useCliOption]);
+
   const generate = useCallback(async (
     genOptions?: {
       serviceId?: string;
       templateId?: string;
+      useCli?: boolean;
     }
   ): Promise<string | null> => {
     if (!projectPath) {
@@ -783,7 +980,33 @@ export function useAIStagedReview(options: UseAIStagedReviewOptions): UseAIStage
     setTokensUsed(null);
     setIsTruncated(false);
 
+    // Determine if this specific call should use CLI
+    const useCliForThisCall = genOptions?.useCli ?? isCliMode;
+    const cliTool = getDefaultCliTool();
+
     try {
+      // Use CLI tool if enabled and available
+      if (useCliForThisCall && cliTool) {
+        const prompt = `Review the staged changes in this git repository. Provide a comprehensive code review covering:
+1. Code quality and best practices
+2. Potential bugs or issues
+3. Performance considerations
+4. Security concerns
+5. Suggestions for improvement
+
+Be specific and actionable in your feedback.`;
+
+        const result = await executeCLITool(cliTool, prompt, projectPath);
+
+        if (result.success) {
+          return result.output;
+        } else {
+          setError(result.error || 'CLI review failed');
+          return null;
+        }
+      }
+
+      // Fall back to API
       const request: GenerateStagedReviewRequest = {
         projectPath,
         serviceId: genOptions?.serviceId,
@@ -809,7 +1032,7 @@ export function useAIStagedReview(options: UseAIStagedReviewOptions): UseAIStage
     } finally {
       setIsGenerating(false);
     }
-  }, [projectPath]);
+  }, [projectPath, isCliMode]);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -822,5 +1045,6 @@ export function useAIStagedReview(options: UseAIStagedReviewOptions): UseAIStage
     tokensUsed,
     isTruncated,
     clearError,
+    isCliMode,
   };
 }

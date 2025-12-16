@@ -10,17 +10,18 @@ const buttonVariants = cva(
         // Primary action - blue theme with translucent style
         default:
           'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 hover:text-blue-300 active:bg-blue-600/40 dark:bg-blue-600/20 dark:text-blue-400 dark:border-blue-500/30 dark:hover:bg-blue-600/30',
-        // Destructive action - red theme
+        // Destructive action - red theme with translucent style
         destructive:
-          'bg-red-600 text-white shadow-sm hover:bg-red-500 active:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500',
-        // Success action - green theme (solid)
+          'bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30 hover:text-red-300 active:bg-red-600/40 dark:bg-red-600/20 dark:text-red-400 dark:border-red-500/30 dark:hover:bg-red-600/30',
+        // Success action - green theme with translucent style
         success:
-          'bg-green-600 text-white shadow-sm hover:bg-green-500 active:bg-green-700 dark:bg-green-600 dark:hover:bg-green-500',
-        // Warning action - amber theme
+          'bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30 hover:text-green-300 active:bg-green-600/40 dark:bg-green-600/20 dark:text-green-400 dark:border-green-500/30 dark:hover:bg-green-600/30',
+        // Warning action - amber theme with translucent style
         warning:
-          'bg-amber-500 text-white shadow-sm hover:bg-amber-400 active:bg-amber-600 dark:bg-amber-500 dark:hover:bg-amber-400',
-        // Info action - blue theme (lighter than primary)
-        info: 'bg-blue-500 text-white shadow-sm hover:bg-blue-400 active:bg-blue-600 dark:bg-blue-500 dark:hover:bg-blue-400',
+          'bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 hover:text-amber-300 active:bg-amber-500/40 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30 dark:hover:bg-amber-500/30',
+        // Info action - cyan theme with translucent style
+        info:
+          'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 hover:text-cyan-300 active:bg-cyan-500/40 dark:bg-cyan-500/20 dark:text-cyan-400 dark:border-cyan-500/30 dark:hover:bg-cyan-500/30',
         // Outline variants
         outline:
           'border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground active:bg-accent/80',

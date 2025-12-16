@@ -396,3 +396,194 @@ export interface GenerateSecurityAnalysisResult {
   /** Whether the response was truncated due to token limit */
   isTruncated: boolean;
 }
+
+// ============================================================================
+// AI CLI Tool Types (Feature 020: AI CLI Integration)
+// ============================================================================
+
+/** Supported AI CLI tool types */
+export type CLIToolType = 'claude_code' | 'codex' | 'gemini_cli';
+
+/** Authentication mode for CLI tools */
+export type CLIAuthMode = 'cli_native' | 'api_key';
+
+/** CLI tool display info */
+export interface CLIToolInfo {
+  id: CLIToolType;
+  name: string;
+  description: string;
+  binaryName: string;
+  envVarName: string;
+  installUrl: string;
+}
+
+/** List of all CLI tools with their info */
+export const CLI_TOOLS: CLIToolInfo[] = [
+  {
+    id: 'claude_code',
+    name: 'Claude Code',
+    description: 'Anthropic Claude CLI for code assistance',
+    binaryName: 'claude',
+    envVarName: 'ANTHROPIC_API_KEY',
+    installUrl: 'https://docs.anthropic.com/en/docs/claude-code',
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    description: 'OpenAI Codex CLI for code generation',
+    binaryName: 'codex',
+    envVarName: 'OPENAI_API_KEY',
+    installUrl: 'https://github.com/openai/codex',
+  },
+  {
+    id: 'gemini_cli',
+    name: 'Gemini CLI',
+    description: 'Google Gemini CLI for AI assistance',
+    binaryName: 'gemini',
+    envVarName: 'GOOGLE_API_KEY',
+    installUrl: 'https://github.com/google-gemini/gemini-cli',
+  },
+];
+
+/** Get CLI tool info by type */
+export function getCLIToolInfo(toolType: CLIToolType): CLIToolInfo | undefined {
+  return CLI_TOOLS.find((t) => t.id === toolType);
+}
+
+/** CLI tool configuration */
+export interface CLIToolConfig {
+  /** Unique identifier (UUID v4) */
+  id: string;
+  /** Tool type */
+  toolType: CLIToolType;
+  /** User-defined name */
+  name: string;
+  /** Custom binary path (null = auto-detect) */
+  binaryPath?: string | null;
+  /** Whether this tool is enabled */
+  isEnabled: boolean;
+  /** Authentication mode */
+  authMode: CLIAuthMode;
+  /** AI service ID for API key mode */
+  apiKeyServiceId?: string | null;
+  /** When this config was created (ISO 8601) */
+  createdAt: string;
+  /** When this config was last updated (ISO 8601) */
+  updatedAt: string;
+}
+
+/** Detected CLI tool on the system */
+export interface DetectedCLITool {
+  /** Tool type */
+  toolType: CLIToolType;
+  /** Full path to the binary */
+  binaryPath: string;
+  /** Version string (if available) */
+  version?: string | null;
+  /** Whether the tool is authenticated */
+  isAuthenticated: boolean;
+}
+
+/** Context options for CLI execution */
+export interface AICLIContext {
+  /** Include git staged diff */
+  includeDiff?: boolean;
+  /** Specific files to include */
+  files?: string[];
+  /** Custom context text */
+  customContext?: string | null;
+  /** Include MCP context (project info) */
+  includeMcpContext?: boolean;
+}
+
+/** Options for CLI execution */
+export interface AICLIOptions {
+  /** Max tokens for response */
+  maxTokens?: number | null;
+  /** Temperature (0.0 - 1.0) */
+  temperature?: number | null;
+  /** Timeout in seconds */
+  timeoutSecs?: number | null;
+  /** Whether to stream output */
+  streamOutput?: boolean;
+}
+
+/** Request to execute an AI CLI command */
+export interface AICLIExecuteRequest {
+  /** Which CLI tool to use */
+  tool: CLIToolType;
+  /** The prompt/instruction to send */
+  prompt: string;
+  /** Project path for working directory */
+  projectPath: string;
+  /** Optional specific model override */
+  model?: string | null;
+  /** Additional context to include */
+  context?: AICLIContext;
+  /** CLI-specific options */
+  options?: AICLIOptions;
+}
+
+/** Result from CLI execution */
+export interface AICLIExecuteResult {
+  /** Unique execution ID */
+  executionId: string;
+  /** Exit code (null if still running or cancelled) */
+  exitCode?: number | null;
+  /** Full stdout output */
+  stdout: string;
+  /** Full stderr output */
+  stderr: string;
+  /** Execution duration in milliseconds */
+  durationMs?: number | null;
+  /** Whether execution was cancelled */
+  cancelled: boolean;
+}
+
+/** Output event for streaming CLI output */
+export interface AICLIOutputEvent {
+  /** Unique execution ID */
+  executionId: string;
+  /** Output type: "stdout", "stderr", "status" */
+  outputType: 'stdout' | 'stderr' | 'status';
+  /** The content */
+  content: string;
+  /** Whether this is the final output */
+  isFinal: boolean;
+  /** Timestamp (ISO 8601) */
+  timestamp: string;
+}
+
+/** CLI execution log entry (for history) */
+export interface CLIExecutionLog {
+  /** Unique identifier */
+  id: string;
+  /** Tool type */
+  toolType: CLIToolType;
+  /** Project path */
+  projectPath?: string | null;
+  /** SHA256 hash of prompt (not actual prompt for privacy) */
+  promptHash: string;
+  /** Model used */
+  model?: string | null;
+  /** Execution time in milliseconds */
+  executionTimeMs?: number | null;
+  /** Exit code */
+  exitCode?: number | null;
+  /** Tokens used */
+  tokensUsed?: number | null;
+  /** When the execution occurred (ISO 8601) */
+  createdAt: string;
+}
+
+/** Error codes for AI CLI operations */
+export type AICLIErrorCode =
+  | 'CLI_TOOL_NOT_FOUND'
+  | 'CLI_SPAWN_FAILED'
+  | 'CLI_API_KEY_MISSING'
+  | 'CLI_TIMEOUT'
+  | 'CLI_NON_ZERO_EXIT'
+  | 'CLI_WORKDIR_NOT_FOUND'
+  | 'CLI_SECURITY_VIOLATION'
+  | 'CLI_CANCELLED'
+  | 'CLI_UNKNOWN_ERROR';

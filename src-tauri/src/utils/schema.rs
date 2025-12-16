@@ -4,7 +4,7 @@
 use rusqlite::{Connection, params};
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 8;
+pub const CURRENT_VERSION: i32 = 10;
 
 /// Migration struct containing version and SQL statements
 struct Migration {
@@ -356,6 +356,44 @@ const MIGRATIONS: &[Migration] = &[
 
             -- 5. Recreate index
             CREATE INDEX IF NOT EXISTS idx_ai_templates_category ON ai_templates(category);
+        "#,
+    },
+    Migration {
+        version: 9,
+        description: "Add AI CLI tools integration tables",
+        up: r#"
+            -- CLI tools configuration
+            -- Stores configured AI CLI tools (Claude Code, Codex, Gemini CLI)
+            CREATE TABLE IF NOT EXISTS cli_tools (
+                id TEXT PRIMARY KEY,
+                tool_type TEXT NOT NULL CHECK(tool_type IN ('claude_code', 'codex', 'gemini_cli')),
+                name TEXT NOT NULL,
+                binary_path TEXT,
+                is_enabled INTEGER DEFAULT 1,
+                auth_mode TEXT NOT NULL DEFAULT 'cli_native' CHECK(auth_mode IN ('cli_native', 'api_key')),
+                api_key_service_id TEXT REFERENCES ai_services(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_cli_tools_type ON cli_tools(tool_type);
+            CREATE INDEX IF NOT EXISTS idx_cli_tools_enabled ON cli_tools(is_enabled);
+
+            -- CLI execution logs for audit/history
+            -- Note: prompt_hash stores SHA256 hash, not the actual prompt for privacy
+            CREATE TABLE IF NOT EXISTS cli_execution_logs (
+                id TEXT PRIMARY KEY,
+                tool_type TEXT NOT NULL CHECK(tool_type IN ('claude_code', 'codex', 'gemini_cli')),
+                project_path TEXT,
+                prompt_hash TEXT NOT NULL,
+                model TEXT,
+                execution_time_ms INTEGER,
+                exit_code INTEGER,
+                tokens_used INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_cli_logs_created ON cli_execution_logs(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_cli_logs_project ON cli_execution_logs(project_path);
+            CREATE INDEX IF NOT EXISTS idx_cli_logs_tool ON cli_execution_logs(tool_type);
         "#,
     },
 ];

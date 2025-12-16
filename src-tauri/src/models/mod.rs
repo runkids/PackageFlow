@@ -3,6 +3,7 @@
 
 pub mod ai;
 pub mod apk;
+pub mod cli_tool;
 pub mod deploy;
 pub mod execution;
 pub mod git;

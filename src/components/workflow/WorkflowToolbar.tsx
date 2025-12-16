@@ -3,11 +3,11 @@
  * @see specs/001-expo-workflow-automation/spec.md - US1
  */
 
-import { ArrowLeft, Play, Square, SkipForward, Plus, Loader2, CheckCircle2, Share2, Download, Upload, Webhook, ArrowUpFromLine, ArrowDownToLine, Workflow, Terminal, History } from 'lucide-react';
+import { ArrowLeft, Play, Square, SkipForward, Plus, Loader2, CheckCircle2, Download, Upload, Webhook, ArrowUpFromLine, ArrowDownToLine, Workflow, Terminal, History, MoreHorizontal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { Dropdown, DropdownItem } from '../ui/Dropdown';
+import { Dropdown, DropdownItem, DropdownSeparator } from '../ui/Dropdown';
 import type { ExecutionStatus } from '../../types/workflow';
 
 interface WorkflowToolbarProps {
@@ -194,39 +194,8 @@ export function WorkflowToolbar({
           )}
         </Dropdown>
 
-        {/* Settings Button - Webhook */}
-        {onWebhookSettings && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isRunning}
-            onClick={onWebhookSettings}
-            className={cn(
-              'border-border text-foreground hover:bg-accent hover:text-accent-foreground',
-              hasAnyWebhook && 'border-purple-600 text-purple-400'
-            )}
-          >
-            <Webhook className="w-4 h-4 mr-1.5" />
-            Webhook
-            {hasAnyWebhook && (
-              <span className="flex items-center gap-0.5 ml-1.5">
-                {hasOutgoingWebhook && (
-                  <span title="Outgoing Webhook enabled" className="text-green-500">
-                    <ArrowUpFromLine className="w-3 h-3" />
-                  </span>
-                )}
-                {hasIncomingWebhook && (
-                  <span title="Incoming Webhook enabled" className="text-purple-400">
-                    <ArrowDownToLine className="w-3 h-3" />
-                  </span>
-                )}
-              </span>
-            )}
-          </Button>
-        )}
-
-        {/* Share Dropdown */}
-        {(onExportWorkflow || onImportWorkflow) && (
+        {/* More Dropdown - combines Webhook, Share, and History */}
+        {(onWebhookSettings || onExportWorkflow || onImportWorkflow || onHistory) && (
           <Dropdown
             align="right"
             trigger={
@@ -234,13 +203,49 @@ export function WorkflowToolbar({
                 variant="outline"
                 size="sm"
                 disabled={isRunning}
-                className="border-border text-foreground hover:bg-accent hover:text-accent-foreground"
+                className={cn(
+                  'border-border text-foreground hover:bg-accent hover:text-accent-foreground',
+                  hasAnyWebhook && 'border-purple-600'
+                )}
               >
-                <Share2 className="w-4 h-4 mr-1.5" />
-                Share
+                <MoreHorizontal className="w-4 h-4 mr-1.5" />
+                More
+                {hasAnyWebhook && (
+                  <span className="ml-1.5 w-2 h-2 rounded-full bg-purple-500" title="Webhook enabled" />
+                )}
               </Button>
             }
           >
+            {/* Webhook Settings */}
+            {onWebhookSettings && (
+              <DropdownItem
+                onClick={onWebhookSettings}
+                icon={<Webhook className="w-4 h-4" />}
+              >
+                <span className="flex items-center gap-2">
+                  Webhook Settings
+                  {hasAnyWebhook && (
+                    <span className="flex items-center gap-0.5">
+                      {hasOutgoingWebhook && (
+                        <span title="Outgoing Webhook enabled" className="text-green-500">
+                          <ArrowUpFromLine className="w-3 h-3" />
+                        </span>
+                      )}
+                      {hasIncomingWebhook && (
+                        <span title="Incoming Webhook enabled" className="text-purple-400">
+                          <ArrowDownToLine className="w-3 h-3" />
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </span>
+              </DropdownItem>
+            )}
+
+            {/* Separator between Webhook and Share */}
+            {onWebhookSettings && (onExportWorkflow || onImportWorkflow) && <DropdownSeparator />}
+
+            {/* Share options */}
             {onExportWorkflow && (
               <DropdownItem
                 onClick={onExportWorkflow}
@@ -257,25 +262,27 @@ export function WorkflowToolbar({
                 Import Workflow
               </DropdownItem>
             )}
-          </Dropdown>
-        )}
 
-        {/* History Button */}
-        {onHistory && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onHistory}
-            className="border-border text-foreground hover:bg-accent hover:text-accent-foreground"
-          >
-            <History className="w-4 h-4 mr-1.5" />
-            History
-            {historyCount !== undefined && historyCount > 0 && (
-              <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-muted rounded-full">
-                {historyCount}
-              </span>
+            {/* Separator before History */}
+            {(onExportWorkflow || onImportWorkflow) && onHistory && <DropdownSeparator />}
+
+            {/* History */}
+            {onHistory && (
+              <DropdownItem
+                onClick={onHistory}
+                icon={<History className="w-4 h-4" />}
+              >
+                <span className="flex items-center gap-2">
+                  Execution History
+                  {historyCount !== undefined && historyCount > 0 && (
+                    <span className="px-1.5 py-0.5 text-xs bg-muted rounded-full">
+                      {historyCount}
+                    </span>
+                  )}
+                </span>
+              </DropdownItem>
             )}
-          </Button>
+          </Dropdown>
         )}
 
         {/* Divider */}
@@ -333,7 +340,7 @@ export function WorkflowToolbar({
             <Button
               size="sm"
               onClick={onCancel}
-              className="bg-red-600 hover:bg-red-500 text-white"
+              variant="destructive"
             >
               <Square className="w-4 h-4 mr-1.5" />
               Stop

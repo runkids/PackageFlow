@@ -27,6 +27,7 @@ import { StartNode, type StartNodeData } from './nodes/StartNode';
 import { TriggerWorkflowNode, type TriggerWorkflowNodeData } from './nodes/TriggerWorkflowNode';
 import { AnimatedEdge } from './edges/AnimatedEdge';
 import { InsertableEdge, type InsertableEdgeData } from './edges/InsertableEdge';
+import { WorkflowEmptyState } from './WorkflowEmptyState';
 import type { WorkflowNode as WorkflowNodeType, NodeStatus } from '../../types/workflow';
 
 const nodeTypes: NodeTypes = {
@@ -63,6 +64,9 @@ interface VisualCanvasProps {
   onReorderByPosition?: () => void;
   onExportNode?: (nodeId: string) => void;
   onSaveAsTemplate?: (nodeId: string) => void;
+  // Empty state actions
+  onAddStep?: () => void;
+  onFromTemplate?: () => void;
 }
 
 interface NodeActionCallbacks {
@@ -236,6 +240,8 @@ export function VisualCanvas({
   onReorderByPosition,
   onExportNode,
   onSaveAsTemplate,
+  onAddStep,
+  onFromTemplate,
 }: VisualCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -414,30 +420,10 @@ export function VisualCanvas({
 
   if (workflowNodes.length === 0) {
     return (
-      <div className="relative w-full h-full bg-background">
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
-          <div className="text-center">
-            <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-secondary flex items-center justify-center">
-              <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </div>
-            <p className="text-lg mb-2">Empty Workflow</p>
-            <p className="text-sm text-muted-foreground">Click "Add Step" in the toolbar to add your first step</p>
-          </div>
-        </div>
-
-        <div className="absolute inset-0 opacity-20 pointer-events-none">
-          <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-                <circle cx="16" cy="16" r="1" fill="#4b5563" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" />
-          </svg>
-        </div>
-      </div>
+      <WorkflowEmptyState
+        onAddStep={onAddStep || (() => {})}
+        onFromTemplate={onFromTemplate}
+      />
     );
   }
 

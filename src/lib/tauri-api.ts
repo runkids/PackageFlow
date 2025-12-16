@@ -2261,6 +2261,99 @@ export const aiAPI = {
 };
 
 // ============================================================================
+// AI CLI Integration API (Feature 020: AI CLI Integration)
+// ============================================================================
+
+import type {
+  CLIToolType,
+  CLIToolConfig,
+  DetectedCLITool,
+  AICLIExecuteRequest,
+  AICLIExecuteResult,
+  AICLIOutputEvent,
+  CLIExecutionLog,
+} from '../types/ai';
+
+export type {
+  CLIToolType,
+  CLIToolConfig,
+  DetectedCLITool,
+  AICLIExecuteRequest,
+  AICLIExecuteResult,
+  AICLIOutputEvent,
+  CLIExecutionLog,
+};
+
+export const aiCLIAPI = {
+  // ============================================================================
+  // CLI Tool Detection
+  // ============================================================================
+
+  /** Detect all available AI CLI tools on the system */
+  detectTools: (): Promise<AIApiResponse<DetectedCLITool[]>> =>
+    invoke<AIApiResponse<DetectedCLITool[]>>('ai_cli_detect_tools'),
+
+  /** Detect a specific CLI tool */
+  detectTool: (toolType: CLIToolType): Promise<AIApiResponse<DetectedCLITool | null>> =>
+    invoke<AIApiResponse<DetectedCLITool | null>>('ai_cli_detect_tool', { toolType }),
+
+  // ============================================================================
+  // CLI Tool Configuration
+  // ============================================================================
+
+  /** List all configured CLI tools */
+  listTools: (): Promise<AIApiResponse<CLIToolConfig[]>> =>
+    invoke<AIApiResponse<CLIToolConfig[]>>('ai_cli_list_tools'),
+
+  /** Save CLI tool configuration (create or update) */
+  saveTool: (config: CLIToolConfig): Promise<AIApiResponse<CLIToolConfig>> =>
+    invoke<AIApiResponse<CLIToolConfig>>('ai_cli_save_tool', { config }),
+
+  /** Delete CLI tool configuration */
+  deleteTool: (id: string): Promise<AIApiResponse<void>> =>
+    invoke<AIApiResponse<void>>('ai_cli_delete_tool', { id }),
+
+  /** Get CLI tool configuration by ID */
+  getTool: (id: string): Promise<AIApiResponse<CLIToolConfig | null>> =>
+    invoke<AIApiResponse<CLIToolConfig | null>>('ai_cli_get_tool', { id }),
+
+  /** Get CLI tool configuration by type */
+  getToolByType: (toolType: CLIToolType): Promise<AIApiResponse<CLIToolConfig | null>> =>
+    invoke<AIApiResponse<CLIToolConfig | null>>('ai_cli_get_tool_by_type', { toolType }),
+
+  // ============================================================================
+  // CLI Execution
+  // ============================================================================
+
+  /** Execute an AI CLI command */
+  execute: (request: AICLIExecuteRequest): Promise<AIApiResponse<AICLIExecuteResult>> =>
+    invoke<AIApiResponse<AICLIExecuteResult>>('ai_cli_execute', { request }),
+
+  /** Cancel a running CLI execution */
+  cancel: (executionId: string): Promise<AIApiResponse<boolean>> =>
+    invoke<AIApiResponse<boolean>>('ai_cli_cancel', { executionId }),
+
+  // ============================================================================
+  // CLI Execution History
+  // ============================================================================
+
+  /** Get CLI execution history */
+  getHistory: (projectPath?: string, limit?: number): Promise<AIApiResponse<CLIExecutionLog[]>> =>
+    invoke<AIApiResponse<CLIExecutionLog[]>>('ai_cli_get_history', { projectPath, limit }),
+
+  /** Clear CLI execution history */
+  clearHistory: (projectPath?: string): Promise<AIApiResponse<void>> =>
+    invoke<AIApiResponse<void>>('ai_cli_clear_history', { projectPath }),
+};
+
+/** AI CLI streaming output events */
+export const aiCLIEvents = {
+  /** Listen for streaming output from CLI execution */
+  onOutput: (callback: (event: AICLIOutputEvent) => void): Promise<UnlistenFn> =>
+    listen<AICLIOutputEvent>('ai:cli-output', (e) => callback(e.payload)),
+};
+
+// ============================================================================
 // MCP Server Integration
 // ============================================================================
 
@@ -2385,5 +2478,6 @@ export const tauriAPI = {
   ...deployAPI,
   ...toolchainAPI,
   ...aiAPI,
+  ...aiCLIAPI,
   ...mcpAPI,
 };

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit, MoreVertical, Link2, Unlink, Workflow as WorkflowIcon, Terminal, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Plus, Edit, MoreVertical, Link2, Unlink, Workflow as WorkflowIcon, Terminal, ChevronRight, ArrowLeft, ChevronDown } from 'lucide-react';
 import type { Workflow } from '../../types/workflow';
 import {
   loadWorkflowsByProject,
@@ -15,6 +15,7 @@ import {
 } from '../../lib/workflow-storage';
 import { Dialog, DialogContent, DialogClose } from '../ui/Dialog';
 import { Button } from '../ui/Button';
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '../ui/ContextMenu';
 import { cn } from '../../lib/utils';
 import { useWorkflowExecutionContext } from '../../contexts/WorkflowExecutionContext';
 import {
@@ -23,6 +24,7 @@ import {
   WorkflowExecutionStatus,
 } from '../workflow/WorkflowExecutionStatus';
 import { WorkflowOutputPanel } from '../workflow/WorkflowOutputPanel';
+import { WorkflowPreview } from '../workflow/WorkflowPreview';
 
 interface ProjectWorkflowsProps {
   projectId: string;
@@ -50,6 +52,19 @@ export function ProjectWorkflows({
   const [newWorkflowName, setNewWorkflowName] = useState('');
   const [contextMenu, setContextMenu] = useState<{ workflowId: string; x: number; y: number } | null>(null);
   const [outputPanelWorkflowId, setOutputPanelWorkflowId] = useState<string | null>(null);
+  const [expandedWorkflows, setExpandedWorkflows] = useState<Set<string>>(new Set());
+
+  const toggleWorkflowExpand = useCallback((workflowId: string) => {
+    setExpandedWorkflows(prev => {
+      const next = new Set(prev);
+      if (next.has(workflowId)) {
+        next.delete(workflowId);
+      } else {
+        next.add(workflowId);
+      }
+      return next;
+    });
+  }, []);
 
   // Workflow execution state management (from context to persist across tab switches)
   const {
@@ -261,6 +276,24 @@ export function ProjectWorkflows({
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {/* Expand/Collapse button */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={e => {
+                        e.stopPropagation();
+                        toggleWorkflowExpand(workflow.id);
+                      }}
+                      className="h-auto w-auto p-0.5 text-muted-foreground hover:text-foreground"
+                      title={expandedWorkflows.has(workflow.id) ? 'Collapse' : 'Expand preview'}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'w-4 h-4 transition-transform duration-200',
+                          expandedWorkflows.has(workflow.id) && 'rotate-180'
+                        )}
+                      />
+                    </Button>
                     <WorkflowIcon className="w-5 h-5 text-blue-400 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -316,8 +349,20 @@ export function ProjectWorkflows({
                   </div>
                 </div>
 
+                {/* Expanded workflow preview */}
+                {expandedWorkflows.has(workflow.id) && (
+                  <WorkflowPreview
+                    nodes={workflow.nodes}
+                    onEdit={() => handleEditClick(workflow)}
+                    onRun={() => handleExecuteWorkflow(workflow)}
+                    isRunning={workflowIsExecuting}
+                    currentNodeIndex={executionState.completedNodes}
+                    disabled={workflowIsExecuting}
+                  />
+                )}
+
                 {/* Expanded execution status for running/completed/failed states */}
-                {hasExecutionState && !workflowIsExecuting && executionState.status !== 'idle' && (
+                {hasExecutionState && !workflowIsExecuting && executionState.status !== 'idle' && !expandedWorkflows.has(workflow.id) && (
                   <div className="mt-3 pt-3 border-t border-border/50">
                     <WorkflowExecutionStatus
                       state={executionState}
@@ -330,7 +375,7 @@ export function ProjectWorkflows({
                 )}
 
                 {/* Running progress bar */}
-                {workflowIsExecuting && (
+                {workflowIsExecuting && !expandedWorkflows.has(workflow.id) && (
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                       <span>
@@ -356,35 +401,26 @@ export function ProjectWorkflows({
 
       {/* Context menu */}
       {contextMenu && (
-        <div
-          className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[140px]"
-          style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 160),
-            top: contextMenu.y,
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          <Button
-            variant="ghost"
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeContextMenu}>
+          <ContextMenuItem
             onClick={() => {
               const workflow = workflows.find(w => w.id === contextMenu.workflowId);
               if (workflow) handleEditClick(workflow);
               closeContextMenu();
             }}
-            className="w-full justify-start gap-2 h-auto rounded-none"
+            icon={<Edit className="w-4 h-4" />}
           >
-            <Edit className="w-4 h-4" />
             Edit
-          </Button>
-          <Button
-            variant="ghost"
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
             onClick={() => handleUnlinkWorkflow(contextMenu.workflowId)}
-            className="w-full justify-start gap-2 h-auto rounded-none text-yellow-400"
+            icon={<Unlink className="w-4 h-4" />}
+            warning
           >
-            <Unlink className="w-4 h-4" />
             Unlink
-          </Button>
-        </div>
+          </ContextMenuItem>
+        </ContextMenu>
       )}
 
       {/* Add workflow selection dialog */}

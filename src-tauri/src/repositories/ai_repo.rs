@@ -670,6 +670,312 @@ impl AIRepository {
             Ok(ids)
         })
     }
+
+    // =========================================================================
+    // CLI Tools (Feature 020: AI CLI Integration)
+    // =========================================================================
+
+    /// List all CLI tool configurations
+    pub fn list_cli_tools(&self) -> Result<Vec<crate::models::cli_tool::CLIToolConfig>, String> {
+        use crate::models::cli_tool::{CLIAuthMode, CLIToolConfig, CLIToolType};
+        use chrono::{DateTime, Utc};
+
+        self.db.with_connection(|conn| {
+            let mut stmt = conn
+                .prepare(
+                    r#"
+                    SELECT id, tool_type, name, binary_path, is_enabled, auth_mode,
+                           api_key_service_id, created_at, updated_at
+                    FROM cli_tools
+                    ORDER BY name
+                    "#,
+                )
+                .map_err(|e| format!("Failed to prepare statement: {}", e))?;
+
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(CLIToolRow {
+                        id: row.get(0)?,
+                        tool_type: row.get(1)?,
+                        name: row.get(2)?,
+                        binary_path: row.get(3)?,
+                        is_enabled: row.get(4)?,
+                        auth_mode: row.get(5)?,
+                        api_key_service_id: row.get(6)?,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
+                    })
+                })
+                .map_err(|e| format!("Failed to query CLI tools: {}", e))?;
+
+            let mut tools = Vec::new();
+            for row in rows {
+                let row = row.map_err(|e| format!("Failed to read row: {}", e))?;
+                tools.push(row.into_config()?);
+            }
+
+            Ok(tools)
+        })
+    }
+
+    /// Get CLI tool by ID
+    pub fn get_cli_tool(&self, id: &str) -> Result<Option<crate::models::cli_tool::CLIToolConfig>, String> {
+        self.db.with_connection(|conn| {
+            let result = conn.query_row(
+                r#"
+                SELECT id, tool_type, name, binary_path, is_enabled, auth_mode,
+                       api_key_service_id, created_at, updated_at
+                FROM cli_tools
+                WHERE id = ?1
+                "#,
+                params![id],
+                |row| {
+                    Ok(CLIToolRow {
+                        id: row.get(0)?,
+                        tool_type: row.get(1)?,
+                        name: row.get(2)?,
+                        binary_path: row.get(3)?,
+                        is_enabled: row.get(4)?,
+                        auth_mode: row.get(5)?,
+                        api_key_service_id: row.get(6)?,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
+                    })
+                },
+            );
+
+            match result {
+                Ok(row) => Ok(Some(row.into_config()?)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(format!("Failed to get CLI tool: {}", e)),
+            }
+        })
+    }
+
+    /// Get CLI tool by type
+    pub fn get_cli_tool_by_type(
+        &self,
+        tool_type: crate::models::cli_tool::CLIToolType,
+    ) -> Result<Option<crate::models::cli_tool::CLIToolConfig>, String> {
+        self.db.with_connection(|conn| {
+            let type_str = cli_tool_type_to_string(&tool_type);
+            let result = conn.query_row(
+                r#"
+                SELECT id, tool_type, name, binary_path, is_enabled, auth_mode,
+                       api_key_service_id, created_at, updated_at
+                FROM cli_tools
+                WHERE tool_type = ?1
+                "#,
+                params![type_str],
+                |row| {
+                    Ok(CLIToolRow {
+                        id: row.get(0)?,
+                        tool_type: row.get(1)?,
+                        name: row.get(2)?,
+                        binary_path: row.get(3)?,
+                        is_enabled: row.get(4)?,
+                        auth_mode: row.get(5)?,
+                        api_key_service_id: row.get(6)?,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
+                    })
+                },
+            );
+
+            match result {
+                Ok(row) => Ok(Some(row.into_config()?)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(format!("Failed to get CLI tool: {}", e)),
+            }
+        })
+    }
+
+    /// Save CLI tool configuration (upsert)
+    pub fn save_cli_tool(&self, config: &crate::models::cli_tool::CLIToolConfig) -> Result<(), String> {
+        self.db.with_connection(|conn| {
+            let type_str = cli_tool_type_to_string(&config.tool_type);
+            let auth_mode_str = cli_auth_mode_to_string(&config.auth_mode);
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                r#"
+                INSERT INTO cli_tools (id, tool_type, name, binary_path, is_enabled, auth_mode,
+                                       api_key_service_id, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                ON CONFLICT(id) DO UPDATE SET
+                    tool_type = excluded.tool_type,
+                    name = excluded.name,
+                    binary_path = excluded.binary_path,
+                    is_enabled = excluded.is_enabled,
+                    auth_mode = excluded.auth_mode,
+                    api_key_service_id = excluded.api_key_service_id,
+                    updated_at = excluded.updated_at
+                "#,
+                params![
+                    config.id,
+                    type_str,
+                    config.name,
+                    config.binary_path,
+                    config.is_enabled as i32,
+                    auth_mode_str,
+                    config.api_key_service_id,
+                    config.created_at.to_rfc3339(),
+                    now,
+                ],
+            )
+            .map_err(|e| format!("Failed to save CLI tool: {}", e))?;
+
+            Ok(())
+        })
+    }
+
+    /// Delete CLI tool configuration
+    pub fn delete_cli_tool(&self, id: &str) -> Result<(), String> {
+        self.db.with_connection(|conn| {
+            conn.execute("DELETE FROM cli_tools WHERE id = ?1", params![id])
+                .map_err(|e| format!("Failed to delete CLI tool: {}", e))?;
+            Ok(())
+        })
+    }
+
+    /// Log CLI execution (for audit)
+    pub fn log_cli_execution(
+        &self,
+        tool_type: crate::models::cli_tool::CLIToolType,
+        project_path: Option<&str>,
+        prompt: &str,
+        exit_code: Option<i32>,
+        duration_ms: Option<u64>,
+    ) -> Result<(), String> {
+        use sha2::{Digest, Sha256};
+
+        self.db.with_connection(|conn| {
+            let type_str = cli_tool_type_to_string(&tool_type);
+            let id = uuid::Uuid::new_v4().to_string();
+
+            // Hash the prompt for privacy
+            let mut hasher = Sha256::new();
+            hasher.update(prompt.as_bytes());
+            let prompt_hash = format!("{:x}", hasher.finalize());
+
+            conn.execute(
+                r#"
+                INSERT INTO cli_execution_logs (id, tool_type, project_path, prompt_hash,
+                                                execution_time_ms, exit_code, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
+                "#,
+                params![
+                    id,
+                    type_str,
+                    project_path,
+                    prompt_hash,
+                    duration_ms.map(|d| d as i64),
+                    exit_code,
+                ],
+            )
+            .map_err(|e| format!("Failed to log CLI execution: {}", e))?;
+
+            Ok(())
+        })
+    }
+
+    /// Get CLI execution history
+    pub fn get_cli_execution_history(
+        &self,
+        project_path: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<crate::models::cli_tool::CLIExecutionLog>, String> {
+        self.db.with_connection(|conn| {
+            let mut logs = Vec::new();
+
+            if let Some(path) = project_path {
+                let mut stmt = conn
+                    .prepare(
+                        r#"
+                        SELECT id, tool_type, project_path, prompt_hash, model,
+                               execution_time_ms, exit_code, tokens_used, created_at
+                        FROM cli_execution_logs
+                        WHERE project_path = ?1
+                        ORDER BY created_at DESC
+                        LIMIT ?2
+                        "#,
+                    )
+                    .map_err(|e| format!("Failed to prepare statement: {}", e))?;
+
+                let rows = stmt
+                    .query_map(params![path, limit as i64], |row| {
+                        Ok(CLILogRow {
+                            id: row.get(0)?,
+                            tool_type: row.get(1)?,
+                            project_path: row.get(2)?,
+                            prompt_hash: row.get(3)?,
+                            model: row.get(4)?,
+                            execution_time_ms: row.get(5)?,
+                            exit_code: row.get(6)?,
+                            tokens_used: row.get(7)?,
+                            created_at: row.get(8)?,
+                        })
+                    })
+                    .map_err(|e| format!("Failed to query CLI logs: {}", e))?;
+
+                for row in rows {
+                    let row = row.map_err(|e| format!("Failed to read row: {}", e))?;
+                    logs.push(row.into_log()?);
+                }
+            } else {
+                let mut stmt = conn
+                    .prepare(
+                        r#"
+                        SELECT id, tool_type, project_path, prompt_hash, model,
+                               execution_time_ms, exit_code, tokens_used, created_at
+                        FROM cli_execution_logs
+                        ORDER BY created_at DESC
+                        LIMIT ?1
+                        "#,
+                    )
+                    .map_err(|e| format!("Failed to prepare statement: {}", e))?;
+
+                let rows = stmt
+                    .query_map(params![limit as i64], |row| {
+                        Ok(CLILogRow {
+                            id: row.get(0)?,
+                            tool_type: row.get(1)?,
+                            project_path: row.get(2)?,
+                            prompt_hash: row.get(3)?,
+                            model: row.get(4)?,
+                            execution_time_ms: row.get(5)?,
+                            exit_code: row.get(6)?,
+                            tokens_used: row.get(7)?,
+                            created_at: row.get(8)?,
+                        })
+                    })
+                    .map_err(|e| format!("Failed to query CLI logs: {}", e))?;
+
+                for row in rows {
+                    let row = row.map_err(|e| format!("Failed to read row: {}", e))?;
+                    logs.push(row.into_log()?);
+                }
+            }
+
+            Ok(logs)
+        })
+    }
+
+    /// Clear CLI execution history
+    pub fn clear_cli_execution_history(&self, project_path: Option<&str>) -> Result<(), String> {
+        self.db.with_connection(|conn| {
+            if let Some(path) = project_path {
+                conn.execute(
+                    "DELETE FROM cli_execution_logs WHERE project_path = ?1",
+                    params![path],
+                )
+            } else {
+                conn.execute("DELETE FROM cli_execution_logs", [])
+            }
+            .map_err(|e| format!("Failed to clear CLI logs: {}", e))?;
+            Ok(())
+        })
+    }
 }
 
 /// Internal row structure for AI services
@@ -803,5 +1109,129 @@ fn template_category_to_string(category: &TemplateCategory) -> &'static str {
         TemplateCategory::ReleaseNotes => "release_notes",
         TemplateCategory::SecurityAdvisory => "security_advisory",
         TemplateCategory::Custom => "custom",
+    }
+}
+
+// =========================================================================
+// CLI Tool Helper Types and Functions (Feature 020)
+// =========================================================================
+
+/// Internal row structure for CLI tools
+struct CLIToolRow {
+    id: String,
+    tool_type: String,
+    name: String,
+    binary_path: Option<String>,
+    is_enabled: i32,
+    auth_mode: String,
+    api_key_service_id: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl CLIToolRow {
+    fn into_config(self) -> Result<crate::models::cli_tool::CLIToolConfig, String> {
+        use crate::models::cli_tool::{CLIAuthMode, CLIToolConfig, CLIToolType};
+        use chrono::{DateTime, Utc};
+
+        let tool_type = string_to_cli_tool_type(&self.tool_type)?;
+        let auth_mode = string_to_cli_auth_mode(&self.auth_mode);
+
+        let created_at = DateTime::parse_from_rfc3339(&self.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        let updated_at = DateTime::parse_from_rfc3339(&self.updated_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        Ok(CLIToolConfig {
+            id: self.id,
+            tool_type,
+            name: self.name,
+            binary_path: self.binary_path,
+            is_enabled: self.is_enabled != 0,
+            auth_mode,
+            api_key_service_id: self.api_key_service_id,
+            created_at,
+            updated_at,
+        })
+    }
+}
+
+/// Internal row structure for CLI execution logs
+struct CLILogRow {
+    id: String,
+    tool_type: String,
+    project_path: Option<String>,
+    prompt_hash: String,
+    model: Option<String>,
+    execution_time_ms: Option<i64>,
+    exit_code: Option<i32>,
+    tokens_used: Option<i32>,
+    created_at: String,
+}
+
+impl CLILogRow {
+    fn into_log(self) -> Result<crate::models::cli_tool::CLIExecutionLog, String> {
+        use crate::models::cli_tool::CLIExecutionLog;
+        use chrono::{DateTime, Utc};
+
+        let tool_type = string_to_cli_tool_type(&self.tool_type)?;
+
+        let created_at = DateTime::parse_from_rfc3339(&self.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        Ok(CLIExecutionLog {
+            id: self.id,
+            tool_type,
+            project_path: self.project_path,
+            prompt_hash: self.prompt_hash,
+            model: self.model,
+            execution_time_ms: self.execution_time_ms.map(|d| d as u64),
+            exit_code: self.exit_code,
+            tokens_used: self.tokens_used.map(|t| t as u32),
+            created_at,
+        })
+    }
+}
+
+/// Convert CLIToolType to database string
+fn cli_tool_type_to_string(tool_type: &crate::models::cli_tool::CLIToolType) -> &'static str {
+    use crate::models::cli_tool::CLIToolType;
+    match tool_type {
+        CLIToolType::ClaudeCode => "claude_code",
+        CLIToolType::Codex => "codex",
+        CLIToolType::GeminiCli => "gemini_cli",
+    }
+}
+
+/// Convert string to CLIToolType
+fn string_to_cli_tool_type(s: &str) -> Result<crate::models::cli_tool::CLIToolType, String> {
+    use crate::models::cli_tool::CLIToolType;
+    match s {
+        "claude_code" => Ok(CLIToolType::ClaudeCode),
+        "codex" => Ok(CLIToolType::Codex),
+        "gemini_cli" => Ok(CLIToolType::GeminiCli),
+        _ => Err(format!("Unknown CLI tool type: {}", s)),
+    }
+}
+
+/// Convert CLIAuthMode to database string
+fn cli_auth_mode_to_string(mode: &crate::models::cli_tool::CLIAuthMode) -> &'static str {
+    use crate::models::cli_tool::CLIAuthMode;
+    match mode {
+        CLIAuthMode::CliNative => "cli_native",
+        CLIAuthMode::ApiKey => "api_key",
+    }
+}
+
+/// Convert string to CLIAuthMode
+fn string_to_cli_auth_mode(s: &str) -> crate::models::cli_tool::CLIAuthMode {
+    use crate::models::cli_tool::CLIAuthMode;
+    match s {
+        "api_key" => CLIAuthMode::ApiKey,
+        _ => CLIAuthMode::CliNative,
     }
 }

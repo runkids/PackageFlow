@@ -14,8 +14,9 @@ use std::sync::Arc;
 
 use commands::script::ScriptExecutionState;
 use commands::workflow::WorkflowExecutionState;
+use commands::ai_cli::CLIExecutorState;
 use commands::{
-    ai, apk, deploy, file_watcher, git, incoming_webhook, ipa, mcp, monorepo, project, script, security,
+    ai, ai_cli, apk, deploy, file_watcher, git, incoming_webhook, ipa, mcp, monorepo, project, script, security,
     settings, shortcuts, step_template, toolchain, version, webhook, workflow, worktree,
 };
 use services::{DatabaseWatcher, FileWatcherManager, IncomingWebhookManager};
@@ -72,6 +73,7 @@ pub fn run() {
         .manage(IncomingWebhookManager::new())
         .manage(FileWatcherManager::new())
         .manage(DatabaseWatcher::new())
+        .manage(CLIExecutorState::new())
         // Register commands
         .invoke_handler(tauri::generate_handler![
             // Settings commands (US7)
@@ -343,6 +345,18 @@ pub fn run() {
             ai::ai_generate_security_summary,
             ai::ai_store_api_key,
             ai::ai_check_api_key_status,
+            // AI CLI Integration (020-ai-cli-integration)
+            ai_cli::ai_cli_detect_tools,
+            ai_cli::ai_cli_detect_tool,
+            ai_cli::ai_cli_list_tools,
+            ai_cli::ai_cli_save_tool,
+            ai_cli::ai_cli_delete_tool,
+            ai_cli::ai_cli_get_tool,
+            ai_cli::ai_cli_get_tool_by_type,
+            ai_cli::ai_cli_execute,
+            ai_cli::ai_cli_cancel,
+            ai_cli::ai_cli_get_history,
+            ai_cli::ai_cli_clear_history,
             // MCP Server Integration
             mcp::get_mcp_server_info,
             mcp::get_mcp_tools,

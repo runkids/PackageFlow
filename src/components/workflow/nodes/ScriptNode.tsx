@@ -3,12 +3,13 @@
  * A visual node for executing shell commands in the workflow
  */
 
-import { memo, useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { memo, useState } from 'react';
 import { Handle, Position, type Node } from '@xyflow/react';
 import { cn } from '../../../lib/utils';
 import { Button } from '../../ui/Button';
-import { Terminal, Play, Check, X, Clock, SkipForward, Loader2, Trash2, Plus, Pencil, Copy, ChevronUp, ChevronDown, Download, Star } from 'lucide-react';
+import { ContextMenu } from '../../ui/ContextMenu';
+import { NodeContextMenuItems } from '../NodeContextMenuItems';
+import { Terminal, Play, Check, X, Clock, SkipForward, Loader2, Trash2, Plus, Pencil, Copy, ChevronUp, ChevronDown } from 'lucide-react';
 import type { NodeStatus } from '../../../types/workflow';
 
 export interface ScriptNodeData extends Record<string, unknown> {
@@ -130,72 +131,52 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
   const StatusIcon = config.icon;
   const showToolbar = (isHovered || selected) && !data.disabled;
 
-  useEffect(() => {
-    if (contextMenu) {
-      const handleClick = () => setContextMenu(null);
-      const handleEscape = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') setContextMenu(null);
-      };
-      document.addEventListener('click', handleClick);
-      document.addEventListener('keydown', handleEscape);
-      return () => {
-        document.removeEventListener('click', handleClick);
-        document.removeEventListener('keydown', handleEscape);
-      };
-    }
-  }, [contextMenu]);
+  const closeContextMenu = () => setContextMenu(null);
 
-  const handleEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setContextMenu(null);
+  const handleEdit = () => {
+    closeContextMenu();
     if (data.onEdit && data.nodeId) {
       data.onEdit(data.nodeId);
     }
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setContextMenu(null);
+  const handleDelete = () => {
+    closeContextMenu();
     if (data.onDelete && data.nodeId) {
       data.onDelete(data.nodeId);
     }
   };
 
-  const handleInsertBefore = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setContextMenu(null);
+  const handleInsertBefore = () => {
+    closeContextMenu();
     if (data.onInsertBefore && data.nodeId) {
       data.onInsertBefore(data.nodeId);
     }
   };
 
-  const handleInsertAfter = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setContextMenu(null);
+  const handleInsertAfter = () => {
+    closeContextMenu();
     if (data.onInsertAfter && data.nodeId) {
       data.onInsertAfter(data.nodeId);
     }
   };
 
-  const handleDuplicate = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setContextMenu(null);
+  const handleDuplicate = () => {
+    closeContextMenu();
     if (data.onDuplicate && data.nodeId) {
       data.onDuplicate(data.nodeId);
     }
   };
 
-  const handleExportNode = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setContextMenu(null);
+  const handleExportNode = () => {
+    closeContextMenu();
     if (data.onExportNode && data.nodeId) {
       data.onExportNode(data.nodeId);
     }
   };
 
-  const handleSaveAsTemplate = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setContextMenu(null);
+  const handleSaveAsTemplate = () => {
+    closeContextMenu();
     if (data.onSaveAsTemplate && data.nodeId) {
       data.onSaveAsTemplate(data.nodeId);
     }
@@ -205,26 +186,34 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
     e.preventDefault();
     e.stopPropagation();
     if (!data.disabled) {
-      const menuWidth = 180;
-      const menuHeight = 320;
-      const padding = 8;
-
-      let x = e.clientX;
-      let y = e.clientY;
-
-      if (x + menuWidth + padding > window.innerWidth) {
-        x = window.innerWidth - menuWidth - padding;
-      }
-
-      if (y + menuHeight + padding > window.innerHeight) {
-        y = window.innerHeight - menuHeight - padding;
-      }
-
-      x = Math.max(padding, x);
-      y = Math.max(padding, y);
-
-      setContextMenu({ x, y });
+      setContextMenu({ x: e.clientX, y: e.clientY });
     }
+  };
+
+  // Toolbar button click handlers (need to stop propagation)
+  const handleToolbarEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleEdit();
+  };
+
+  const handleToolbarDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleDelete();
+  };
+
+  const handleToolbarInsertBefore = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleInsertBefore();
+  };
+
+  const handleToolbarInsertAfter = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleInsertAfter();
+  };
+
+  const handleToolbarDuplicate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleDuplicate();
   };
 
   return (
@@ -253,7 +242,7 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleInsertBefore}
+          onClick={handleToolbarInsertBefore}
           className="nodrag nopan h-auto w-auto p-1.5 text-muted-foreground hover:text-blue-400"
           title="Insert step before"
         >
@@ -266,7 +255,7 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleInsertAfter}
+          onClick={handleToolbarInsertAfter}
           className="nodrag nopan h-auto w-auto p-1.5 text-muted-foreground hover:text-blue-400"
           title="Insert step after"
         >
@@ -279,7 +268,7 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleDuplicate}
+          onClick={handleToolbarDuplicate}
           className="nodrag nopan h-auto w-auto p-1.5 text-muted-foreground hover:text-green-400"
           title="Duplicate step"
         >
@@ -289,7 +278,7 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleEdit}
+          onClick={handleToolbarEdit}
           className="nodrag nopan h-auto w-auto p-1.5 text-muted-foreground hover:text-blue-400"
           title="Edit step"
         >
@@ -299,7 +288,7 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleDelete}
+          onClick={handleToolbarDelete}
           className="nodrag nopan h-auto w-auto p-1.5 text-muted-foreground hover:text-red-400"
           title="Delete step"
         >
@@ -372,92 +361,18 @@ export const ScriptNode = memo(({ data, selected }: ScriptNodeProps) => {
         )}
       />
 
-      {contextMenu && createPortal(
-        <div
-          className="fixed z-[9999] min-w-[180px] py-1 bg-card border border-border rounded-lg shadow-xl"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Button
-            variant="ghost"
-            onClick={handleInsertBefore}
-            className="w-full justify-start h-auto px-3 py-2 text-sm rounded-none"
-          >
-            <div className="relative w-4 h-4">
-              <ChevronUp className="w-3 h-3 absolute top-0 left-0.5" />
-              <Plus className="w-3 h-3 absolute bottom-0 left-0.5" />
-            </div>
-            Insert Before
-          </Button>
-
-          <Button
-            variant="ghost"
-            onClick={handleInsertAfter}
-            className="w-full justify-start h-auto px-3 py-2 text-sm rounded-none"
-          >
-            <div className="relative w-4 h-4">
-              <Plus className="w-3 h-3 absolute top-0 left-0.5" />
-              <ChevronDown className="w-3 h-3 absolute bottom-0 left-0.5" />
-            </div>
-            Insert After
-          </Button>
-
-          <div className="my-1 border-t border-border" />
-
-          <Button
-            variant="ghost"
-            onClick={handleDuplicate}
-            className="w-full justify-start h-auto px-3 py-2 text-sm rounded-none"
-          >
-            <Copy className="w-4 h-4" />
-            Duplicate
-          </Button>
-
-          <Button
-            variant="ghost"
-            onClick={handleEdit}
-            className="w-full justify-start h-auto px-3 py-2 text-sm rounded-none"
-          >
-            <Pencil className="w-4 h-4" />
-            Edit
-          </Button>
-
-          <div className="my-1 border-t border-border" />
-
-          {data.onExportNode && (
-            <Button
-              variant="ghost"
-              onClick={handleExportNode}
-              className="w-full justify-start h-auto px-3 py-2 text-sm rounded-none"
-            >
-              <Download className="w-4 h-4" />
-              Export Step
-            </Button>
-          )}
-
-          {data.onSaveAsTemplate && (
-            <Button
-              variant="ghost"
-              onClick={handleSaveAsTemplate}
-              className="w-full justify-start h-auto px-3 py-2 text-sm text-yellow-400 rounded-none"
-            >
-              <Star className="w-4 h-4" />
-              Save as Template
-            </Button>
-          )}
-
-          <div className="my-1 border-t border-border" />
-
-          <Button
-            variant="ghost"
-            onClick={handleDelete}
-            className="w-full justify-start h-auto px-3 py-2 text-sm text-red-400 rounded-none"
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete
-          </Button>
-        </div>,
-        document.body
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeContextMenu} usePortal>
+          <NodeContextMenuItems
+            onInsertBefore={data.onInsertBefore ? handleInsertBefore : undefined}
+            onInsertAfter={data.onInsertAfter ? handleInsertAfter : undefined}
+            onDuplicate={data.onDuplicate ? handleDuplicate : undefined}
+            onEdit={data.onEdit ? handleEdit : undefined}
+            onExport={data.onExportNode ? handleExportNode : undefined}
+            onSaveAsTemplate={data.onSaveAsTemplate ? handleSaveAsTemplate : undefined}
+            onDelete={data.onDelete ? handleDelete : undefined}
+          />
+        </ContextMenu>
       )}
     </div>
   );

@@ -25,21 +25,25 @@ import {
   XCircle,
   Settings2,
   Sparkles,
+  Terminal,
 } from 'lucide-react';
-import { useAIService } from '../../../hooks/useAIService';
+import { useAIService, getAIExecutionMode, setAIExecutionMode, type AIExecutionMode } from '../../../hooks/useAIService';
+import { useDetectedCLITools } from '../../../hooks/useAICLI';
 import { DeleteConfirmDialog } from '../../ui/ConfirmDialog';
 import { Select, type SelectOption } from '../../ui/Select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/Tabs';
 import { Skeleton } from '../../ui/Skeleton';
 import { AIProviderIcon, getProviderColorScheme } from '../../ui/AIProviderIcon';
+import { CLIToolIcon, getCLIToolColorScheme } from '../../ui/CLIToolIcon';
 import type {
   AIProvider,
   AIServiceConfig,
   AddServiceRequest,
   TestConnectionResult,
   ModelInfo,
+  CLIToolType,
 } from '../../../types/ai';
-import { AI_PROVIDERS, getProviderInfo, providerRequiresApiKey } from '../../../types/ai';
+import { AI_PROVIDERS, getProviderInfo, providerRequiresApiKey, CLI_TOOLS } from '../../../types/ai';
 import { cn } from '../../../lib/utils';
 
 // ============================================================================
@@ -516,6 +520,9 @@ interface OverviewTabProps {
   localServices: AIServiceConfig[];
   cloudServices: AIServiceConfig[];
   defaultService: AIServiceConfig | undefined;
+  defaultCliTool: CLIToolType | null;
+  executionMode: AIExecutionMode;
+  onExecutionModeChange: (mode: AIExecutionMode) => void;
 }
 
 const OverviewTab: React.FC<OverviewTabProps> = ({
@@ -523,9 +530,186 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   localServices,
   cloudServices,
   defaultService,
+  defaultCliTool,
+  executionMode,
+  onExecutionModeChange,
 }) => {
+  // Get CLI tool display name and color scheme
+  const cliToolName = defaultCliTool
+    ? CLI_TOOLS.find((t) => t.id === defaultCliTool)?.name || defaultCliTool
+    : null;
+
+  const cliToolColors = defaultCliTool ? getCLIToolColorScheme(defaultCliTool) : null;
+
+  // Get API provider color scheme
+  const apiProviderColors = defaultService ? getProviderColorScheme(defaultService.provider) : null;
+
+  // Render API provider icon - shows brand icon if default is set, otherwise shows stacked icons
+  const renderAPIIcon = () => {
+    if (defaultService) {
+      return (
+        <AIProviderIcon
+          provider={defaultService.provider}
+          size={16}
+          className={executionMode === 'api' ? undefined : 'opacity-70'}
+        />
+      );
+    }
+    // Show stacked mini icons when no default is set
+    return (
+      <div className="flex items-center -space-x-1">
+        <AIProviderIcon provider="openai" size={12} className="opacity-50" />
+        <AIProviderIcon provider="anthropic" size={12} className="opacity-50" />
+        <AIProviderIcon provider="gemini" size={12} className="opacity-50" />
+      </div>
+    );
+  };
+
+  // Render CLI tool icon - shows brand icon if default is set, otherwise shows stacked icons
+  const renderCLIIcon = () => {
+    if (defaultCliTool) {
+      return (
+        <CLIToolIcon
+          tool={defaultCliTool}
+          size={16}
+          className={executionMode === 'cli' ? undefined : 'opacity-70'}
+        />
+      );
+    }
+    // Show stacked mini icons when no default is set
+    return (
+      <div className="flex items-center -space-x-1">
+        <CLIToolIcon tool="claude_code" size={12} className="opacity-50" />
+        <CLIToolIcon tool="codex" size={12} className="opacity-50" />
+        <CLIToolIcon tool="gemini_cli" size={12} className="opacity-50" />
+      </div>
+    );
+  };
+
+  // Determine mode styles
+  const apiModeSelected = executionMode === 'api';
+  const cliModeSelected = executionMode === 'cli';
+
+  // Get API button styles based on provider and selection state
+  const getAPIButtonStyles = () => {
+    if (apiModeSelected && apiProviderColors) {
+      // Selected state with provider colors
+      return apiProviderColors.selected;
+    }
+    if (!defaultService) {
+      // No default service set - use default blue style for API mode
+      return apiModeSelected
+        ? 'border-blue-500 bg-blue-500/10'
+        : 'border-border hover:border-blue-500/50 hover:bg-blue-500/5';
+    }
+    // Has default service but not selected - use neutral hover
+    return 'border-border hover:border-muted-foreground/30 hover:bg-muted/20';
+  };
+
+  // Get CLI button styles based on tool and selection state
+  const getCLIButtonStyles = () => {
+    if (cliModeSelected && cliToolColors) {
+      // Selected state with tool colors
+      return cn(cliToolColors.borderActive, cliToolColors.bgActive);
+    }
+    if (!defaultCliTool) {
+      // No default tool set
+      return 'border-border';
+    }
+    // Has default tool but not selected - use neutral hover
+    return 'border-border hover:border-muted-foreground/30 hover:bg-muted/20';
+  };
+
   return (
     <div className="space-y-4">
+      {/* Execution Mode Selector */}
+      <div className="p-4 rounded-lg border border-border bg-card/50">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium text-foreground">AI Execution Mode</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {/* API Mode */}
+          <button
+            onClick={() => onExecutionModeChange('api')}
+            className={cn(
+              'p-3 rounded-lg border-2 transition-all text-left',
+              getAPIButtonStyles()
+            )}
+          >
+            <div className="flex items-center gap-2 mb-1.5">
+              {renderAPIIcon()}
+              <span className={cn(
+                'text-sm font-medium',
+                apiModeSelected && apiProviderColors ? 'text-foreground' : (apiModeSelected ? 'text-blue-500' : 'text-foreground')
+              )}>
+                API Mode
+              </span>
+              {apiModeSelected && (
+                <CheckCircle2 className={cn(
+                  'w-3.5 h-3.5 ml-auto',
+                  apiProviderColors ? 'text-primary' : 'text-blue-500'
+                )} />
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Use cloud AI services via API
+            </p>
+            {defaultService && apiModeSelected && (
+              <p className={cn(
+                'text-[10px] mt-1',
+                apiProviderColors ? 'text-muted-foreground' : 'text-blue-500'
+              )}>
+                Default: {defaultService.name}
+              </p>
+            )}
+          </button>
+
+          {/* CLI Mode */}
+          <button
+            onClick={() => onExecutionModeChange('cli')}
+            disabled={!defaultCliTool}
+            className={cn(
+              'p-3 rounded-lg border-2 transition-all text-left',
+              !defaultCliTool && 'opacity-50 cursor-not-allowed',
+              getCLIButtonStyles()
+            )}
+          >
+            <div className="flex items-center gap-2 mb-1.5">
+              {renderCLIIcon()}
+              <span className={cn(
+                'text-sm font-medium',
+                cliModeSelected && cliToolColors ? cliToolColors.text : 'text-foreground'
+              )}>
+                CLI Mode
+              </span>
+              {cliModeSelected && (
+                <CheckCircle2 className={cn(
+                  'w-3.5 h-3.5 ml-auto',
+                  cliToolColors ? cliToolColors.text : 'text-primary'
+                )} />
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Use local CLI tools (Claude, Codex, etc.)
+            </p>
+            {defaultCliTool ? (
+              cliModeSelected && (
+                <p className={cn('text-[10px] mt-1', cliToolColors?.text)}>
+                  Default: {cliToolName}
+                </p>
+              )
+            ) : (
+              <p className="text-[10px] text-yellow-500 mt-1">
+                Set default CLI tool first
+              </p>
+            )}
+          </button>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="p-3 rounded-lg bg-green-500/5 border border-green-500/20">
@@ -568,8 +752,8 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             <h4 className="text-sm font-medium text-foreground">AI Features</h4>
             <p className="text-xs text-muted-foreground mt-1">
               AI services power intelligent features like commit message generation,
-              code review suggestions, and workflow automation. Configure a default
-              service to get started.
+              code review suggestions, and security analysis. Configure both API and CLI
+              options, then choose your preferred execution mode above.
             </p>
           </div>
         </div>
@@ -586,6 +770,226 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           </p>
         </div>
       )}
+    </div>
+  );
+};
+
+// ============================================================================
+// CLI Tools Tab Content
+// ============================================================================
+
+interface CLIToolsTabProps {
+  detectedTools: Array<{ toolType: CLIToolType; binaryPath: string; version?: string }>;
+  isLoading: boolean;
+  error: string | null;
+  defaultCliTool: CLIToolType | null;
+  onSetDefault: (tool: CLIToolType) => void;
+  onRefresh: () => void;
+}
+
+const CLIToolsTab: React.FC<CLIToolsTabProps> = ({
+  detectedTools,
+  isLoading,
+  error,
+  defaultCliTool,
+  onSetDefault,
+  onRefresh,
+}) => {
+  return (
+    <div className="space-y-4">
+      {/* Header with refresh */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-medium text-foreground">CLI Tools</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Detected AI CLI tools on your system
+          </p>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={isLoading}
+          className={cn(
+            'p-2 rounded-lg transition-colors',
+            'hover:bg-muted text-muted-foreground hover:text-foreground',
+            'disabled:opacity-50'
+          )}
+        >
+          <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
+        </button>
+      </div>
+
+      {/* Error state */}
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+          <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="w-full h-16 rounded-lg" />
+          ))}
+        </div>
+      )}
+
+      {/* CLI Tools List */}
+      {!isLoading && (
+        <div className="space-y-3">
+          {CLI_TOOLS.map((tool) => {
+            const detected = detectedTools.find((t) => t.toolType === tool.id);
+            const isAvailable = !!detected;
+            const isDefault = defaultCliTool === tool.id;
+            const colors = getCLIToolColorScheme(tool.id);
+
+            return (
+              <div
+                key={tool.id}
+                className={cn(
+                  'p-4 rounded-xl border-2 transition-all duration-200',
+                  isAvailable
+                    ? cn(colors.bgActive, colors.borderActive)
+                    : 'border-border bg-muted/20',
+                  !isAvailable && 'opacity-60'
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {/* Brand Icon */}
+                    <div
+                      className={cn(
+                        'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+                        'transition-all duration-200',
+                        isAvailable ? colors.iconBg : 'bg-muted'
+                      )}
+                    >
+                      <CLIToolIcon tool={tool.id} size={22} />
+                    </div>
+
+                    {/* Tool Info */}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={cn(
+                          'text-sm font-semibold',
+                          isAvailable ? 'text-foreground' : 'text-muted-foreground'
+                        )}>
+                          {tool.name}
+                        </span>
+                        {isDefault && (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded text-xs font-medium">
+                            <Star className="w-3 h-3" />
+                            Default
+                          </span>
+                        )}
+                        {isAvailable && (
+                          <span className={cn(
+                            'px-2 py-0.5 text-[10px] font-medium rounded-full',
+                            'bg-green-500/10 text-green-600 dark:text-green-400'
+                          )}>
+                            Installed
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {isAvailable ? (
+                          <span className="flex items-center gap-2 flex-wrap">
+                            {detected.version && (
+                              <code className="px-1.5 py-0.5 bg-muted rounded text-[11px] font-mono">
+                                v{detected.version}
+                              </code>
+                            )}
+                            <span className="text-muted-foreground/70 truncate max-w-[200px]" title={detected.binaryPath}>
+                              {detected.binaryPath}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/70">{tool.description}</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isAvailable && !isDefault && (
+                      <button
+                        onClick={() => onSetDefault(tool.id)}
+                        className={cn(
+                          'px-3 py-1.5 text-xs font-medium rounded-lg transition-all',
+                          'bg-primary/10 text-primary hover:bg-primary/20',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                        )}
+                      >
+                        Set Default
+                      </button>
+                    )}
+
+                    {isAvailable && (
+                      <div className={cn(
+                        'w-7 h-7 rounded-full flex items-center justify-center',
+                        'bg-green-500/15'
+                      )}>
+                        <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                      </div>
+                    )}
+
+                    {!isAvailable && (
+                      <a
+                        href={tool.installUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          'px-3 py-1.5 text-xs font-medium rounded-lg transition-all',
+                          'bg-accent text-accent-foreground hover:bg-accent/80',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                        )}
+                      >
+                        Install
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Usage Info */}
+      <div className="p-4 rounded-xl border border-border bg-card/50 mt-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D97757]/10 via-emerald-500/10 to-blue-500/10 flex items-center justify-center shrink-0 border border-border/50">
+            <Terminal className="w-5 h-5 text-foreground/70" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-medium text-foreground">CLI Tool Integration</h4>
+            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+              CLI tools are used for Code Review, Security Analysis, and Git Commit message
+              generation. The default tool will be used when no specific tool is selected.
+            </p>
+            {/* Supported tools preview */}
+            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border/50">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+                Supported:
+              </span>
+              <div className="flex items-center gap-2">
+                {CLI_TOOLS.map((tool) => (
+                  <div
+                    key={tool.id}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50"
+                    title={tool.name}
+                  >
+                    <CLIToolIcon tool={tool.id} size={14} />
+                    <span className="text-[10px] font-medium text-muted-foreground">{tool.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -995,6 +1399,31 @@ export function AIServiceSettingsPanel() {
   // Tab state
   const [activeTab, setActiveTab] = useState<string>('overview');
 
+  // CLI Tools state
+  const { tools: detectedCLITools, loading: cliToolsLoading, error: cliToolsError, refresh: refreshCLITools } = useDetectedCLITools();
+  const [defaultCliTool, setDefaultCliToolState] = useState<CLIToolType | null>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem('packageflow:defaultCliTool');
+    return saved ? (saved as CLIToolType) : null;
+  });
+
+  // AI Execution Mode state
+  const [executionMode, setExecutionModeState] = useState<AIExecutionMode>(() => {
+    return getAIExecutionMode();
+  });
+
+  // Handle setting default CLI tool
+  const handleSetDefaultCliTool = useCallback((tool: CLIToolType) => {
+    setDefaultCliToolState(tool);
+    localStorage.setItem('packageflow:defaultCliTool', tool);
+  }, []);
+
+  // Handle execution mode change
+  const handleExecutionModeChange = useCallback((mode: AIExecutionMode) => {
+    setExecutionModeState(mode);
+    setAIExecutionMode(mode);
+  }, []);
+
   // UI state
   const [editingService, setEditingService] = useState<AIServiceConfig | null>(null);
   const [testingServiceId, setTestingServiceId] = useState<string | null>(null);
@@ -1312,7 +1741,7 @@ export function AIServiceSettingsPanel() {
 
       {/* Tabbed Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="w-full grid grid-cols-3">
+        <TabsList className="w-full grid grid-cols-4">
           <TabsTrigger value="overview" className="flex items-center gap-1.5">
             <Settings2 className="w-3.5 h-3.5" />
             <span>Overview</span>
@@ -1326,6 +1755,10 @@ export function AIServiceSettingsPanel() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="cli-tools" className="flex items-center gap-1.5">
+            <Terminal className="w-3.5 h-3.5" />
+            <span>CLI Tools</span>
+          </TabsTrigger>
           <TabsTrigger value="add" className="flex items-center gap-1.5">
             <Plus className="w-3.5 h-3.5" />
             <span>{editingService ? 'Edit' : 'Add'}</span>
@@ -1338,6 +1771,9 @@ export function AIServiceSettingsPanel() {
             localServices={localServices}
             cloudServices={cloudServices}
             defaultService={defaultService}
+            defaultCliTool={defaultCliTool}
+            executionMode={executionMode}
+            onExecutionModeChange={handleExecutionModeChange}
           />
         </TabsContent>
 
@@ -1354,6 +1790,21 @@ export function AIServiceSettingsPanel() {
             onSetDefault={setDefaultService}
             onTest={handleTestConnection}
             onLoadModels={handleLoadModels}
+          />
+        </TabsContent>
+
+        <TabsContent value="cli-tools" className="max-h-[calc(100vh-280px)] overflow-y-auto">
+          <CLIToolsTab
+            detectedTools={detectedCLITools.map((t) => ({
+              toolType: t.toolType,
+              binaryPath: t.binaryPath,
+              version: t.version ?? undefined,
+            }))}
+            isLoading={cliToolsLoading}
+            error={cliToolsError}
+            defaultCliTool={defaultCliTool}
+            onSetDefault={handleSetDefaultCliTool}
+            onRefresh={refreshCLITools}
           />
         </TabsContent>
 
