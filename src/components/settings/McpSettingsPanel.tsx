@@ -50,6 +50,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/Tabs';
 import { Collapsible, CollapsibleCard } from '../ui/Collapsible';
 import { Toggle } from '../ui/Toggle';
 import { Checkbox } from '../ui/Checkbox';
+import { MCPActionSettings, MCPActionHistory } from './mcp';
 
 // ============================================================================
 // Types
@@ -877,14 +878,20 @@ export function McpSettingsPanel({ isOpen, onClose }: McpSettingsPanelProps) {
             <ErrorState message={error} onRetry={loadData} />
           ) : serverInfo ? (
             <Tabs defaultValue="setup" className="space-y-4">
-              <TabsList className="w-full">
-                <TabsTrigger value="setup" className="flex-1">
-                  Quick Setup
+              <TabsList className="w-full grid grid-cols-5">
+                <TabsTrigger value="setup">
+                  Setup
                 </TabsTrigger>
-                <TabsTrigger value="settings" className="flex-1">
+                <TabsTrigger value="settings">
                   Settings
                 </TabsTrigger>
-                <TabsTrigger value="details" className="flex-1">
+                <TabsTrigger value="actions">
+                  Actions
+                </TabsTrigger>
+                <TabsTrigger value="history">
+                  History
+                </TabsTrigger>
+                <TabsTrigger value="details">
                   Details
                 </TabsTrigger>
               </TabsList>
@@ -1140,6 +1147,16 @@ export function McpSettingsPanel({ isOpen, onClose }: McpSettingsPanelProps) {
                     </div>
                   </>
                 )}
+              </TabsContent>
+
+              {/* Actions Tab - MCP Action Permissions (021-mcp-actions) */}
+              <TabsContent value="actions" className="space-y-4">
+                <MCPActionSettings />
+              </TabsContent>
+
+              {/* History Tab - Execution History (021-mcp-actions) */}
+              <TabsContent value="history" className="space-y-4">
+                <MCPActionHistory maxHeight="350px" />
               </TabsContent>
 
               {/* Details Tab */}

@@ -18,6 +18,15 @@ import {
   Play,
   Shield,
   Wrench,
+  Zap,
+  History,
+  FolderGit2,
+  GitBranch,
+  Workflow,
+  FileCode,
+  Package,
+  Target,
+  ChevronDown,
 } from 'lucide-react';
 import {
   mcpAPI,
@@ -32,6 +41,8 @@ import {
   ServerStatusCard,
   PermissionQuickModeSelector,
   QuickSetupSection,
+  MCPActionSettings,
+  MCPActionHistory,
 } from '../mcp';
 import {
   type PermissionQuickMode,
@@ -359,35 +370,212 @@ interface SetupTabProps {
   serverInfo: McpServerInfo;
 }
 
+/** MCP Tools data structure */
+interface MCPToolCategory {
+  name: string;
+  icon: React.ReactNode;
+  iconColor: string;
+  tools: { name: string; description: string }[];
+}
+
+const MCP_TOOL_CATEGORIES: MCPToolCategory[] = [
+  {
+    name: 'Project Management',
+    icon: <FolderGit2 className="w-4 h-4" />,
+    iconColor: 'text-blue-500',
+    tools: [
+      { name: 'list_projects', description: 'List all registered projects with detailed info' },
+      { name: 'get_project', description: 'Get project details (scripts, workflows, git info)' },
+    ],
+  },
+  {
+    name: 'Git Worktree',
+    icon: <GitBranch className="w-4 h-4" />,
+    iconColor: 'text-emerald-500',
+    tools: [
+      { name: 'list_worktrees', description: 'List all git worktrees for a project' },
+      { name: 'get_worktree_status', description: 'Get git status (branch, staged, modified, untracked)' },
+      { name: 'get_git_diff', description: 'Get staged changes diff for commit messages' },
+    ],
+  },
+  {
+    name: 'Workflows',
+    icon: <Workflow className="w-4 h-4" />,
+    iconColor: 'text-purple-500',
+    tools: [
+      { name: 'list_workflows', description: 'List all workflows, filter by project' },
+      { name: 'get_workflow', description: 'Get detailed workflow info with all steps' },
+      { name: 'create_workflow', description: 'Create a new workflow' },
+      { name: 'add_workflow_step', description: 'Add a script step to a workflow' },
+      { name: 'run_workflow', description: 'Execute a workflow synchronously' },
+    ],
+  },
+  {
+    name: 'Templates',
+    icon: <FileCode className="w-4 h-4" />,
+    iconColor: 'text-cyan-500',
+    tools: [
+      { name: 'list_step_templates', description: 'List available step templates' },
+      { name: 'create_step_template', description: 'Create a reusable step template' },
+    ],
+  },
+  {
+    name: 'NPM/Package Scripts',
+    icon: <Package className="w-4 h-4" />,
+    iconColor: 'text-orange-500',
+    tools: [
+      { name: 'run_npm_script', description: 'Run npm/yarn/pnpm scripts (volta/corepack support)' },
+    ],
+  },
+  {
+    name: 'MCP Actions',
+    icon: <Target className="w-4 h-4" />,
+    iconColor: 'text-amber-500',
+    tools: [
+      { name: 'list_actions', description: 'List all MCP actions' },
+      { name: 'get_action', description: 'Get action details by ID' },
+      { name: 'run_script', description: 'Execute a script action' },
+      { name: 'trigger_webhook', description: 'Trigger a webhook action' },
+      { name: 'get_execution_status', description: 'Get action execution status' },
+      { name: 'list_action_executions', description: 'List recent executions' },
+      { name: 'get_action_permissions', description: 'Get permission configuration' },
+    ],
+  },
+];
+
+/** Available Tools Section */
+const AvailableToolsSection: React.FC = () => {
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const totalTools = MCP_TOOL_CATEGORIES.reduce((sum, cat) => sum + cat.tools.length, 0);
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <Wrench className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">Available Tools</span>
+        <span className="text-xs text-muted-foreground">
+          ({totalTools} tools in {MCP_TOOL_CATEGORIES.length} categories)
+        </span>
+      </div>
+
+      {/* Tip */}
+      <p className="text-xs text-muted-foreground">
+        Run <code className="px-1.5 py-0.5 bg-muted rounded font-mono">packageflow-mcp --help</code> for detailed documentation
+      </p>
+
+      {/* Categories */}
+      <div className="space-y-2">
+        {MCP_TOOL_CATEGORIES.map((category) => (
+          <div key={category.name} className="border border-border rounded-lg overflow-hidden bg-card/50">
+            <button
+              type="button"
+              onClick={() =>
+                setExpandedCategory(expandedCategory === category.name ? null : category.name)
+              }
+              className={cn(
+                'w-full flex items-center gap-3 p-3',
+                'hover:bg-muted/50 transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+              )}
+            >
+              <span className={category.iconColor}>{category.icon}</span>
+              <span className="flex-1 text-left font-medium text-foreground text-sm">
+                {category.name}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {category.tools.length} tools
+              </span>
+              <ChevronDown
+                className={cn(
+                  'w-4 h-4 text-muted-foreground transition-transform duration-200',
+                  expandedCategory === category.name && 'rotate-180'
+                )}
+              />
+            </button>
+
+            {expandedCategory === category.name && (
+              <div className="border-t border-border bg-muted/20">
+                <div className="p-2 space-y-0.5">
+                  {category.tools.map((tool) => (
+                    <div
+                      key={tool.name}
+                      className="flex items-start gap-3 px-2 py-1.5 rounded hover:bg-muted/50 transition-colors"
+                    >
+                      <code className="text-xs font-mono text-primary shrink-0 min-w-[160px]">
+                        {tool.name}
+                      </code>
+                      <span className="text-xs text-muted-foreground">{tool.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const SetupTab: React.FC<SetupTabProps> = ({ serverInfo }) => {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 max-h-[calc(100vh-300px)] overflow-y-auto pr-1 pb-8">
       <QuickSetupSection
         binaryPath={serverInfo.binary_path}
         configJson={serverInfo.config_json}
         configToml={serverInfo.config_toml}
       />
+
+      {/* Divider */}
+      <div className="border-t border-border" />
+
+      {/* Available Tools Section */}
+      <AvailableToolsSection />
     </div>
   );
 };
 
 // ============================================================================
-// Logs Tab Content
+// Activity Tab Content (Combined History + Logs)
 // ============================================================================
 
-interface LogsTabProps {
+interface ActivityTabProps {
   logsResponse: McpLogsResponse | null;
   isLoadingLogs: boolean;
   onLoadLogs: () => void;
   onClearLogs: () => void;
 }
 
-const LogsTab: React.FC<LogsTabProps> = ({
-  logsResponse,
-  isLoadingLogs,
-  onLoadLogs,
-  onClearLogs,
-}) => {
+/** Status configuration for log entries */
+const LOG_STATUS_CONFIG = {
+  success: {
+    dotColor: 'bg-emerald-500',
+    bgColor: 'bg-emerald-500/5 dark:bg-emerald-500/10',
+    borderColor: 'border-emerald-500/20',
+    label: 'Success',
+  },
+  permission_denied: {
+    dotColor: 'bg-amber-500',
+    bgColor: 'bg-amber-500/5 dark:bg-amber-500/10',
+    borderColor: 'border-amber-500/20',
+    label: 'Denied',
+  },
+  error: {
+    dotColor: 'bg-red-500',
+    bgColor: 'bg-red-500/5 dark:bg-red-500/10',
+    borderColor: 'border-red-500/20',
+    label: 'Error',
+  },
+} as const;
+
+/** Server Logs Panel Component */
+const ServerLogsPanel: React.FC<{
+  logsResponse: McpLogsResponse | null;
+  isLoadingLogs: boolean;
+  onLoadLogs: () => void;
+  onClearLogs: () => void;
+}> = ({ logsResponse, isLoadingLogs, onLoadLogs, onClearLogs }) => {
   const formatTimestamp = (timestamp: string): string => {
     try {
       const date = new Date(timestamp);
@@ -403,106 +591,184 @@ const LogsTab: React.FC<LogsTabProps> = ({
     }
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Logs Viewer - Always visible since write/execute operations are always logged */}
-      <div className="border border-border rounded-lg overflow-hidden">
-          {/* Logs Header */}
-          <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b border-border">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onLoadLogs}
-                disabled={isLoadingLogs}
-                className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium',
-                  'bg-primary/10 text-primary hover:bg-primary/20',
-                  'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  'disabled:opacity-50'
-                )}
-              >
-                {isLoadingLogs ? (
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3" />
-                )}
-                <span>Refresh</span>
-              </button>
-              {logsResponse && (
-                <span className="text-xs text-muted-foreground">
-                  {logsResponse.entries.length} of {logsResponse.totalCount} entries
-                </span>
-              )}
-            </div>
-            <button
-              onClick={onClearLogs}
-              disabled={!logsResponse || logsResponse.entries.length === 0}
-              className={cn(
-                'flex items-center gap-1 px-2 py-1 rounded-md text-xs',
-                'text-destructive hover:bg-destructive/10',
-                'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                'disabled:opacity-50'
-              )}
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>Clear</span>
-            </button>
-          </div>
+  const formatDuration = (ms: number): string => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
 
-          {/* Logs List */}
-          <div className="max-h-[280px] overflow-y-auto">
-            {!logsResponse ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                Click Refresh to load logs
-              </div>
-            ) : logsResponse.entries.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                No logs recorded yet
-              </div>
-            ) : (
-              <div className="divide-y divide-border/50">
-                {logsResponse.entries.map((entry, idx) => (
-                  <div
-                    key={idx}
-                    className={cn(
-                      'px-3 py-2.5 text-xs',
-                      entry.result === 'success' && 'bg-green-500/5',
-                      entry.result === 'permission_denied' && 'bg-yellow-500/5',
-                      entry.result === 'error' && 'bg-red-500/5'
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            'w-1.5 h-1.5 rounded-full',
-                            entry.result === 'success' && 'bg-green-500',
-                            entry.result === 'permission_denied' && 'bg-yellow-500',
-                            entry.result === 'error' && 'bg-red-500'
-                          )}
-                        />
-                        <code className="font-mono font-medium text-foreground">
-                          {entry.tool}
-                        </code>
-                      </div>
-                      <div className="flex items-center gap-3 text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {entry.durationMs}ms
-                        </span>
-                        <span>{formatTimestamp(entry.timestamp)}</span>
-                      </div>
+  return (
+    <div className="space-y-3">
+      {/* Header with actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">Server Logs</span>
+          {logsResponse && (
+            <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded bg-muted">
+              {logsResponse.entries.length} / {logsResponse.totalCount}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onLoadLogs}
+            disabled={isLoadingLogs}
+            className={cn(
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium',
+              'bg-primary/10 text-primary border border-primary/20',
+              'hover:bg-primary/20 transition-colors',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'disabled:opacity-50 disabled:cursor-not-allowed'
+            )}
+          >
+            <RefreshCw className={cn('w-3 h-3', isLoadingLogs && 'animate-spin')} />
+            <span>{isLoadingLogs ? 'Loading...' : 'Refresh'}</span>
+          </button>
+          <button
+            onClick={onClearLogs}
+            disabled={!logsResponse || logsResponse.entries.length === 0}
+            className={cn(
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium',
+              'text-destructive border border-destructive/20',
+              'hover:bg-destructive/10 transition-colors',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'disabled:opacity-50 disabled:cursor-not-allowed'
+            )}
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>Clear</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Logs container */}
+      <div className="border border-border rounded-lg overflow-hidden bg-card/30">
+        {!logsResponse ? (
+          <div className="py-12 text-center">
+            <FileText className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">Click Refresh to load server logs</p>
+          </div>
+        ) : logsResponse.entries.length === 0 ? (
+          <div className="py-12 text-center">
+            <FileText className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">No logs recorded yet</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">
+              Logs will appear here when MCP tools are executed
+            </p>
+          </div>
+        ) : (
+          <div className="max-h-[350px] overflow-y-auto">
+            {logsResponse.entries.map((entry, idx) => {
+              const statusConfig = LOG_STATUS_CONFIG[entry.result as keyof typeof LOG_STATUS_CONFIG] || LOG_STATUS_CONFIG.error;
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    'px-3 py-2.5 border-b border-border/50 last:border-b-0',
+                    'transition-colors hover:bg-muted/30',
+                    statusConfig.bgColor
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    {/* Left: Status indicator + Tool name */}
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span
+                        className={cn(
+                          'w-2 h-2 rounded-full flex-shrink-0',
+                          statusConfig.dotColor
+                        )}
+                        title={statusConfig.label}
+                      />
+                      <code className="text-xs font-mono font-medium text-foreground truncate">
+                        {entry.tool}
+                      </code>
                     </div>
-                    {entry.error && (
-                      <p className="mt-1 text-destructive truncate pl-3.5" title={entry.error}>
+
+                    {/* Right: Duration + Timestamp */}
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="w-3 h-3" />
+                        {formatDuration(entry.durationMs)}
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatTimestamp(entry.timestamp)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Error message if present */}
+                  {entry.error && (
+                    <div className="mt-1.5 ml-4.5 pl-2 border-l-2 border-destructive/30">
+                      <p
+                        className="text-xs text-destructive truncate"
+                        title={entry.error}
+                      >
                         {entry.error}
                       </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+        )}
+      </div>
+
+      {/* Summary stats */}
+      {logsResponse && logsResponse.entries.length > 0 && (
+        <div className="flex items-center justify-center gap-4 py-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className={cn('w-1.5 h-1.5 rounded-full', LOG_STATUS_CONFIG.success.dotColor)} />
+            {logsResponse.entries.filter(e => e.result === 'success').length} success
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className={cn('w-1.5 h-1.5 rounded-full', LOG_STATUS_CONFIG.permission_denied.dotColor)} />
+            {logsResponse.entries.filter(e => e.result === 'permission_denied').length} denied
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className={cn('w-1.5 h-1.5 rounded-full', LOG_STATUS_CONFIG.error.dotColor)} />
+            {logsResponse.entries.filter(e => e.result === 'error').length} errors
+          </span>
         </div>
+      )}
+    </div>
+  );
+};
+
+const ActivityTab: React.FC<ActivityTabProps> = ({
+  logsResponse,
+  isLoadingLogs,
+  onLoadLogs,
+  onClearLogs,
+}) => {
+  return (
+    <div className="space-y-4">
+      {/* Nested tabs for History and Logs */}
+      <Tabs defaultValue="history" className="space-y-4">
+        <TabsList className="w-fit">
+          <TabsTrigger value="history" className="flex items-center gap-1.5">
+            <History className="w-3.5 h-3.5" />
+            <span>Action History</span>
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5" />
+            <span>Server Logs</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="history">
+          <MCPActionHistory maxHeight="400px" />
+        </TabsContent>
+
+        <TabsContent value="logs">
+          <ServerLogsPanel
+            logsResponse={logsResponse}
+            isLoadingLogs={isLoadingLogs}
+            onLoadLogs={onLoadLogs}
+            onClearLogs={onClearLogs}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
@@ -747,7 +1013,7 @@ export function McpSettingsFullPanel() {
       {/* Tabbed Content - only show when enabled */}
       {config?.isEnabled && serverInfo && (
         <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className="w-full grid grid-cols-5">
             <TabsTrigger value="overview" className="flex items-center gap-1.5">
               <Settings2 className="w-3.5 h-3.5" />
               <span>Overview</span>
@@ -756,13 +1022,17 @@ export function McpSettingsFullPanel() {
               <Shield className="w-3.5 h-3.5" />
               <span>Permissions</span>
             </TabsTrigger>
+            <TabsTrigger value="actions" className="flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5" />
+              <span>Actions</span>
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5" />
+              <span>Activity</span>
+            </TabsTrigger>
             <TabsTrigger value="setup" className="flex items-center gap-1.5">
               <Terminal className="w-3.5 h-3.5" />
               <span>Setup</span>
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5" />
-              <span>Logs</span>
             </TabsTrigger>
           </TabsList>
 
@@ -784,17 +1054,21 @@ export function McpSettingsFullPanel() {
             />
           </TabsContent>
 
-          <TabsContent value="setup">
-            <SetupTab serverInfo={serverInfo} />
+          <TabsContent value="actions">
+            <MCPActionSettings />
           </TabsContent>
 
-          <TabsContent value="logs">
-            <LogsTab
+          <TabsContent value="activity">
+            <ActivityTab
               logsResponse={logsResponse}
               isLoadingLogs={isLoadingLogs}
               onLoadLogs={handleLoadLogs}
               onClearLogs={handleClearLogs}
             />
+          </TabsContent>
+
+          <TabsContent value="setup">
+            <SetupTab serverInfo={serverInfo} />
           </TabsContent>
         </Tabs>
       )}

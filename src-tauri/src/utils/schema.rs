@@ -4,7 +4,7 @@
 use rusqlite::{Connection, params};
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 11;
+pub const CURRENT_VERSION: i32 = 12;
 
 /// Migration struct containing version and SQL statements
 struct Migration {
@@ -418,6 +418,62 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(is_read, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);
+        "#,
+    },
+    Migration {
+        version: 12,
+        description: "Add MCP action tables for action execution via MCP",
+        up: r#"
+            -- MCP action definitions
+            -- Stores registered actions (scripts, webhooks, workflows) that can be triggered via MCP
+            CREATE TABLE IF NOT EXISTS mcp_actions (
+                id TEXT PRIMARY KEY,
+                action_type TEXT NOT NULL CHECK(action_type IN ('script', 'webhook', 'workflow')),
+                name TEXT NOT NULL,
+                description TEXT,
+                config TEXT NOT NULL,
+                project_id TEXT,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_mcp_actions_project ON mcp_actions(project_id);
+            CREATE INDEX IF NOT EXISTS idx_mcp_actions_type ON mcp_actions(action_type);
+
+            -- MCP action permission rules
+            -- Stores permission settings for actions (require_confirm, auto_approve, deny)
+            CREATE TABLE IF NOT EXISTS mcp_action_permissions (
+                id TEXT PRIMARY KEY,
+                action_id TEXT,
+                action_type TEXT CHECK(action_type IN ('script', 'webhook', 'workflow') OR action_type IS NULL),
+                permission_level TEXT NOT NULL CHECK(permission_level IN ('require_confirm', 'auto_approve', 'deny')),
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (action_id) REFERENCES mcp_actions(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_mcp_permissions_action ON mcp_action_permissions(action_id);
+            CREATE INDEX IF NOT EXISTS idx_mcp_permissions_type ON mcp_action_permissions(action_type);
+
+            -- MCP action execution history
+            -- Stores records of all action executions for audit trail
+            CREATE TABLE IF NOT EXISTS mcp_action_executions (
+                id TEXT PRIMARY KEY,
+                action_id TEXT,
+                action_type TEXT NOT NULL,
+                action_name TEXT NOT NULL,
+                source_client TEXT,
+                parameters TEXT,
+                status TEXT NOT NULL CHECK(status IN ('pending_confirm', 'queued', 'running', 'completed', 'failed', 'cancelled', 'timed_out')),
+                result TEXT,
+                error_message TEXT,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                duration_ms INTEGER,
+                FOREIGN KEY (action_id) REFERENCES mcp_actions(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_mcp_executions_action ON mcp_action_executions(action_id);
+            CREATE INDEX IF NOT EXISTS idx_mcp_executions_status ON mcp_action_executions(status);
+            CREATE INDEX IF NOT EXISTS idx_mcp_executions_started ON mcp_action_executions(started_at DESC);
         "#,
     },
 ];

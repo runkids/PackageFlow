@@ -413,3 +413,314 @@ pub fn clear_mcp_logs(db: tauri::State<'_, DatabaseState>) -> Result<(), String>
     let repo = MCPRepository::new(db.0.as_ref().clone());
     repo.clear_logs()
 }
+
+// ============================================================================
+// MCP Action Commands (T039-T042)
+// ============================================================================
+
+use crate::models::mcp_action::{
+    ActionFilter, ExecutionFilter, ExecutionStatus, MCPAction, MCPActionExecution,
+    MCPActionPermission, MCPActionType, PermissionLevel,
+};
+use crate::repositories::MCPActionRepository;
+
+/// Response for pending action requests
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingActionRequest {
+    pub execution_id: String,
+    pub action_id: Option<String>,
+    pub action_type: String,
+    pub action_name: String,
+    pub description: String,
+    pub parameters: Option<serde_json::Value>,
+    pub source_client: Option<String>,
+    pub started_at: String,
+}
+
+/// Get pending action requests that require user confirmation (T039)
+#[tauri::command]
+pub fn get_pending_action_requests(
+    db: tauri::State<'_, DatabaseState>,
+) -> Result<Vec<PendingActionRequest>, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+    let pending = repo.get_pending_confirmations()?;
+
+    Ok(pending
+        .into_iter()
+        .map(|exec| {
+            let description = format!(
+                "Execute {} action: {}",
+                exec.action_type.to_string().to_lowercase(),
+                exec.action_name
+            );
+            PendingActionRequest {
+                execution_id: exec.id,
+                action_id: exec.action_id,
+                action_type: exec.action_type.to_string(),
+                action_name: exec.action_name,
+                description,
+                parameters: exec.parameters,
+                source_client: exec.source_client,
+                started_at: exec.started_at,
+            }
+        })
+        .collect())
+}
+
+/// Response for action request approval/denial
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionRequestResponse {
+    pub execution_id: String,
+    pub approved: bool,
+    pub status: String,
+}
+
+/// Approve or deny a pending action request (T040)
+#[tauri::command]
+pub fn respond_to_action_request(
+    app: AppHandle,
+    db: tauri::State<'_, DatabaseState>,
+    execution_id: String,
+    approved: bool,
+    reason: Option<String>,
+) -> Result<ActionRequestResponse, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+
+    // Get the execution to verify it exists and is pending
+    let execution = repo
+        .get_execution(&execution_id)?
+        .ok_or_else(|| format!("Execution {} not found", execution_id))?;
+
+    if execution.status != ExecutionStatus::PendingConfirm {
+        return Err(format!(
+            "Execution {} is not pending confirmation (status: {})",
+            execution_id,
+            execution.status.to_string()
+        ));
+    }
+
+    let new_status = if approved {
+        ExecutionStatus::Running
+    } else {
+        ExecutionStatus::Denied
+    };
+
+    let error_message = if approved { None } else { reason };
+
+    repo.update_execution_status(&execution_id, new_status.clone(), None, error_message)?;
+
+    // Emit event to notify MCP server and other listeners
+    let _ = app.emit("mcp:action-response", serde_json::json!({
+        "executionId": execution_id,
+        "approved": approved,
+        "status": new_status.to_string(),
+    }));
+
+    Ok(ActionRequestResponse {
+        execution_id,
+        approved,
+        status: new_status.to_string(),
+    })
+}
+
+/// List MCP actions with optional filtering
+#[tauri::command]
+pub fn list_mcp_actions(
+    db: tauri::State<'_, DatabaseState>,
+    project_id: Option<String>,
+    action_type: Option<String>,
+    is_enabled: Option<bool>,
+) -> Result<Vec<MCPAction>, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+
+    let action_type_parsed = action_type
+        .map(|t| t.parse::<MCPActionType>())
+        .transpose()
+        .map_err(|e| format!("Invalid action type: {}", e))?;
+
+    let filter = ActionFilter {
+        project_id,
+        action_type: action_type_parsed,
+        is_enabled,
+    };
+
+    repo.list_actions(&filter)
+}
+
+/// Get a single MCP action by ID
+#[tauri::command]
+pub fn get_mcp_action(
+    db: tauri::State<'_, DatabaseState>,
+    action_id: String,
+) -> Result<Option<MCPAction>, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+    repo.get_action(&action_id)
+}
+
+/// Create a new MCP action
+#[tauri::command]
+pub fn create_mcp_action(
+    db: tauri::State<'_, DatabaseState>,
+    action_type: String,
+    name: String,
+    description: Option<String>,
+    config: serde_json::Value,
+    project_id: Option<String>,
+) -> Result<MCPAction, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+
+    let action_type_parsed = action_type
+        .parse::<MCPActionType>()
+        .map_err(|e| format!("Invalid action type: {}", e))?;
+
+    repo.create_action(action_type_parsed, name, description, config, project_id)
+}
+
+/// Update an existing MCP action
+#[tauri::command]
+pub fn update_mcp_action(
+    db: tauri::State<'_, DatabaseState>,
+    action_id: String,
+    name: Option<String>,
+    description: Option<String>,
+    config: Option<serde_json::Value>,
+    is_enabled: Option<bool>,
+) -> Result<MCPAction, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+
+    let mut action = repo
+        .get_action(&action_id)?
+        .ok_or_else(|| format!("Action {} not found", action_id))?;
+
+    if let Some(n) = name {
+        action.name = n;
+    }
+    if let Some(d) = description {
+        action.description = Some(d);
+    }
+    if let Some(c) = config {
+        action.config = c;
+    }
+    if let Some(e) = is_enabled {
+        action.is_enabled = e;
+    }
+
+    action.updated_at = chrono::Utc::now().to_rfc3339();
+    repo.save_action(&action)?;
+
+    Ok(action)
+}
+
+/// Delete an MCP action
+#[tauri::command]
+pub fn delete_mcp_action(
+    db: tauri::State<'_, DatabaseState>,
+    action_id: String,
+) -> Result<bool, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+    repo.delete_action(&action_id)
+}
+
+/// Get MCP action execution history
+#[tauri::command]
+pub fn get_mcp_action_executions(
+    db: tauri::State<'_, DatabaseState>,
+    action_id: Option<String>,
+    action_type: Option<String>,
+    status: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<MCPActionExecution>, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+
+    let action_type_parsed = action_type
+        .map(|t| t.parse::<MCPActionType>())
+        .transpose()
+        .map_err(|e| format!("Invalid action type: {}", e))?;
+
+    let status_parsed = status
+        .map(|s| s.parse::<ExecutionStatus>())
+        .transpose()
+        .map_err(|e| format!("Invalid status: {}", e))?;
+
+    let filter = ExecutionFilter {
+        action_id,
+        action_type: action_type_parsed,
+        status: status_parsed,
+        limit: limit.map(|l| l as usize).unwrap_or(50),
+    };
+
+    repo.list_executions(&filter)
+}
+
+/// Get a single execution by ID
+#[tauri::command]
+pub fn get_mcp_action_execution(
+    db: tauri::State<'_, DatabaseState>,
+    execution_id: String,
+) -> Result<Option<MCPActionExecution>, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+    repo.get_execution(&execution_id)
+}
+
+/// List all MCP action permissions
+#[tauri::command]
+pub fn list_mcp_action_permissions(
+    db: tauri::State<'_, DatabaseState>,
+) -> Result<Vec<MCPActionPermission>, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+    repo.list_permissions()
+}
+
+/// Update MCP action permission
+#[tauri::command]
+pub fn update_mcp_action_permission(
+    db: tauri::State<'_, DatabaseState>,
+    action_id: Option<String>,
+    action_type: Option<String>,
+    permission_level: String,
+) -> Result<MCPActionPermission, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+
+    let action_type_parsed = action_type
+        .map(|t| t.parse::<MCPActionType>())
+        .transpose()
+        .map_err(|e| format!("Invalid action type: {}", e))?;
+
+    let level = permission_level
+        .parse::<PermissionLevel>()
+        .map_err(|e| format!("Invalid permission level: {}", e))?;
+
+    let permission = MCPActionPermission {
+        id: uuid::Uuid::new_v4().to_string(),
+        action_id,
+        action_type: action_type_parsed,
+        permission_level: level,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    repo.save_permission(&permission)?;
+    Ok(permission)
+}
+
+/// Delete MCP action permission
+#[tauri::command]
+pub fn delete_mcp_action_permission(
+    db: tauri::State<'_, DatabaseState>,
+    permission_id: String,
+) -> Result<bool, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+    repo.delete_permission(&permission_id)
+}
+
+/// Cleanup old execution history
+#[tauri::command]
+pub fn cleanup_mcp_action_executions(
+    db: tauri::State<'_, DatabaseState>,
+    keep_count: Option<usize>,
+    max_age_days: Option<i64>,
+) -> Result<usize, String> {
+    let repo = MCPActionRepository::new(db.0.as_ref().clone());
+    repo.cleanup_old_executions(keep_count.unwrap_or(1000), max_age_days.unwrap_or(30))
+}

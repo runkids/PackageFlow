@@ -6,6 +6,7 @@ pub mod ai_cli;
 pub mod crypto;
 pub mod file_watcher;
 pub mod incoming_webhook;
+pub mod mcp_action;
 pub mod notification;
 
 pub use crypto::*;

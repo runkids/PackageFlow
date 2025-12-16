@@ -5,6 +5,7 @@ pub mod ai;
 pub mod apk;
 pub mod cli_tool;
 pub mod deploy;
+pub mod mcp_action;
 pub mod execution;
 pub mod git;
 pub mod incoming_webhook;

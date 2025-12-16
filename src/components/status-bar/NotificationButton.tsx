@@ -206,8 +206,8 @@ export const NotificationButton: React.FC = () => {
           )}
         />
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 min-w-[14px] h-[14px] px-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-[10px] leading-[14px] rounded-full flex items-center justify-center shadow-sm border border-card">
-            {unreadCount > 99 ? '99+' : unreadCount}
+          <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 bg-red-500/80 text-white text-[10px] font-medium leading-[15px] rounded-full flex items-center justify-center whitespace-nowrap">
+            {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </Button>

@@ -219,6 +219,55 @@ const SECRET_PATTERNS: &[(&str, &str)] = &[
     ("xoxp-", "[SLACK_TOKEN]"),      // Slack user token
 ];
 
+/// Keys that indicate sensitive data in JSON parameters
+const SENSITIVE_KEYS: &[&str] = &[
+    "api_key",
+    "apikey",
+    "secret",
+    "password",
+    "token",
+    "auth",
+    "authorization",
+    "bearer",
+    "credential",
+    "private_key",
+    "access_token",
+    "refresh_token",
+];
+
+/// Redaction placeholder for sensitive values
+const REDACTED: &str = "***REDACTED***";
+
+/// Sanitize sensitive data in JSON parameters before logging
+///
+/// Recursively processes JSON values and redacts any fields
+/// whose keys match sensitive patterns (case-insensitive).
+pub fn sanitize_sensitive(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut sanitized = serde_json::Map::new();
+            for (key, val) in map {
+                let key_lower = key.to_lowercase();
+                let is_sensitive = SENSITIVE_KEYS
+                    .iter()
+                    .any(|&pattern| key_lower.contains(pattern));
+
+                if is_sensitive {
+                    sanitized.insert(key.clone(), serde_json::Value::String(REDACTED.to_string()));
+                } else {
+                    sanitized.insert(key.clone(), sanitize_sensitive(val));
+                }
+            }
+            serde_json::Value::Object(sanitized)
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(sanitize_sensitive).collect())
+        }
+        // Primitive values pass through unchanged
+        _ => value.clone(),
+    }
+}
+
 /// Sanitize command output to remove potential secrets
 pub fn sanitize_output(output: &str) -> String {
     let mut result = output.to_string();
@@ -386,5 +435,44 @@ mod tests {
         assert!(limiter.check_and_increment().is_ok());
         assert!(limiter.check_and_increment().is_ok());
         assert!(limiter.check_and_increment().is_err());
+    }
+
+    #[test]
+    fn test_sanitize_sensitive_object() {
+        let input = serde_json::json!({
+            "name": "my-script",
+            "api_key": "sk-secret-key-12345",
+            "password": "super-secret",
+            "normal_field": "visible"
+        });
+        let sanitized = sanitize_sensitive(&input);
+        assert_eq!(sanitized["name"], "my-script");
+        assert_eq!(sanitized["api_key"], "***REDACTED***");
+        assert_eq!(sanitized["password"], "***REDACTED***");
+        assert_eq!(sanitized["normal_field"], "visible");
+    }
+
+    #[test]
+    fn test_sanitize_sensitive_nested() {
+        let input = serde_json::json!({
+            "config": {
+                "auth_token": "bearer-abc123",
+                "url": "https://example.com"
+            }
+        });
+        let sanitized = sanitize_sensitive(&input);
+        assert_eq!(sanitized["config"]["auth_token"], "***REDACTED***");
+        assert_eq!(sanitized["config"]["url"], "https://example.com");
+    }
+
+    #[test]
+    fn test_sanitize_sensitive_array() {
+        let input = serde_json::json!([
+            {"name": "item1", "secret": "hidden"},
+            {"name": "item2", "value": "visible"}
+        ]);
+        let sanitized = sanitize_sensitive(&input);
+        assert_eq!(sanitized[0]["secret"], "***REDACTED***");
+        assert_eq!(sanitized[1]["value"], "visible");
     }
 }

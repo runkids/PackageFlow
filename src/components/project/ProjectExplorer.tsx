@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown, Rocket, Search } from 'lucide-react';
+import { Folder, Package, GitBranch, RefreshCw, ExternalLink, Workflow as WorkflowIcon, FileBox, Code2, Shield, Terminal, Zap, Box, Layers, GitCommit, Hexagon, ChevronDown, Rocket, Search, Copy, Check } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
 import type { SettingsSection } from '../../types/settings';
@@ -131,6 +131,9 @@ export function ProjectExplorer({
 
   // Editor dropdown state
   const [isEditorDropdownOpen, setIsEditorDropdownOpen] = useState(false);
+
+  // Copy to clipboard state
+  const [copiedField, setCopiedField] = useState<'name' | 'path' | null>(null);
 
   // Toolchain conflict detection state (017-toolchain-conflict-detection)
   const [showToolchainConflictDialog, setShowToolchainConflictDialog] = useState(false);
@@ -320,6 +323,17 @@ export function ProjectExplorer({
     loadEditors();
   }, [loadWorktrees, loadEditors]);
 
+  // Copy to clipboard handler
+  const handleCopy = useCallback(async (field: 'name' | 'path', text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  }, []);
+
   // Listen for package.json changes to refresh version badge and other info
   useEffect(() => {
     if (!project?.path) return;
@@ -406,9 +420,18 @@ export function ProjectExplorer({
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-foreground truncate">
-                {project.name}
-              </h1>
+              <button
+                onClick={() => handleCopy('name', project.name)}
+                className="group flex items-center gap-1.5 text-xl font-semibold text-foreground hover:text-blue-400 transition-colors cursor-pointer"
+                title="Click to copy name"
+              >
+                <span className="truncate">{project.name}</span>
+                {copiedField === 'name' ? (
+                  <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
+                ) : (
+                  <Copy className="w-4 h-4 opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
+                )}
+              </button>
               {project.isMonorepo && (
                 (() => {
                   const tool = project.monorepoTool;
@@ -494,9 +517,18 @@ export function ProjectExplorer({
             </div>
             {/* Path and Worktree Indicator */}
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-sm text-muted-foreground truncate" title={displayPath}>
-                {formatPath(displayPath)}
-              </p>
+              <button
+                onClick={() => handleCopy('path', displayPath)}
+                className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-blue-400 transition-colors cursor-pointer truncate"
+                title="Click to copy path"
+              >
+                <span className="truncate">{formatPath(displayPath)}</span>
+                {copiedField === 'path' ? (
+                  <Check className="w-3 h-3 text-green-400 flex-shrink-0" />
+                ) : (
+                  <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
+                )}
+              </button>
               {/* Worktree badge (read-only indicator) */}
               {allWorktrees.length > 1 && currentWorktree && (
                 <span

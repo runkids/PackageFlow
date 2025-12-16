@@ -21,6 +21,7 @@ import { useUpdater } from './hooks/useUpdater';
 import { UpdateDialog } from './components/ui/UpdateDialog';
 import { useMcpStatus } from './hooks/useMcpStatus';
 import { NotificationButton, BackgroundTasksButton, StopProcessesButton, McpStatusButton } from './components/status-bar';
+import { ActionConfirmationDialog } from './components/settings/mcp';
 
 type AppTab = 'workflow' | 'project-manager';
 
@@ -619,6 +620,9 @@ function App() {
           onRetry={retryUpdate}
         />
       )}
+
+      {/* MCP Action Confirmation Dialog - floating approval UI */}
+      <ActionConfirmationDialog position="bottom-right" />
     </div>
   );
 }

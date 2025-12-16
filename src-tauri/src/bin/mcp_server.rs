@@ -33,8 +33,14 @@ use uuid::Uuid;
 use packageflow_lib::utils::database::Database;
 use packageflow_lib::repositories::{
     ProjectRepository, WorkflowRepository, SettingsRepository,
-    TemplateRepository, MCPRepository, McpLogEntry,
+    TemplateRepository, MCPRepository, McpLogEntry, MCPActionRepository,
 };
+
+// Import MCP action models and services
+use packageflow_lib::models::mcp_action::{
+    MCPActionType, PermissionLevel, ExecutionStatus, ActionFilter, ExecutionFilter,
+};
+use packageflow_lib::services::mcp_action::create_executor;
 use rusqlite::params;
 
 // Import shared store utilities (for validation, rate limiting, etc.)
@@ -107,6 +113,16 @@ impl ToolRateLimiters {
 
 static TOOL_RATE_LIMITERS: Lazy<ToolRateLimiters> = Lazy::new(ToolRateLimiters::default);
 
+/// Concurrency limiter for action execution
+/// Limits concurrent action executions to prevent resource exhaustion
+use tokio::sync::Semaphore;
+
+/// Maximum concurrent action executions (scripts, webhooks, workflows)
+const MAX_CONCURRENT_ACTIONS: usize = 10;
+
+/// Global semaphore for action concurrency control
+static ACTION_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(MAX_CONCURRENT_ACTIONS));
+
 // Note: MCP permission types are now imported from packageflow_lib::models::mcp
 
 /// Tool permission category
@@ -125,11 +141,14 @@ fn get_tool_category(tool_name: &str) -> ToolCategory {
     match tool_name {
         // Read-only tools
         "list_projects" | "get_project" | "list_worktrees" | "get_worktree_status" | "get_git_diff" |
-        "list_workflows" | "get_workflow" | "list_step_templates" => ToolCategory::ReadOnly,
+        "list_workflows" | "get_workflow" | "list_step_templates" |
+        // MCP Action read-only tools
+        "list_actions" | "get_action" | "list_action_executions" | "get_execution_status" |
+        "get_action_permissions" => ToolCategory::ReadOnly,
         // Write tools
         "create_workflow" | "add_workflow_step" | "create_step_template" => ToolCategory::Write,
-        // Execute tools
-        "run_workflow" => ToolCategory::Execute,
+        // Execute tools (including MCP action execution)
+        "run_workflow" | "run_script" | "trigger_webhook" | "run_mcp_workflow" | "run_npm_script" => ToolCategory::Execute,
         // Unknown tools default to Execute (most restrictive)
         _ => ToolCategory::Execute,
     }
@@ -849,6 +868,120 @@ pub struct RunWorkflowParams {
     /// Optional project path override (for working directory)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RunNpmScriptParams {
+    /// Project path (required - the directory containing package.json)
+    pub project_path: String,
+    /// Script name from package.json scripts (e.g., "build", "dev", "test")
+    pub script_name: String,
+    /// Optional arguments to pass to the script
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    /// Timeout in milliseconds (default: 5 minutes, max: 1 hour)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+
+// ============================================================================
+// MCP Action Tool Parameters
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListActionsParams {
+    /// Filter by action type (script, webhook, workflow)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_type: Option<String>,
+    /// Filter by project ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// Only return enabled actions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_only: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetActionParams {
+    /// Action ID to retrieve
+    pub action_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RunScriptParams {
+    /// Action ID of the script to execute
+    pub action_id: String,
+    /// Additional arguments to pass to the script
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    /// Environment variable overrides
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
+    /// Working directory override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TriggerWebhookParams {
+    /// Action ID of the webhook to trigger
+    pub action_id: String,
+    /// Variables for URL/payload template substitution
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variables: Option<HashMap<String, String>>,
+    /// Payload override (replaces template)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RunMcpWorkflowParams {
+    /// Action ID of the workflow action to execute
+    pub action_id: String,
+    /// Parameter overrides for the workflow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<HashMap<String, serde_json::Value>>,
+    /// Whether to wait for workflow completion
+    #[serde(default)]
+    pub wait_for_completion: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetExecutionStatusParams {
+    /// Execution ID to check
+    pub execution_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListActionExecutionsParams {
+    /// Filter by action ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
+    /// Filter by action type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_type: Option<String>,
+    /// Filter by status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Maximum number of results
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetActionPermissionsParams {
+    /// Optional action ID to get specific permission
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
 }
 
 // ============================================================================
@@ -2103,6 +2236,191 @@ impl PackageFlowMcp {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
+    // ========================================================================
+    // NPM Script Execution Tool
+    // ========================================================================
+
+    /// Execute an npm script from a project's package.json
+    /// Supports volta and corepack for proper toolchain management
+    #[tool(description = "Execute an npm/yarn/pnpm script from a project's package.json. Automatically detects and uses volta/corepack if configured. First use get_project to discover available scripts, then use this tool to run them.")]
+    async fn run_npm_script(
+        &self,
+        Parameters(params): Parameters<RunNpmScriptParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let project_path = PathBuf::from(&params.project_path);
+        let package_json_path = project_path.join("package.json");
+
+        // Check if package.json exists
+        if !package_json_path.exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("No package.json found at: {}", params.project_path)
+            )]));
+        }
+
+        // Read and parse package.json to verify script exists and get toolchain config
+        let package_json_content = std::fs::read_to_string(&package_json_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to read package.json: {}", e), None))?;
+
+        let package_json: serde_json::Value = serde_json::from_str(&package_json_content)
+            .map_err(|e| McpError::internal_error(format!("Failed to parse package.json: {}", e), None))?;
+
+        // Check if the script exists
+        let scripts = package_json.get("scripts")
+            .and_then(|s| s.as_object());
+
+        if let Some(scripts_obj) = scripts {
+            if !scripts_obj.contains_key(&params.script_name) {
+                let available_scripts: Vec<&String> = scripts_obj.keys().collect();
+                return Ok(CallToolResult::error(vec![Content::text(
+                    format!(
+                        "Script '{}' not found in package.json. Available scripts: {}",
+                        params.script_name,
+                        available_scripts.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    )
+                )]));
+            }
+        } else {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "No scripts defined in package.json"
+            )]));
+        }
+
+        // Parse toolchain configuration from package.json
+        let volta_config = package_json.get("volta");
+        let package_manager_field = package_json.get("packageManager")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        // Detect package manager from lock files or packageManager field
+        let (package_manager, pm_version) = if let Some(ref pm_field) = package_manager_field {
+            // Parse packageManager field (e.g., "pnpm@9.15.0+sha512.xxx")
+            let parts: Vec<&str> = pm_field.split('@').collect();
+            let pm_name = parts.first().unwrap_or(&"npm");
+            let version = parts.get(1).map(|v| {
+                // Remove hash if present (e.g., "9.15.0+sha512.xxx" -> "9.15.0")
+                v.split('+').next().unwrap_or(v).to_string()
+            });
+            (pm_name.to_string(), version)
+        } else if project_path.join("pnpm-lock.yaml").exists() {
+            ("pnpm".to_string(), None)
+        } else if project_path.join("yarn.lock").exists() {
+            ("yarn".to_string(), None)
+        } else if project_path.join("bun.lockb").exists() {
+            ("bun".to_string(), None)
+        } else {
+            ("npm".to_string(), None)
+        };
+
+        // Check volta availability
+        let home = path_resolver::get_home_dir();
+        let volta_available = home.as_ref()
+            .map(|h| std::path::Path::new(&format!("{}/.volta/bin/volta", h)).exists())
+            .unwrap_or(false);
+
+        // Determine toolchain strategy
+        let use_volta = volta_available && volta_config.is_some();
+        let use_corepack = package_manager_field.is_some();
+
+        // Build the command based on toolchain strategy
+        let (command, strategy_used) = if use_volta {
+            // Use volta run for proper Node.js version management
+            let volta_path = home.as_ref()
+                .map(|h| format!("{}/.volta/bin/volta", h))
+                .unwrap_or_else(|| "volta".to_string());
+
+            let mut cmd_parts = vec![volta_path, "run".to_string()];
+
+            // Add node version if specified in volta config
+            if let Some(volta) = volta_config {
+                if let Some(node_ver) = volta.get("node").and_then(|v| v.as_str()) {
+                    cmd_parts.push("--node".to_string());
+                    cmd_parts.push(node_ver.to_string());
+                }
+
+                // Add package manager version from volta config (unless using corepack)
+                if !use_corepack {
+                    if let Some(pnpm_ver) = volta.get("pnpm").and_then(|v| v.as_str()) {
+                        cmd_parts.push("--pnpm".to_string());
+                        cmd_parts.push(pnpm_ver.to_string());
+                    } else if let Some(yarn_ver) = volta.get("yarn").and_then(|v| v.as_str()) {
+                        cmd_parts.push("--yarn".to_string());
+                        cmd_parts.push(yarn_ver.to_string());
+                    } else if let Some(npm_ver) = volta.get("npm").and_then(|v| v.as_str()) {
+                        cmd_parts.push("--npm".to_string());
+                        cmd_parts.push(npm_ver.to_string());
+                    }
+                }
+            }
+
+            // Add the package manager run command
+            cmd_parts.push(package_manager.clone());
+            cmd_parts.push("run".to_string());
+            cmd_parts.push(params.script_name.clone());
+
+            // Add script arguments
+            if let Some(ref args) = params.args {
+                cmd_parts.push("--".to_string());
+                cmd_parts.extend(args.iter().cloned());
+            }
+
+            let strategy = if use_corepack { "volta+corepack" } else { "volta" };
+            (cmd_parts.join(" "), strategy.to_string())
+        } else {
+            // Direct execution - let PATH (with volta shims if available) handle it
+            // Corepack will intercept if packageManager is set and corepack is enabled
+            let mut cmd = format!("{} run {}", package_manager, params.script_name);
+
+            if let Some(ref args) = params.args {
+                cmd.push_str(&format!(" -- {}", args.join(" ")));
+            }
+
+            let strategy = if use_corepack { "corepack" } else { "system" };
+            (cmd, strategy.to_string())
+        };
+
+        // Validate and apply timeout (default 5 min, max 1 hour)
+        let timeout_ms = params.timeout_ms.map(|t| t.min(3_600_000)).unwrap_or(300_000);
+
+        // Execute the command
+        match Self::shell_command_async(&params.project_path, &command, Some(timeout_ms)).await {
+            Ok((exit_code, stdout, stderr)) => {
+                // Sanitize outputs
+                let sanitized_stdout = sanitize_output(&stdout);
+                let sanitized_stderr = sanitize_output(&stderr);
+
+                let response = serde_json::json!({
+                    "success": exit_code == 0,
+                    "script_name": params.script_name,
+                    "package_manager": package_manager,
+                    "package_manager_version": pm_version,
+                    "toolchain_strategy": strategy_used,
+                    "volta_available": volta_available,
+                    "volta_config": volta_config.is_some(),
+                    "corepack_config": package_manager_field.is_some(),
+                    "command": command,
+                    "exit_code": exit_code,
+                    "stdout": sanitized_stdout,
+                    "stderr": sanitized_stderr,
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+                if exit_code == 0 {
+                    Ok(CallToolResult::success(vec![Content::text(json)]))
+                } else {
+                    Ok(CallToolResult::error(vec![Content::text(json)]))
+                }
+            }
+            Err(e) => {
+                let sanitized_error = sanitize_error(&e);
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Failed to execute script '{}': {}", params.script_name, sanitized_error)
+                )]))
+            }
+        }
+    }
+
     /// Save execution history to database
     fn save_execution_history(
         execution_id: &str,
@@ -2166,6 +2484,454 @@ impl PackageFlowMcp {
 
             Ok(())
         })
+    }
+
+    // ========================================================================
+    // MCP Action Tools
+    // ========================================================================
+
+    /// List available MCP actions (scripts, webhooks, workflows)
+    #[tool(description = "List all available MCP actions that can be executed. Filter by type (script, webhook, workflow) or project.")]
+    async fn list_actions(
+        &self,
+        Parameters(params): Parameters<ListActionsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db);
+
+        // Build filter
+        let filter = ActionFilter {
+            action_type: params.action_type.as_ref().and_then(|t| {
+                match t.as_str() {
+                    "script" => Some(MCPActionType::Script),
+                    "webhook" => Some(MCPActionType::Webhook),
+                    "workflow" => Some(MCPActionType::Workflow),
+                    _ => None,
+                }
+            }),
+            project_id: params.project_id,
+            is_enabled: params.enabled_only,
+        };
+
+        let actions = repo.list_actions(&filter)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "actions": actions,
+            "total": actions.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get details of a specific MCP action
+    #[tool(description = "Get detailed information about a specific MCP action by ID.")]
+    async fn get_action(
+        &self,
+        Parameters(params): Parameters<GetActionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db);
+
+        let action = repo.get_action(&params.action_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        match action {
+            Some(action) => {
+                let json = serde_json::to_string_pretty(&action)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            None => {
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Action not found: {}", params.action_id)
+                )]))
+            }
+        }
+    }
+
+    /// Execute a script action via MCP
+    #[tool(description = "Execute a predefined script action. Requires user confirmation unless auto-approve is configured.")]
+    async fn run_script(
+        &self,
+        Parameters(params): Parameters<RunScriptParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let start = std::time::Instant::now();
+
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db.clone());
+
+        // Get the action
+        let action = repo.get_action(&params.action_id)
+            .map_err(|e| McpError::internal_error(e, None))?
+            .ok_or_else(|| McpError::invalid_params(
+                format!("Script action not found: {}", params.action_id),
+                None
+            ))?;
+
+        // Verify it's a script action
+        if action.action_type != MCPActionType::Script {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Action {} is not a script action", params.action_id)
+            )]));
+        }
+
+        // Check if action is enabled
+        if !action.is_enabled {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Script action {} is disabled", action.name)
+            )]));
+        }
+
+        // Check permission
+        let permission = repo.get_permission(Some(&params.action_id), &action.action_type)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        if permission == PermissionLevel::Deny {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Permission denied for action: {}", action.name)
+            )]));
+        }
+
+        // Create execution record
+        let execution_id = Uuid::new_v4().to_string();
+        let started_at = Utc::now().to_rfc3339();
+
+        let mut execution = packageflow_lib::models::mcp_action::MCPActionExecution {
+            id: execution_id.clone(),
+            action_id: Some(params.action_id.clone()),
+            action_type: action.action_type.clone(),
+            action_name: action.name.clone(),
+            source_client: Some("mcp".to_string()),
+            parameters: Some(serde_json::to_value(&params).unwrap_or_default()),
+            status: ExecutionStatus::Running,
+            result: None,
+            error_message: None,
+            started_at: started_at.clone(),
+            completed_at: None,
+            duration_ms: None,
+        };
+
+        repo.save_execution(&execution)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Acquire semaphore permit for concurrency control
+        let _permit = ACTION_SEMAPHORE.acquire().await
+            .map_err(|e| McpError::internal_error(format!("Failed to acquire execution permit: {}", e), None))?;
+
+        // Build execution parameters
+        let mut exec_params = serde_json::json!({
+            "config": action.config
+        });
+
+        // Apply overrides
+        if let Some(cwd) = &params.cwd {
+            exec_params["cwd"] = serde_json::Value::String(cwd.clone());
+        }
+
+        // Execute the script
+        let executor = create_executor(MCPActionType::Script);
+        let result = executor.execute(exec_params).await;
+
+        let duration_ms = start.elapsed().as_millis() as i64;
+        let completed_at = Utc::now().to_rfc3339();
+
+        // Update execution record
+        match result {
+            Ok(result_value) => {
+                execution.status = ExecutionStatus::Completed;
+                execution.result = Some(result_value.clone());
+                execution.completed_at = Some(completed_at);
+                execution.duration_ms = Some(duration_ms);
+
+                repo.save_execution(&execution)
+                    .map_err(|e| McpError::internal_error(e, None))?;
+
+                let response = serde_json::json!({
+                    "success": true,
+                    "executionId": execution_id,
+                    "actionName": action.name,
+                    "result": result_value
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(error) => {
+                let sanitized_error = sanitize_error(&error);
+                execution.status = ExecutionStatus::Failed;
+                execution.error_message = Some(sanitized_error.clone());
+                execution.completed_at = Some(completed_at);
+                execution.duration_ms = Some(duration_ms);
+
+                repo.save_execution(&execution)
+                    .map_err(|e| McpError::internal_error(e, None))?;
+
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Script execution failed: {}", sanitized_error)
+                )]))
+            }
+        }
+    }
+
+    /// Trigger a webhook action via MCP
+    #[tool(description = "Trigger a configured webhook action with optional variable substitution.")]
+    async fn trigger_webhook(
+        &self,
+        Parameters(params): Parameters<TriggerWebhookParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let start = std::time::Instant::now();
+
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db.clone());
+
+        // Get the action
+        let action = repo.get_action(&params.action_id)
+            .map_err(|e| McpError::internal_error(e, None))?
+            .ok_or_else(|| McpError::invalid_params(
+                format!("Webhook action not found: {}", params.action_id),
+                None
+            ))?;
+
+        // Verify it's a webhook action
+        if action.action_type != MCPActionType::Webhook {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Action {} is not a webhook action", params.action_id)
+            )]));
+        }
+
+        // Check if action is enabled
+        if !action.is_enabled {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Webhook action {} is disabled", action.name)
+            )]));
+        }
+
+        // Check permission
+        let permission = repo.get_permission(Some(&params.action_id), &action.action_type)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        if permission == PermissionLevel::Deny {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Permission denied for action: {}", action.name)
+            )]));
+        }
+
+        // Create execution record
+        let execution_id = Uuid::new_v4().to_string();
+        let started_at = Utc::now().to_rfc3339();
+
+        let mut execution = packageflow_lib::models::mcp_action::MCPActionExecution {
+            id: execution_id.clone(),
+            action_id: Some(params.action_id.clone()),
+            action_type: action.action_type.clone(),
+            action_name: action.name.clone(),
+            source_client: Some("mcp".to_string()),
+            parameters: Some(serde_json::to_value(&params).unwrap_or_default()),
+            status: ExecutionStatus::Running,
+            result: None,
+            error_message: None,
+            started_at: started_at.clone(),
+            completed_at: None,
+            duration_ms: None,
+        };
+
+        repo.save_execution(&execution)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Acquire semaphore permit
+        let _permit = ACTION_SEMAPHORE.acquire().await
+            .map_err(|e| McpError::internal_error(format!("Failed to acquire execution permit: {}", e), None))?;
+
+        // Build execution parameters
+        let mut exec_params = serde_json::json!({
+            "config": action.config
+        });
+
+        if let Some(vars) = &params.variables {
+            exec_params["variables"] = serde_json::to_value(vars).unwrap_or_default();
+        }
+        if let Some(payload) = &params.payload {
+            exec_params["payload"] = payload.clone();
+        }
+
+        // Execute the webhook
+        let executor = create_executor(MCPActionType::Webhook);
+        let result = executor.execute(exec_params).await;
+
+        let duration_ms = start.elapsed().as_millis() as i64;
+        let completed_at = Utc::now().to_rfc3339();
+
+        // Update execution record
+        match result {
+            Ok(result_value) => {
+                execution.status = ExecutionStatus::Completed;
+                execution.result = Some(result_value.clone());
+                execution.completed_at = Some(completed_at);
+                execution.duration_ms = Some(duration_ms);
+
+                repo.save_execution(&execution)
+                    .map_err(|e| McpError::internal_error(e, None))?;
+
+                let response = serde_json::json!({
+                    "success": true,
+                    "executionId": execution_id,
+                    "actionName": action.name,
+                    "result": result_value
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(error) => {
+                let sanitized_error = sanitize_error(&error);
+                execution.status = ExecutionStatus::Failed;
+                execution.error_message = Some(sanitized_error.clone());
+                execution.completed_at = Some(completed_at);
+                execution.duration_ms = Some(duration_ms);
+
+                repo.save_execution(&execution)
+                    .map_err(|e| McpError::internal_error(e, None))?;
+
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Webhook execution failed: {}", sanitized_error)
+                )]))
+            }
+        }
+    }
+
+    /// Get the status of an action execution
+    #[tool(description = "Get the current status and result of a running or completed action execution.")]
+    async fn get_execution_status(
+        &self,
+        Parameters(params): Parameters<GetExecutionStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db);
+
+        let execution = repo.get_execution(&params.execution_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        match execution {
+            Some(exec) => {
+                let json = serde_json::to_string_pretty(&exec)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            None => {
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Execution not found: {}", params.execution_id)
+                )]))
+            }
+        }
+    }
+
+    /// List action execution history
+    #[tool(description = "List recent action executions with optional filtering by action, type, or status.")]
+    async fn list_action_executions(
+        &self,
+        Parameters(params): Parameters<ListActionExecutionsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db);
+
+        let filter = ExecutionFilter {
+            action_id: params.action_id,
+            action_type: params.action_type.as_ref().and_then(|t| {
+                match t.as_str() {
+                    "script" => Some(MCPActionType::Script),
+                    "webhook" => Some(MCPActionType::Webhook),
+                    "workflow" => Some(MCPActionType::Workflow),
+                    _ => None,
+                }
+            }),
+            status: params.status.as_ref().and_then(|s| {
+                match s.as_str() {
+                    "pending_confirm" => Some(ExecutionStatus::PendingConfirm),
+                    "queued" => Some(ExecutionStatus::Queued),
+                    "running" => Some(ExecutionStatus::Running),
+                    "completed" => Some(ExecutionStatus::Completed),
+                    "failed" => Some(ExecutionStatus::Failed),
+                    "cancelled" => Some(ExecutionStatus::Cancelled),
+                    "timed_out" => Some(ExecutionStatus::TimedOut),
+                    _ => None,
+                }
+            }),
+            limit: params.limit.map(|l| l as usize).unwrap_or(20),
+        };
+
+        let executions = repo.list_executions(&filter)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "executions": executions,
+            "total": executions.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get action permissions
+    #[tool(description = "Get permission configuration for actions. Shows whether actions require confirmation, auto-approve, or are denied.")]
+    async fn get_action_permissions(
+        &self,
+        Parameters(params): Parameters<GetActionPermissionsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db);
+
+        if let Some(action_id) = params.action_id {
+            // Get the action to get its type
+            let action = repo.get_action(&action_id)
+                .map_err(|e| McpError::internal_error(e, None))?
+                .ok_or_else(|| McpError::invalid_params(
+                    format!("Action not found: {}", action_id),
+                    None
+                ))?;
+
+            // Get permission for specific action
+            let permission = repo.get_permission(Some(&action_id), &action.action_type)
+                .map_err(|e| McpError::internal_error(e, None))?;
+
+            let response = serde_json::json!({
+                "actionId": action_id,
+                "permissionLevel": permission.to_string()
+            });
+
+            let json = serde_json::to_string_pretty(&response)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            Ok(CallToolResult::success(vec![Content::text(json)]))
+        } else {
+            // List all permissions
+            let permissions = repo.list_permissions()
+                .map_err(|e| McpError::internal_error(e, None))?;
+
+            let response = serde_json::json!({
+                "permissions": permissions,
+                "defaultLevel": "require_confirm"
+            });
+
+            let json = serde_json::to_string_pretty(&response)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            Ok(CallToolResult::success(vec![Content::text(json)]))
+        }
     }
 }
 
@@ -2376,8 +3142,141 @@ impl ServerHandler for PackageFlowMcp {
     }
 }
 
+/// Print help information about available MCP tools
+fn print_help() {
+    let version = env!("CARGO_PKG_VERSION");
+    println!(r#"PackageFlow MCP Server v{}
+
+USAGE:
+    packageflow-mcp [OPTIONS]
+
+OPTIONS:
+    --help, -h      Print this help information
+    --version, -v   Print version information
+    --list-tools    List all available MCP tools
+
+DESCRIPTION:
+    PackageFlow MCP Server provides AI assistants (Claude Code, Cursor, etc.)
+    with tools to manage Git projects, worktrees, workflows, and automation.
+
+MCP TOOLS:
+
+  📁 PROJECT MANAGEMENT
+    list_projects       List all registered projects with detailed info
+    get_project         Get project details (scripts, workflows, git info)
+
+  🌳 GIT WORKTREE
+    list_worktrees      List all git worktrees for a project
+    get_worktree_status Get git status (branch, staged, modified, untracked)
+    get_git_diff        Get staged changes diff for commit messages
+
+  ⚡ WORKFLOWS
+    list_workflows      List all workflows, filter by project
+    get_workflow        Get detailed workflow info with all steps
+    create_workflow     Create a new workflow
+    add_workflow_step   Add a script step to a workflow
+    run_workflow        Execute a workflow synchronously
+
+  📝 TEMPLATES
+    list_step_templates List available step templates
+    create_step_template Create a reusable step template
+
+  🔧 NPM/PACKAGE SCRIPTS
+    run_npm_script      Run npm/yarn/pnpm scripts (volta/corepack support)
+
+  🎯 MCP ACTIONS
+    list_actions        List all available MCP actions
+    get_action          Get action details by ID
+    run_script          Execute a predefined script action
+    trigger_webhook     Trigger a configured webhook action
+    get_execution_status Get action execution status
+    list_action_executions List recent action executions
+    get_action_permissions Get permission configuration
+
+PERMISSION MODES:
+    read_only           Only read operations allowed (default)
+    read_write          Read and write operations allowed
+    full_access         All operations including execute allowed
+
+CONFIGURATION:
+    Configure in PackageFlow: Settings → MCP Server
+
+EXAMPLES:
+    # Start the MCP server (for AI integration)
+    packageflow-mcp
+
+    # Get help
+    packageflow-mcp --help
+
+    # List available tools
+    packageflow-mcp --list-tools
+"#, version);
+}
+
+/// Print version information
+fn print_version() {
+    println!("packageflow-mcp {}", env!("CARGO_PKG_VERSION"));
+}
+
+/// List all tools in a simple format
+fn list_tools_simple() {
+    println!("PackageFlow MCP Tools:\n");
+    let tools = [
+        ("list_projects", "List all registered projects with detailed info"),
+        ("get_project", "Get project details (scripts, workflows, git info)"),
+        ("list_worktrees", "List all git worktrees for a project"),
+        ("get_worktree_status", "Get git status (branch, staged, modified, untracked)"),
+        ("get_git_diff", "Get staged changes diff for commit messages"),
+        ("list_workflows", "List all workflows, filter by project"),
+        ("get_workflow", "Get detailed workflow info with all steps"),
+        ("create_workflow", "Create a new workflow"),
+        ("add_workflow_step", "Add a script step to a workflow"),
+        ("run_workflow", "Execute a workflow synchronously"),
+        ("list_step_templates", "List available step templates"),
+        ("create_step_template", "Create a reusable step template"),
+        ("run_npm_script", "Run npm/yarn/pnpm scripts (volta/corepack support)"),
+        ("list_actions", "List all MCP actions"),
+        ("get_action", "Get action details by ID"),
+        ("run_script", "Execute a script action"),
+        ("trigger_webhook", "Trigger a webhook action"),
+        ("get_execution_status", "Get action execution status"),
+        ("list_action_executions", "List recent executions"),
+        ("get_action_permissions", "Get permission configuration"),
+    ];
+
+    for (name, desc) in tools {
+        println!("  {:<25} {}", name, desc);
+    }
+    println!();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+
+    for arg in &args[1..] {
+        match arg.as_str() {
+            "--help" | "-h" => {
+                print_help();
+                return Ok(());
+            }
+            "--version" | "-v" => {
+                print_version();
+                return Ok(());
+            }
+            "--list-tools" => {
+                list_tools_simple();
+                return Ok(());
+            }
+            _ => {
+                eprintln!("Unknown option: {}", arg);
+                eprintln!("Use --help for usage information");
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Debug: Log startup info
     eprintln!("[MCP Server] Starting PackageFlow MCP Server (PID: {})...", std::process::id());
 

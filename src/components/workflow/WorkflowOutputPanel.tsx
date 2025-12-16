@@ -3,9 +3,10 @@
  * Displays workflow execution output in a dialog with terminal-like styling
  * Feature 013: Extended to show child workflow execution summaries
  * Feature: UI improvement - grouped output by node with visual distinction
+ * Feature: UI redesign - matches HistoryOutputDialog style with gradient header
  */
 
-import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { useRef, useEffect, useMemo, useState, useCallback, useId } from 'react';
 import { X, Terminal, Copy, Check, Workflow, Loader2, CheckCircle2, XCircle, AlertCircle, List, Layers } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
@@ -16,6 +17,7 @@ import { formatDuration } from '../../hooks/useWorkflowExecution';
 import { formatChildDuration, formatChildProgress } from '../../hooks/useChildExecution';
 import { OutputNodeGroup, groupOutputByNode } from './OutputNodeGroup';
 import { VirtualizedOutputList, getOutputLineClassName } from './VirtualizedOutputList';
+import { registerModal, unregisterModal, isTopModal } from '../ui/modalStack';
 
 type ViewMode = 'grouped' | 'raw';
 
@@ -26,6 +28,16 @@ interface WorkflowOutputPanelProps {
   onClose: () => void;
 }
 
+/** Status label mapping */
+const statusLabels: Record<string, string> = {
+  idle: 'Idle',
+  starting: 'Starting',
+  running: 'Running',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
 export function WorkflowOutputPanel({
   workflowId: _workflowId,
   workflowName,
@@ -33,6 +45,8 @@ export function WorkflowOutputPanel({
   onClose,
 }: WorkflowOutputPanelProps) {
   void _workflowId; // Reserved for future use
+  const modalId = useId();
+  const contentRef = useRef<HTMLDivElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -40,6 +54,22 @@ export function WorkflowOutputPanel({
 
   const { status, output, startedAt, finishedAt, error, childExecutions } = state;
   const isActive = status === 'starting' || status === 'running';
+
+  // Register/unregister modal
+  useEffect(() => {
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId]);
+
+  // Focus trap
+  useEffect(() => {
+    if (contentRef.current) {
+      const timer = setTimeout(() => {
+        contentRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Feature 013: Check if there are any child executions to display
   const childExecutionEntries = useMemo(() => {
@@ -105,16 +135,17 @@ export function WorkflowOutputPanel({
     }
   };
 
-  // Close on Escape key
+  // Handle ESC key with modal stack
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [modalId, onClose]);
 
   return (
     <div
@@ -131,24 +162,77 @@ export function WorkflowOutputPanel({
       />
 
       {/* Panel */}
-      <div className="fixed inset-4 md:inset-8 lg:inset-12 flex flex-col bg-background rounded-xl border border-border shadow-2xl shadow-black/50 animate-in fade-in-0 zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-3">
-            <Terminal className="w-5 h-5 text-muted-foreground" />
-            <h2 id="output-panel-title" className="text-sm font-medium text-foreground">
-              {workflowName}
-            </h2>
-            <ExecutionStatusIcon status={status} />
-            {startedAt && (
-              <span className="text-xs text-muted-foreground">
-                {formatDuration(startedAt, finishedAt)}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
+      <div
+        ref={contentRef}
+        className={cn(
+          'fixed inset-4 md:inset-8 lg:inset-12 flex flex-col',
+          'bg-background rounded-xl',
+          'border border-indigo-500/30',
+          'shadow-2xl shadow-black/60',
+          'animate-in fade-in-0 zoom-in-95 duration-200',
+          'focus:outline-none'
+        )}
+        tabIndex={-1}
+      >
+        {/* Header with gradient */}
+        <div
+          className={cn(
+            'relative px-5 py-4 border-b border-border',
+            'bg-gradient-to-r',
+            'dark:from-indigo-500/15 dark:via-indigo-600/5 dark:to-transparent',
+            'from-indigo-500/10 via-indigo-600/5 to-transparent'
+          )}
+        >
+          {/* Close button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="absolute right-4 top-4 h-auto w-auto p-2"
+            aria-label="Close dialog"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+
+          <div className="flex items-center gap-4 pr-10">
+            {/* Icon badge */}
+            <div
+              className={cn(
+                'flex-shrink-0 w-11 h-11 rounded-xl',
+                'flex items-center justify-center',
+                'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+                'border border-indigo-500/20',
+                'bg-indigo-500/10',
+                'shadow-lg'
+              )}
+            >
+              <Terminal className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2
+                id="output-panel-title"
+                className="text-base font-semibold text-foreground leading-tight"
+              >
+                {workflowName}
+              </h2>
+              <div className="flex items-center gap-2 mt-1">
+                <ExecutionStatusIcon status={status} />
+                <span className="text-sm text-muted-foreground">
+                  {statusLabels[status] || status}
+                </span>
+                {startedAt && (
+                  <>
+                    <span className="text-sm text-muted-foreground">•</span>
+                    <span className="text-sm text-muted-foreground">
+                      {formatDuration(startedAt, finishedAt)}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* View mode toggle */}
-            <div className="flex items-center bg-secondary rounded-lg p-0.5 mr-2">
+            <div className="flex items-center bg-secondary rounded-lg p-0.5">
               <Button
                 variant="ghost"
                 size="icon"
@@ -178,40 +262,16 @@ export function WorkflowOutputPanel({
                 <List className="w-4 h-4" />
               </Button>
             </div>
-            {/* Copy button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleCopy}
-              disabled={output.length === 0}
-              className="h-9 w-9"
-              title="Copy output"
-            >
-              {copied ? (
-                <Check className="w-4 h-4 text-green-400" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </Button>
-            {/* Close button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="h-9 w-9"
-              title="Close (Esc)"
-            >
-              <X className="w-4 h-4" />
-            </Button>
           </div>
         </div>
 
         {/* Output content */}
-        <div
-          ref={outputRef}
-          onScroll={handleScroll}
-          className="flex-1 overflow-auto p-4 bg-card"
-        >
+        <div className="flex-1 overflow-hidden p-4 bg-card/30">
+          <div
+            ref={outputRef}
+            onScroll={handleScroll}
+            className="h-full overflow-auto"
+          >
           {output.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <Terminal className="w-12 h-12 mb-3 opacity-30" />
@@ -246,6 +306,7 @@ export function WorkflowOutputPanel({
               className="h-full"
             />
           )}
+          </div>
         </div>
 
         {/* Feature 013: Child Workflow Execution Summary */}
@@ -265,30 +326,66 @@ export function WorkflowOutputPanel({
           </div>
         )}
 
-        {/* Footer with error or status */}
-        {(error || status === 'completed' || status === 'failed' || status === 'cancelled') && (
-          <div
-            className={cn(
-              'px-4 py-2 border-t text-xs',
-              status === 'completed' && 'border-green-500/30 bg-green-500/10 text-green-400',
-              status === 'failed' && 'border-red-500/30 bg-red-500/10 text-red-400',
-              status === 'cancelled' && 'border-muted bg-muted/50 text-muted-foreground'
-            )}
-          >
+        {/* Footer */}
+        <div
+          className={cn(
+            'px-5 py-3 border-t flex items-center justify-between',
+            status === 'completed' && 'border-green-500/30 bg-green-500/5',
+            status === 'failed' && 'border-red-500/30 bg-red-500/5',
+            status === 'cancelled' && 'border-muted bg-muted/30',
+            isActive && 'border-blue-500/30 bg-blue-500/5'
+          )}
+        >
+          {/* Left: Status info */}
+          <div className="text-xs text-muted-foreground">
             {error ? (
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-2 text-red-500 dark:text-red-400">
                 <span className="font-medium">Error:</span>
-                <span>{error}</span>
+                <span className="truncate max-w-[300px]">{error}</span>
               </div>
+            ) : isActive ? (
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
+                Workflow is running...
+              </span>
             ) : status === 'completed' ? (
               <span>Workflow completed successfully</span>
             ) : status === 'cancelled' ? (
               <span>Workflow was cancelled</span>
-            ) : (
+            ) : status === 'failed' ? (
               <span>Workflow failed</span>
-            )}
+            ) : null}
           </div>
-        )}
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleCopy}
+              disabled={output.length === 0}
+              className="h-auto px-3 py-1.5 text-sm"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4 text-green-500" />
+                  <span className="text-green-500">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  <span>Copy</span>
+                </>
+              )}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={onClose}
+              className="h-auto px-4 py-1.5 text-sm"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
 
         {/* Auto-scroll indicator */}
         {!autoScroll && isActive && (
@@ -300,7 +397,7 @@ export function WorkflowOutputPanel({
               }
             }}
             size="sm"
-            className="absolute bottom-16 right-6 rounded-full shadow-lg"
+            className="absolute bottom-20 right-6 rounded-full shadow-lg"
           >
             Scroll to bottom
           </Button>

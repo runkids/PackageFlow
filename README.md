@@ -1,25 +1,25 @@
 <p align="center">
-  <img src="src-tauri/icons/128x128@2x.png" alt="PackageFlow Logo" width="100" height="100">
+  <img src="src-tauri/icons/128x128@2x.png" alt="PackageFlow Logo" width="120" height="120">
 </p>
 
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>🚀 Stop juggling terminals.</strong><br/>
-  <sub>Run scripts, manage your project, and deploy with preview links — all in one beautiful app.</sub>
+  <strong>The AI-Powered Command Center for Your Projects</strong><br/>
+  <sub>One click to run, deploy, and automate — powered by AI and MCP.</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/runkids/PackageFlow/releases">
-    <img src="https://img.shields.io/github/v/release/runkids/PackageFlow?style=flat-square&color=blue" alt="Release">
+    <img src="https://img.shields.io/github/v/release/runkids/PackageFlow?style=for-the-badge&color=blue" alt="Release">
   </a>
   <a href="https://github.com/runkids/PackageFlow/stargazers">
-    <img src="https://img.shields.io/github/stars/runkids/PackageFlow?style=flat-square&color=yellow" alt="Stars">
+    <img src="https://img.shields.io/github/stars/runkids/PackageFlow?style=for-the-badge&color=yellow" alt="Stars">
   </a>
   <a href="https://github.com/runkids/PackageFlow/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/runkids/PackageFlow?style=flat-square" alt="License">
+    <img src="https://img.shields.io/github/license/runkids/PackageFlow?style=for-the-badge" alt="License">
   </a>
-  <img src="https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square&logo=apple" alt="macOS">
+  <img src="https://img.shields.io/badge/platform-macOS-lightgrey?style=for-the-badge&logo=apple" alt="macOS">
 </p>
 
 <p align="center">
@@ -27,12 +27,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/runkids/PackageFlow/releases">📥 Download</a> •
-  <a href="#-features">✨ Features</a> •
-  <a href="#-documentation">📚 Docs</a> •
-  <a href="#-screenshots">📸 Screenshots</a> •
-  <a href="#-roadmap">🗺️ Roadmap</a> •
-  <a href="#-faq">❓ FAQ</a>
+  <a href="https://github.com/runkids/PackageFlow/releases"><strong>📥 Download</strong></a> •
+  <a href="#-features"><strong>✨ Features</strong></a> •
+  <a href="#-ai--mcp-integration"><strong>🤖 AI & MCP</strong></a> •
+  <a href="#-screenshots"><strong>📸 Screenshots</strong></a> •
+  <a href="#-faq"><strong>❓ FAQ</strong></a>
 </p>
 
 <p align="center">
@@ -42,45 +41,136 @@
 
 ---
 
-## ✨ What is PackageFlow?
+<p align="center">
+  <img src="docs/screenshots/deploy-demo.gif" width="720" alt="PackageFlow Hero" />
+</p>
 
-**PackageFlow is the app you open instead of your terminal.**
+---
 
-It turns your project into a visual control center —  
-run scripts, manage Git, switch worktrees, and deploy with preview links  
-**without memorizing commands or juggling tools**.
+## Why PackageFlow?
 
-Built for **vibe coding**:  
-stay in flow, not in the terminal.
+> **"Claude, deploy my feature branch."**
+> **"Run tests and fix any failures."**
+> **"Switch to the main branch and start the dev server."**
 
-Powered by **Tauri + Rust** for a tiny binary and instant startup.
+**PackageFlow isn't just another GUI — it's the bridge between you, your projects, and AI.**
+
+| Before PackageFlow | With PackageFlow |
+|-------------------|------------------|
+| Terminal juggling | One-click scripts |
+| Manual deployments | Instant preview links |
+| Command memorization | Visual workflows |
+| AI can't touch your tools | **MCP Server lets AI control everything** |
+
+Powered by **Tauri + Rust** — 10MB binary, instant startup, 100% local-first.
 
 ## 🎬 Quick Start
 
-1. **Download** → [Get PackageFlow for macOS](https://github.com/runkids/PackageFlow/releases)
-2. **Open a project** → Drag any folder with `package.json` into the app
-3. **Click to run** → Scripts, workflows, deploys — all one click away
+```bash
+# Install via Homebrew
+brew tap runkids/tap && brew install --cask packageflow
+```
 
-> 💡 Tip: Press <kbd>Cmd</kbd> + <kbd>K</kbd> to instantly switch worktrees
+Or [download directly](https://github.com/runkids/PackageFlow/releases) → Drag a project folder → Start clicking.
+
+> 💡 Press <kbd>Cmd</kbd> + <kbd>K</kbd> for instant worktree switching
+
+---
 
 ## ✨ Features
 
-| | Feature | What it feels like |
-|:--:|--|--|
-| 🎯 | **One-Click Scripts** | Run npm scripts like buttons — live terminal included |
-| ⚡ | **Visual Workflow** | Build flows with drag-and-drop steps |
-| 🚀 | **Instant Deploy** | One click → preview link (Netlify / Cloudflare) |
-| 📦 | **Monorepo Ready** | Nx / Turborepo auto-detected |
-| 🔀 | **Git, Visualized** | Commit, branch, stash, diff — no CLI gymnastics |
-| 🌳 | **Worktree Magic** | See, switch, and resume worktrees instantly |
-| 🔧 | **Toolchain Smart** | Detect Volta / Corepack conflicts automatically |
-| 🛡️ | **Security Scan** | Visual npm audit with one-click fixes |
+<table>
+<tr>
+<td width="50%">
+
+### 🎯 One-Click Everything
+Run scripts, workflows, deploys — no commands to memorize.
+
+### ⚡ Visual Workflow Builder
+Drag-and-drop automation with conditional steps.
+
+### 🚀 Instant Deploy
+One click → live preview link on Netlify or Cloudflare.
+
+### 📦 Monorepo-Native
+Nx, Turborepo, Lerna — auto-detected and ready.
+
+</td>
+<td width="50%">
+
+### 🔀 Git Without CLI
+Commit, branch, stash, diff — all visual, all easy.
+
+### 🌳 Worktree Superpowers
+See all worktrees, switch instantly, resume sessions.
+
+### 🛡️ Security Scanner
+Visual npm audit with AI-powered analysis.
+
+### 🔧 Toolchain Detective
+Auto-detect Volta, Corepack, nvm conflicts.
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🤖 AI & MCP Integration
+
+<p align="center">
+  <img src="docs/screenshots/commit-message-generated-by-AI.gif" width="720" alt="AI Commit Message" />
+  <br/>
+  <em>AI generates commit messages from your diffs</em>
+</p>
+
+### Multi-Provider AI Support
+
+| Provider | Type | Use Case |
+|----------|------|----------|
+| **OpenAI** | Cloud | GPT-4 for complex analysis |
+| **Anthropic** | Cloud | Claude for intelligent commits |
+| **Google** | Cloud | Gemini for fast responses |
+| **Ollama** | Local | Privacy-first, unlimited |
+| **LM Studio** | Local | Custom models, no API costs |
+
+### MCP Server — Let AI Control Your Dev Environment
+
+PackageFlow exposes a **Model Context Protocol (MCP) server** that AI assistants can use:
+
+```
+"Claude, deploy my feature branch to staging."
+"Run tests for all projects and report failures."
+"Switch to the payment-fix worktree and start the dev server."
+```
+
+**Works with:**
+- Claude Code
+- Codex CLI
+- Gemini CLI
+- Any MCP-compatible AI tool
+
+### AI CLI Integration
+
+Run AI commands directly from PackageFlow:
+
+```
+You: "Analyze the security audit results and suggest fixes"
+AI: Analyzing 3 high-severity vulnerabilities...
+```
+
+**Security First:**
+- All API keys encrypted with AES-256-GCM
+- Permission levels: Read Only → Confirm → Full Access
+- Fine-grained tool permissions
+- Complete request logging
 
 ---
 
 ## 📚 Documentation
 
-Learn more about each feature in our detailed documentation:
+<details>
+<summary><strong>📖 Full Feature Documentation</strong></summary>
 
 | Feature | Description |
 |---------|-------------|
@@ -99,163 +189,119 @@ Learn more about each feature in our detailed documentation:
 | [Toolchain Management](./docs/features/toolchain-management.md) | Node.js version management |
 | [Keyboard Shortcuts](./docs/features/keyboard-shortcuts.md) | Complete shortcut reference |
 
-📖 [Full Documentation Index](./docs/README.md)
-
----
-
-## 🤖 AI-Native (Coming Soon)
-
-PackageFlow is becoming **AI-first**.
-
-- 🧠 **AI-assisted workflows** — explain, generate, and fix scripts
-- 🔌 **MCP Server support** — let AI tools control PackageFlow
-- 🤖 **Local-first AI** — no cloud lock-in, your code stays local
-
-> Think:  
-> **“Claude, deploy my feature branch.”**  
-> **“Fix the failing script and rerun.”**
+</details>
 
 ---
 
 
 ## 📸 Screenshots
 
-<p align="center">
-  <img src="docs/screenshots/commit-message-generated-by-AI.gif" width="720" alt="Deploy demo" />
-  <br/>
-  <em>🤖 Commit message generated by AI</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/deploy-demo.gif" width="720" alt="Deploy demo" />
-  <br/>
-  <em>👆 One-click deploy, instant preview link</em>
-</p>
-
-<details>
-<summary>🎯 Projects + Scripts</summary>
+<details open>
+<summary><strong>🎯 Projects + Scripts</strong></summary>
 <br/>
 <img src="docs/screenshots/screenshot001.png" width="800" alt="Projects and Scripts" />
 </details>
 
 <details>
-<summary>📦 Monorepo Action</summary>
-<br/>
-<img src="docs/screenshots/screenshot002.png" width="800" alt="Monorepo Action" />
-</details>
-
-<details>
-<summary>🔗 Dependency Graph</summary>
-<br/>
-<img src="docs/screenshots/screenshot003.png" width="800" alt="Dependency Graph" />
-</details>
-
-<details>
-<summary>💻 Terminals</summary>
-<br/>
-<img src="docs/screenshots/screenshot004.png" width="800" alt="Terminals" />
-</details>
-
-<details>
-<summary>🔀 Git Integration</summary>
-<br/>
-<img src="docs/screenshots/screenshot005.png" width="800" alt="Git Integration" />
-</details>
-
-<details>
-<summary>📋 Step Templates</summary>
-<br/>
-<img src="docs/screenshots/screenshot006.png" width="800" alt="Step Templates" />
-</details>
-
-<details>
-<summary>🛡️ Security Audit</summary>
-<br/>
-<img src="docs/screenshots/screenshot007.png" width="800" alt="Security Audit" />
-</details>
-
-<details>
-<summary>🔌 Webhooks</summary>
-<br/>
-<img src="docs/screenshots/screenshot008.png" width="800" alt="Webhooks" />
-</details>
-
-<details>
-<summary>⚡ Visual Workflow</summary>
+<summary><strong>⚡ Visual Workflow Builder</strong></summary>
 <br/>
 <img src="docs/screenshots/screenshot009.png" width="800" alt="Visual Workflow" />
 </details>
 
 <details>
-<summary>🚀 Deploy Accounts</summary>
+<summary><strong>📦 Monorepo Support</strong></summary>
+<br/>
+<img src="docs/screenshots/screenshot002.png" width="800" alt="Monorepo Action" />
+</details>
+
+<details>
+<summary><strong>🔗 Dependency Graph</strong></summary>
+<br/>
+<img src="docs/screenshots/screenshot003.png" width="800" alt="Dependency Graph" />
+</details>
+
+<details>
+<summary><strong>🔀 Git Integration</strong></summary>
+<br/>
+<img src="docs/screenshots/screenshot005.png" width="800" alt="Git Integration" />
+</details>
+
+<details>
+<summary><strong>🛡️ Security Audit</strong></summary>
+<br/>
+<img src="docs/screenshots/screenshot007.png" width="800" alt="Security Audit" />
+</details>
+
+<details>
+<summary><strong>🚀 Deploy Accounts</strong></summary>
 <br/>
 <img src="docs/screenshots/screenshot011.png" width="800" alt="Deploy Accounts" />
 </details>
 
 <details>
-<summary>⌨️ Keyboard Shortcuts</summary>
+<summary><strong>💻 Terminals</strong></summary>
 <br/>
-<img src="docs/screenshots/screenshot012.png" width="800" alt="Keyboard Shortcuts" />
+<img src="docs/screenshots/screenshot004.png" width="800" alt="Terminals" />
+</details>
+
+<details>
+<summary><strong>🔌 Webhooks</strong></summary>
+<br/>
+<img src="docs/screenshots/screenshot008.png" width="800" alt="Webhooks" />
 </details>
 
 ## 📦 Installation
 
-### Homebrew (macOS)
+### Homebrew (Recommended)
 
 ```bash
 brew tap runkids/tap
 brew install --cask packageflow
+
+# Upgrade
+brew update && brew upgrade --cask packageflow
 ```
 
-#### Upgrade
+### Direct Download
 
-```bash
-brew update
-brew upgrade --cask packageflow
-```
+[Download the latest release](https://github.com/runkids/PackageFlow/releases) → Open the `.dmg` → Drag to Applications.
 
-### Manual Download
-
-Download the latest release from the [Releases](https://github.com/runkids/PackageFlow/releases) page.
+---
 
 ## 🗺️ Roadmap
 
-We're actively working on these features:
+### Recently Shipped
+
+- [x] **Multi-Provider AI** — OpenAI, Anthropic, Google, Ollama, LM Studio
+- [x] **MCP Server** — Let AI assistants control PackageFlow
+- [x] **AI CLI Integration** — Claude Code, Codex, Gemini CLI
+- [x] **AI Security Analysis** — Intelligent vulnerability explanations
+- [x] **Notification Center** — Background task monitoring
+- [x] **System Theme** — Auto light/dark mode
+
+### Coming Soon
 
 - [ ] 🪟 **Windows Support** — Cross-platform expansion
 - [ ] 🐧 **Linux Support** — Complete desktop coverage
-- [ ] 🤖 **AI Integration** — Local LLM & AI CLI (Claude Code, Codex, Gemini)
-- [ ] 🔌 **MCP Server** — Let AI tools control PackageFlow
-- [ ] 📦 **Plugin System** — Custom extensions
+- [ ] 📦 **Plugin System** — Community extensions
+- [ ] 🔄 **MCP Actions** — Custom AI-triggered workflows
+- [ ] 🌐 **Remote Collaboration** — Team workflow sharing
 
-> 💡 Have a feature idea? [Open an issue!](https://github.com/runkids/PackageFlow/issues)
+> 💡 [Request a feature](https://github.com/runkids/PackageFlow/issues) or vote on existing ones!
 
 ## ❓ FAQ
-
-<details>
-<summary><strong>Do I need to be a hardcore engineer?</strong></summary>
-<br/>
-
-No.
-
-If your project has a `package.json`, you can use PackageFlow.
-No command memorization. No terminal juggling. Just click and go.
-
-</details>
 
 <details>
 <summary><strong>How is this different from VS Code terminal?</strong></summary>
 <br/>
 
-PackageFlow is about flow:
+PackageFlow is about **flow**, not terminals:
 
-- Everything visible at a glance
-
-- One-click actions
-
-- Visual workflows
-
-- Built-in deploy previews
+- One-click actions for everything
+- Visual workflow builder
+- Built-in deploy with preview links
+- **AI assistants can control it via MCP**
+- No extension sprawl — everything integrated
 
 </details>
 
@@ -263,9 +309,39 @@ PackageFlow is about flow:
 <summary><strong>Is my data safe?</strong></summary>
 <br/>
 
-100% local-first.
-All data stays on your machine.
-No tracking. No cloud dependency.
+**100% local-first.**
+
+- All data stays on your machine
+- API keys encrypted with AES-256-GCM
+- No tracking, no telemetry
+- AI features are opt-in
+- MCP permissions are granular
+
+</details>
+
+<details>
+<summary><strong>What AI providers are supported?</strong></summary>
+<br/>
+
+**Cloud:** OpenAI, Anthropic (Claude), Google (Gemini)
+**Local:** Ollama, LM Studio — unlimited, private, free
+
+Use local models for sensitive code. Use cloud for convenience.
+
+</details>
+
+<details>
+<summary><strong>What is MCP and why should I care?</strong></summary>
+<br/>
+
+**Model Context Protocol (MCP)** is how AI assistants talk to tools.
+
+With PackageFlow's MCP server:
+- Claude Code can deploy your projects
+- AI can run scripts and workflows
+- Voice-controlled development becomes possible
+
+It's like giving AI hands to help you code.
 
 </details>
 
@@ -323,7 +399,15 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## ⭐ Star History
+---
+
+## 🙏 Acknowledgments
+
+Built with amazing open-source tools:
+
+[Tauri](https://tauri.app/) • [React Flow](https://reactflow.dev/) • [Lucide](https://lucide.dev/) • [Claude Code](https://claude.ai/code)
+
+---
 
 <p align="center">
   <a href="https://star-history.com/#runkids/PackageFlow&Date">
@@ -331,27 +415,15 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
   </a>
 </p>
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [Tauri](https://tauri.app/) — Amazing cross-platform framework
-- [React Flow](https://reactflow.dev/) — Workflow visualization
-- [Lucide](https://lucide.dev/) — Beautiful icons
-- [Claude Code](https://claude.ai/code) — AI-powered development assistance
-
 ---
 
 <p align="center">
-  <strong>Like this project?</strong><br/>
-  ⭐ Star us = Huge support!<br/><br/>
+  <strong>If PackageFlow saves you time, give us a star!</strong><br/><br/>
   <a href="https://github.com/runkids/PackageFlow">
-    <img src="https://img.shields.io/github/stars/runkids/PackageFlow?style=social" alt="GitHub stars" />
+    <img src="https://img.shields.io/github/stars/runkids/PackageFlow?style=for-the-badge&logo=github&color=yellow" alt="GitHub stars" />
   </a>
 </p>
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/runkids">runkids</a>
+  <sub>MIT License • Made by <a href="https://github.com/runkids">runkids</a></sub>
 </p>

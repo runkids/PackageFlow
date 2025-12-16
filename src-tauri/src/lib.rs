@@ -4,7 +4,7 @@
 mod commands;
 pub mod models;
 pub mod repositories;
-mod services;
+pub mod services;
 pub mod utils;
 
 // Re-export models for use in commands
@@ -366,6 +366,20 @@ pub fn run() {
             mcp::get_mcp_tools_with_permissions,
             mcp::get_mcp_logs,
             mcp::clear_mcp_logs,
+            // MCP Action Commands (021-mcp-actions)
+            mcp::get_pending_action_requests,
+            mcp::respond_to_action_request,
+            mcp::list_mcp_actions,
+            mcp::get_mcp_action,
+            mcp::create_mcp_action,
+            mcp::update_mcp_action,
+            mcp::delete_mcp_action,
+            mcp::get_mcp_action_executions,
+            mcp::get_mcp_action_execution,
+            mcp::list_mcp_action_permissions,
+            mcp::update_mcp_action_permission,
+            mcp::delete_mcp_action_permission,
+            mcp::cleanup_mcp_action_executions,
             // Notification Center (021-mcp-actions)
             notification::get_notifications,
             notification::get_unread_notification_count,

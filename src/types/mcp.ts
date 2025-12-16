@@ -469,8 +469,21 @@ export const TOOL_DEFINITIONS_WITH_PERMISSIONS: ToolDefinitionWithPermissions[] 
   { name: 'get_workflow', description: 'Get workflow details', category: 'read', applicablePermissions: ['read'] },
   { name: 'list_step_templates', description: 'List step templates', category: 'read', applicablePermissions: ['read'] },
 
+  // MCP Actions - Read tools (021-mcp-actions)
+  { name: 'list_actions', description: 'List available MCP actions', category: 'read', applicablePermissions: ['read'] },
+  { name: 'get_action', description: 'Get MCP action details', category: 'read', applicablePermissions: ['read'] },
+  { name: 'list_action_executions', description: 'List action execution history', category: 'read', applicablePermissions: ['read'] },
+  { name: 'get_execution_status', description: 'Get action execution status', category: 'read', applicablePermissions: ['read'] },
+  { name: 'get_action_permissions', description: 'Get action permission settings', category: 'read', applicablePermissions: ['read'] },
+
   // Execute tools - 'read' and 'execute' permissions are applicable
   { name: 'run_workflow', description: 'Execute a workflow', category: 'execute', applicablePermissions: ['read', 'execute'] },
+
+  // MCP Actions - Execute tools (021-mcp-actions)
+  { name: 'run_script', description: 'Execute a script action', category: 'execute', applicablePermissions: ['read', 'execute'] },
+  { name: 'trigger_webhook', description: 'Trigger a webhook action', category: 'execute', applicablePermissions: ['read', 'execute'] },
+  { name: 'run_mcp_workflow', description: 'Execute a workflow via MCP action', category: 'execute', applicablePermissions: ['read', 'execute'] },
+  { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script from package.json', category: 'execute', applicablePermissions: ['read', 'execute'] },
 
   // Write tools - 'read' and 'write' permissions are applicable
   { name: 'create_workflow', description: 'Create a new workflow', category: 'write', applicablePermissions: ['read', 'write'] },

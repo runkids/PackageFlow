@@ -2499,6 +2499,125 @@ export const mcpAPI = {
     invoke('clear_mcp_logs'),
 };
 
+// ============================================================================
+// MCP Action API (021-mcp-actions)
+// ============================================================================
+
+import type {
+  MCPAction,
+  MCPActionPermission,
+  MCPActionExecution,
+  MCPActionType,
+  PermissionLevel,
+  ExecutionStatus,
+} from '../types/mcp-action';
+
+/** Pending action request requiring user confirmation */
+export interface PendingActionRequest {
+  executionId: string;
+  actionId: string | null;
+  actionType: string;
+  actionName: string;
+  description: string;
+  parameters: Record<string, unknown> | null;
+  sourceClient: string | null;
+  startedAt: string;
+}
+
+/** Response from action approval/denial */
+export interface ActionRequestResponse {
+  executionId: string;
+  approved: boolean;
+  status: string;
+}
+
+export const mcpActionAPI = {
+  // Actions CRUD
+  /** List MCP actions with optional filtering */
+  listActions: (
+    projectId?: string,
+    actionType?: MCPActionType,
+    isEnabled?: boolean
+  ): Promise<MCPAction[]> =>
+    invoke<MCPAction[]>('list_mcp_actions', { projectId, actionType, isEnabled }),
+
+  /** Get a single MCP action by ID */
+  getAction: (actionId: string): Promise<MCPAction | null> =>
+    invoke<MCPAction | null>('get_mcp_action', { actionId }),
+
+  /** Create a new MCP action */
+  createAction: (
+    actionType: MCPActionType,
+    name: string,
+    description: string | null,
+    config: Record<string, unknown>,
+    projectId?: string
+  ): Promise<MCPAction> =>
+    invoke<MCPAction>('create_mcp_action', { actionType, name, description, config, projectId }),
+
+  /** Update an existing MCP action */
+  updateAction: (
+    actionId: string,
+    name?: string,
+    description?: string,
+    config?: Record<string, unknown>,
+    isEnabled?: boolean
+  ): Promise<MCPAction> =>
+    invoke<MCPAction>('update_mcp_action', { actionId, name, description, config, isEnabled }),
+
+  /** Delete an MCP action */
+  deleteAction: (actionId: string): Promise<boolean> =>
+    invoke<boolean>('delete_mcp_action', { actionId }),
+
+  // Executions
+  /** Get MCP action execution history */
+  getExecutions: (
+    actionId?: string,
+    actionType?: MCPActionType,
+    status?: ExecutionStatus,
+    limit?: number
+  ): Promise<MCPActionExecution[]> =>
+    invoke<MCPActionExecution[]>('get_mcp_action_executions', { actionId, actionType, status, limit }),
+
+  /** Get a single execution by ID */
+  getExecution: (executionId: string): Promise<MCPActionExecution | null> =>
+    invoke<MCPActionExecution | null>('get_mcp_action_execution', { executionId }),
+
+  /** Cleanup old execution history */
+  cleanupExecutions: (keepCount?: number, maxAgeDays?: number): Promise<number> =>
+    invoke<number>('cleanup_mcp_action_executions', { keepCount, maxAgeDays }),
+
+  // Permissions
+  /** List all MCP action permissions */
+  listPermissions: (): Promise<MCPActionPermission[]> =>
+    invoke<MCPActionPermission[]>('list_mcp_action_permissions'),
+
+  /** Update MCP action permission */
+  updatePermission: (
+    actionId: string | null,
+    actionType: MCPActionType | null,
+    permissionLevel: PermissionLevel
+  ): Promise<MCPActionPermission> =>
+    invoke<MCPActionPermission>('update_mcp_action_permission', { actionId, actionType, permissionLevel }),
+
+  /** Delete MCP action permission */
+  deletePermission: (permissionId: string): Promise<boolean> =>
+    invoke<boolean>('delete_mcp_action_permission', { permissionId }),
+
+  // Pending requests (user confirmation)
+  /** Get pending action requests requiring user confirmation */
+  getPendingRequests: (): Promise<PendingActionRequest[]> =>
+    invoke<PendingActionRequest[]>('get_pending_action_requests'),
+
+  /** Approve or deny a pending action request */
+  respondToRequest: (
+    executionId: string,
+    approved: boolean,
+    reason?: string
+  ): Promise<ActionRequestResponse> =>
+    invoke<ActionRequestResponse>('respond_to_action_request', { executionId, approved, reason }),
+};
+
 export const tauriAPI = {
   ...projectAPI,
   ...scriptAPI,
@@ -2519,4 +2638,5 @@ export const tauriAPI = {
   ...aiAPI,
   ...aiCLIAPI,
   ...mcpAPI,
+  ...mcpActionAPI,
 };
