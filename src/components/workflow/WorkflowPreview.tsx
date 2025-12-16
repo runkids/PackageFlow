@@ -10,11 +10,13 @@ import type { WorkflowNode } from '../../types/workflow';
 
 interface WorkflowPreviewProps {
   nodes: WorkflowNode[];
-  onEdit: () => void;
-  onRun: () => void;
+  onEdit?: () => void;
+  onRun?: () => void;
   isRunning?: boolean;
   currentNodeIndex?: number;
   disabled?: boolean;
+  /** Whether to show Edit/Run action buttons (default: true) */
+  showActions?: boolean;
 }
 
 /**
@@ -28,11 +30,12 @@ export function WorkflowPreview({
   isRunning = false,
   currentNodeIndex,
   disabled = false,
+  showActions = true,
 }: WorkflowPreviewProps) {
   const sortedNodes = [...nodes].sort((a, b) => a.order - b.order);
 
   return (
-    <div className="mt-3 pt-3 border-t border-border/50">
+    <div className={cn(showActions && 'mt-3 pt-3 border-t border-border/50')}>
       {/* Node list */}
       {sortedNodes.length === 0 ? (
         <div className="text-xs text-muted-foreground text-center py-2">
@@ -75,37 +78,39 @@ export function WorkflowPreview({
       )}
 
       {/* Quick actions */}
-      <div className="flex items-center gap-2 mt-3">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onEdit}
-          disabled={disabled}
-          className="flex-1"
-        >
-          <Edit className="w-3.5 h-3.5 mr-1.5" />
-          Edit
-        </Button>
-        <Button
-          variant="success"
-          size="sm"
-          onClick={onRun}
-          disabled={disabled || isRunning || sortedNodes.length === 0}
-          className="flex-1"
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              Running
-            </>
-          ) : (
-            <>
-              <Play className="w-3.5 h-3.5 mr-1.5" />
-              Run
-            </>
-          )}
-        </Button>
-      </div>
+      {showActions && onEdit && onRun && (
+        <div className="flex items-center gap-2 mt-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEdit}
+            disabled={disabled}
+            className="flex-1"
+          >
+            <Edit className="w-3.5 h-3.5 mr-1.5" />
+            Edit
+          </Button>
+          <Button
+            variant="success"
+            size="sm"
+            onClick={onRun}
+            disabled={disabled || isRunning || sortedNodes.length === 0}
+            className="flex-1"
+          >
+            {isRunning ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Running
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 mr-1.5" />
+                Run
+              </>
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

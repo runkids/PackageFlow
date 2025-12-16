@@ -4,7 +4,22 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit, MoreVertical, Link2, Unlink, Workflow as WorkflowIcon, Terminal, ChevronRight, ArrowLeft, ChevronDown } from 'lucide-react';
+import {
+  Plus,
+  Edit,
+  MoreVertical,
+  Link2,
+  Unlink,
+  Workflow as WorkflowIcon,
+  Terminal,
+  ChevronRight,
+  ArrowLeft,
+  ChevronDown,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Play,
+} from 'lucide-react';
 import type { Workflow } from '../../types/workflow';
 import {
   loadWorkflowsByProject,
@@ -19,12 +34,13 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '../ui/Contex
 import { cn } from '../../lib/utils';
 import { useWorkflowExecutionContext } from '../../contexts/WorkflowExecutionContext';
 import {
-  ExecuteButton,
   WorkflowStatusBadge,
   WorkflowExecutionStatus,
 } from '../workflow/WorkflowExecutionStatus';
 import { WorkflowOutputPanel } from '../workflow/WorkflowOutputPanel';
 import { WorkflowPreview } from '../workflow/WorkflowPreview';
+import type { WorkflowExecutionState } from '../../hooks/useWorkflowExecution';
+import { formatDuration } from '../../hooks/useWorkflowExecution';
 
 interface ProjectWorkflowsProps {
   projectId: string;
@@ -32,6 +48,117 @@ interface ProjectWorkflowsProps {
   scripts: Record<string, string>;
   onEditWorkflow?: (workflow: Workflow) => void;
   onNavigateToWorkflow?: (workflow: Workflow, projectPath: string) => void;
+}
+
+/**
+ * Maps workflow execution status to visual status for icon display
+ */
+function getIconStatus(state: WorkflowExecutionState): 'idle' | 'running' | 'completed' | 'failed' {
+  switch (state.status) {
+    case 'starting':
+    case 'running':
+      return 'running';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'idle';
+  }
+}
+
+/**
+ * Icon area component with status indicator
+ */
+function WorkflowIconArea({
+  status,
+  isExpanded,
+}: {
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  isExpanded: boolean;
+}) {
+  const iconConfig = {
+    idle: {
+      icon: WorkflowIcon,
+      color: isExpanded ? 'text-blue-400' : 'text-muted-foreground',
+      bg: isExpanded ? 'bg-blue-500/15 border-blue-500/30' : 'bg-muted/50 border-border',
+    },
+    running: {
+      icon: Loader2,
+      color: 'text-blue-400',
+      bg: 'bg-blue-500/15 border-blue-500/30',
+      animation: 'animate-spin',
+    },
+    completed: {
+      icon: CheckCircle,
+      color: 'text-green-400',
+      bg: 'bg-green-500/15 border-green-500/30',
+    },
+    failed: {
+      icon: XCircle,
+      color: 'text-red-400',
+      bg: 'bg-red-500/15 border-red-500/30',
+    },
+  };
+
+  const config = iconConfig[status];
+  const Icon = config.icon;
+
+  return (
+    <div
+      className={cn(
+        'w-10 h-10 rounded-lg flex-shrink-0',
+        'flex items-center justify-center',
+        'border transition-all duration-200',
+        config.bg,
+        status === 'running' && 'animate-pulse-subtle'
+      )}
+    >
+      <Icon
+        className={cn(
+          'w-5 h-5 transition-colors',
+          config.color,
+          'animation' in config && config.animation
+        )}
+      />
+    </div>
+  );
+}
+
+/**
+ * Execute button with integrated loading state
+ */
+function ExecuteButton({
+  isExecuting,
+  disabled = false,
+  onClick,
+}: {
+  isExecuting: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      disabled={disabled || isExecuting}
+      className={cn(
+        'h-8 w-8',
+        isExecuting && 'bg-blue-500/20 cursor-wait'
+      )}
+      title={isExecuting ? 'Running...' : disabled ? 'No steps to run' : 'Run workflow'}
+    >
+      {isExecuting ? (
+        <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+      ) : (
+        <Play className="w-4 h-4 text-green-400" />
+      )}
+    </Button>
+  );
 }
 
 export function ProjectWorkflows({
@@ -217,6 +344,7 @@ export function ProjectWorkflows({
 
   const handleContextMenu = (e: React.MouseEvent, workflowId: string) => {
     e.preventDefault();
+    e.stopPropagation();
     setContextMenu({ workflowId, x: e.clientX, y: e.clientY });
   };
 
@@ -239,85 +367,134 @@ export function ProjectWorkflows({
   }
 
   return (
-    <div className="space-y-4" onClick={closeContextMenu}>
-      {/* Add workflow button */}
+    <div className="space-y-3" onClick={closeContextMenu}>
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-muted-foreground">Project workflows</h3>
         <Button
-          variant="ghost"
+          variant="default"
           size="sm"
           onClick={handleAddClick}
-          className="gap-1.5 text-blue-400 hover:bg-blue-500/10 h-auto px-2 py-1"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 mr-1.5" />
           New
         </Button>
       </div>
 
       {/* Workflow list */}
       {workflows.length === 0 ? (
-        <div className="p-8 text-center text-muted-foreground">
-          <WorkflowIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p>No workflows yet</p>
-          <p className="text-sm mt-1">Click "New" to create a project-specific workflow</p>
+        /* Empty state - matching ListSidebarEmpty style */
+        <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+          <div
+            className={cn(
+              'w-14 h-14 rounded-2xl mb-4',
+              'bg-gradient-to-br from-blue-500/20 via-blue-600/10 to-purple-500/10',
+              'dark:from-blue-500/15 dark:via-blue-600/10 dark:to-purple-500/10',
+              'flex items-center justify-center',
+              'border border-blue-500/20',
+              'shadow-lg shadow-blue-500/5'
+            )}
+          >
+            <WorkflowIcon className="w-7 h-7 text-blue-500 dark:text-blue-400" />
+          </div>
+          <h3 className="text-sm font-semibold text-foreground">No workflows yet</h3>
+          <p className="mt-2 text-xs text-muted-foreground max-w-[200px] leading-relaxed">
+            Create a project-specific workflow to automate tasks
+          </p>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleAddClick}
+            className="mt-4"
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Create Workflow
+          </Button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <ul className="space-y-2">
           {workflows.map(workflow => {
             const executionState = getExecutionState(workflow.id);
             const workflowIsExecuting = isExecuting(workflow.id);
             const hasExecutionState = executionState.status !== 'idle';
+            const isExpanded = expandedWorkflows.has(workflow.id);
+            const iconStatus = getIconStatus(executionState);
 
             return (
-              <div
+              <li
                 key={workflow.id}
-                onContextMenu={e => handleContextMenu(e, workflow.id)}
-                className="group p-3 bg-card/50 rounded-lg border border-border hover:border-accent transition-colors"
+                className="group relative"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    {/* Expand/Collapse button */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={e => {
-                        e.stopPropagation();
-                        toggleWorkflowExpand(workflow.id);
-                      }}
-                      className="h-auto w-auto p-0.5 text-muted-foreground hover:text-foreground"
-                      title={expandedWorkflows.has(workflow.id) ? 'Collapse' : 'Expand preview'}
-                    >
-                      <ChevronDown
+                {/* Main card - clickable to expand/collapse */}
+                <div
+                  onClick={() => toggleWorkflowExpand(workflow.id)}
+                  onContextMenu={e => handleContextMenu(e, workflow.id)}
+                  className={cn(
+                    'w-full flex items-start gap-3 px-3 py-2.5 rounded-lg cursor-pointer',
+                    'transition-all duration-150',
+                    // Expanded/selected state
+                    isExpanded && [
+                      'bg-blue-600/15 dark:bg-blue-600/20',
+                      'border border-blue-500/30',
+                      'shadow-sm',
+                    ],
+                    // Default hover state
+                    !isExpanded && [
+                      'border border-transparent',
+                      'hover:bg-accent hover:border-border',
+                    ],
+                    // Running pulse effect
+                    workflowIsExecuting && isExpanded && 'animate-pulse-subtle'
+                  )}
+                >
+                  {/* Icon area with status indicator */}
+                  <WorkflowIconArea
+                    status={iconStatus}
+                    isExpanded={isExpanded}
+                  />
+
+                  {/* Content area */}
+                  <div className="flex-1 min-w-0 space-y-0.5 py-0.5">
+                    {/* Name row */}
+                    <div className="flex items-center gap-2">
+                      <span
                         className={cn(
-                          'w-4 h-4 transition-transform duration-200',
-                          expandedWorkflows.has(workflow.id) && 'rotate-180'
+                          'text-sm font-medium truncate leading-tight',
+                          isExpanded ? 'text-blue-600 dark:text-blue-400' : 'text-foreground'
                         )}
-                      />
-                    </Button>
-                    <WorkflowIcon className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-medium text-foreground truncate">
-                          {workflow.name}
-                        </h4>
-                        {/* Inline status badge when executing or has result */}
-                        {hasExecutionState && (
-                          <WorkflowStatusBadge state={executionState} />
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {workflow.nodes.length} steps
-                      </p>
+                      >
+                        {workflow.name}
+                      </span>
+                      {/* Inline status badge */}
+                      {hasExecutionState && (
+                        <WorkflowStatusBadge state={executionState} />
+                      )}
+                    </div>
+
+                    {/* Metadata row */}
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span>{workflow.nodes.length} steps</span>
+                      {executionState.status === 'completed' && executionState.startedAt && (
+                        <>
+                          <span className="text-muted-foreground/50">·</span>
+                          <span className="text-green-400">
+                            {formatDuration(executionState.startedAt, executionState.finishedAt)}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 ml-2">
-                    {/* Execute button with loading state */}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* Execute button */}
                     <ExecuteButton
                       isExecuting={workflowIsExecuting}
                       disabled={workflow.nodes.length === 0}
                       onClick={() => handleExecuteWorkflow(workflow)}
                     />
-                    {/* View output button when there's output */}
+
+                    {/* View output button */}
                     {executionState.output.length > 0 && (
                       <Button
                         variant="ghost"
@@ -326,12 +503,14 @@ export function ProjectWorkflows({
                           e.stopPropagation();
                           handleViewOutput(workflow.id);
                         }}
-                        className="h-auto"
+                        className="h-8 w-8"
                         title="View output"
                       >
-                        <Terminal className="w-4 h-4" />
+                        <Terminal className="w-4 h-4 text-muted-foreground" />
                       </Button>
                     )}
+
+                    {/* More options button */}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -339,31 +518,43 @@ export function ProjectWorkflows({
                         e.stopPropagation();
                         handleContextMenu(e, workflow.id);
                       }}
-                      className={`h-auto transition-opacity ${
-                        contextMenu?.workflowId === workflow.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                      }`}
+                      className={cn(
+                        'h-8 w-8 transition-opacity duration-150',
+                        contextMenu?.workflowId === workflow.id
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover:opacity-100'
+                      )}
                       title="More options"
                     >
                       <MoreVertical className="w-4 h-4 text-muted-foreground" />
                     </Button>
+
+                    {/* Expand indicator */}
+                    <ChevronDown
+                      className={cn(
+                        'w-4 h-4 text-muted-foreground transition-transform duration-200',
+                        isExpanded && 'rotate-180'
+                      )}
+                    />
                   </div>
                 </div>
 
-                {/* Expanded workflow preview */}
-                {expandedWorkflows.has(workflow.id) && (
-                  <WorkflowPreview
-                    nodes={workflow.nodes}
-                    onEdit={() => handleEditClick(workflow)}
-                    onRun={() => handleExecuteWorkflow(workflow)}
-                    isRunning={workflowIsExecuting}
-                    currentNodeIndex={executionState.completedNodes}
-                    disabled={workflowIsExecuting}
-                  />
+                {/* Expanded content */}
+                {isExpanded && (
+                  <div className="ml-[52px] mt-1 space-y-2">
+                    {/* Workflow preview - steps only, no action buttons */}
+                    <WorkflowPreview
+                      nodes={workflow.nodes}
+                      isRunning={workflowIsExecuting}
+                      currentNodeIndex={executionState.completedNodes}
+                      showActions={false}
+                    />
+                  </div>
                 )}
 
-                {/* Expanded execution status for running/completed/failed states */}
-                {hasExecutionState && !workflowIsExecuting && executionState.status !== 'idle' && !expandedWorkflows.has(workflow.id) && (
-                  <div className="mt-3 pt-3 border-t border-border/50">
+                {/* Collapsed execution status (when not expanded but has state) */}
+                {!isExpanded && hasExecutionState && !workflowIsExecuting && executionState.status !== 'idle' && (
+                  <div className="ml-[52px] mt-2">
                     <WorkflowExecutionStatus
                       state={executionState}
                       onCancel={() => handleCancelExecution(workflow.id)}
@@ -374,9 +565,9 @@ export function ProjectWorkflows({
                   </div>
                 )}
 
-                {/* Running progress bar */}
-                {workflowIsExecuting && !expandedWorkflows.has(workflow.id) && (
-                  <div className="mt-3">
+                {/* Running progress bar (when collapsed) */}
+                {!isExpanded && workflowIsExecuting && (
+                  <div className="ml-[52px] mt-2 pr-3">
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                       <span>
                         {executionState.currentNode
@@ -385,18 +576,18 @@ export function ProjectWorkflows({
                       </span>
                       <span>{executionState.progress}%</span>
                     </div>
-                    <div className="h-1 bg-muted rounded-full overflow-hidden">
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
+                        className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-300 ease-out animate-pulse"
                         style={{ width: `${Math.max(executionState.progress, 2)}%` }}
                       />
                     </div>
                   </div>
                 )}
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
 
       {/* Context menu */}

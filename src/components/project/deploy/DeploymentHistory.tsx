@@ -332,7 +332,7 @@ function DeploymentItem({
   return (
     <div
       className={cn(
-        'p-4 rounded-lg border transition-all group',
+        'relative p-4 rounded-lg border transition-all group',
         config.borderColor,
         config.bgColor,
         'hover:shadow-sm'
@@ -378,59 +378,58 @@ function DeploymentItem({
           </div>
         </div>
 
-        {/* Right: Duration & Actions */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Deploy time */}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground" title="Build time">
-            <Timer className="h-3 w-3" />
-            <span className="font-mono">{getDisplayDuration(deployment)}</span>
-          </div>
+        {/* Right: Duration */}
+        <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0 ml-auto" title="Build time">
+          <Timer className="h-3 w-3" />
+          <span className="font-mono">{getDisplayDuration(deployment)}</span>
+        </div>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {deployment.url && (
-              <a
-                href={deployment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded',
-                  'hover:bg-accent transition-colors'
-                )}
-                title="Open deployed site"
-              >
-                <ExternalLink className="h-3.5 w-3.5 text-primary" />
-              </a>
-            )}
-            {deployment.adminUrl && (
-              <a
-                href={deployment.adminUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded',
-                  'hover:bg-accent transition-colors'
-                )}
-                title="Open Dashboard"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </a>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onDelete}
-              disabled={isDeletingThis}
-              className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
-              title="Delete this record"
-            >
-              {isDeletingThis ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
+        {/* Action buttons - absolute positioned */}
+        <div className="absolute right-3 top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-l from-transparent via-transparent to-transparent">
+          {deployment.url && (
+            <a
+              href={deployment.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded',
+                'bg-background/80 backdrop-blur-sm border border-border/50',
+                'hover:bg-accent transition-colors'
               )}
-            </Button>
-          </div>
+              title="Open deployed site"
+            >
+              <ExternalLink className="h-3.5 w-3.5 text-primary" />
+            </a>
+          )}
+          {deployment.adminUrl && (
+            <a
+              href={deployment.adminUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded',
+                'bg-background/80 backdrop-blur-sm border border-border/50',
+                'hover:bg-accent transition-colors'
+              )}
+              title="Open Dashboard"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </a>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            disabled={isDeletingThis}
+            className="h-7 w-7 bg-background/80 backdrop-blur-sm border border-border/50 hover:bg-destructive/10 hover:text-destructive"
+            title="Delete this record"
+          >
+            {isDeletingThis ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
         </div>
       </div>
 
