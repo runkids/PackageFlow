@@ -221,13 +221,34 @@ impl ToolPermissionChecker {
         "get_staged_diff",
         "list_project_scripts",
         "list_workflows",
+        "list_projects",
+        "get_project",
+        "get_workflow",
+        "list_worktrees",
+        "list_actions",
+        "get_action",
+        "list_action_executions",
+        "get_execution_status",
+        "list_step_templates",
+        // New tools synced with MCP Server
+        "get_worktree_status",
+        "get_git_diff",
+        "get_action_permissions",
+        "list_background_processes",
+        "get_background_process_output",
     ];
 
     /// Tools that require user confirmation before execution
     const CONFIRMATION_REQUIRED_TOOLS: &'static [&'static str] = &[
         "run_script",
+        "run_npm_script",
         "run_workflow",
         "trigger_webhook",
+        "create_workflow",
+        "add_workflow_step",
+        // New tools synced with MCP Server
+        "create_step_template",
+        "stop_background_process",
     ];
 
     /// Tools that are explicitly blocked
@@ -385,6 +406,12 @@ mod tests {
         // Auto-allowed tools
         assert!(ToolPermissionChecker::is_tool_allowed("get_git_status"));
         assert!(!ToolPermissionChecker::requires_confirmation("get_git_status"));
+
+        // Read-only query tools should be auto-allowed
+        assert!(ToolPermissionChecker::is_tool_allowed("list_projects"));
+        assert!(!ToolPermissionChecker::requires_confirmation("list_projects"));
+        assert!(ToolPermissionChecker::is_tool_allowed("get_project"));
+        assert!(!ToolPermissionChecker::requires_confirmation("get_project"));
 
         // Confirmation required tools
         assert!(ToolPermissionChecker::is_tool_allowed("run_script"));

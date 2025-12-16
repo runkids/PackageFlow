@@ -38,6 +38,8 @@ interface ActionConfirmationCardProps {
   onApprove: (toolCallId: string) => Promise<void>;
   /** Handler for denial */
   onDeny: (toolCallId: string, reason?: string) => Promise<void>;
+  /** Handler to cancel/stop ongoing execution */
+  onStop?: (toolCallId: string) => Promise<void>;
   /** Tool result (if execution completed) */
   result?: ToolResult;
   /** Whether the action is currently executing */
@@ -139,11 +141,13 @@ export function ActionConfirmationCard({
   toolCall,
   onApprove,
   onDeny,
+  onStop,
   result,
   isExecuting = false,
 }: ActionConfirmationCardProps) {
   const [isApproving, setIsApproving] = useState(false);
   const [isDenying, setIsDenying] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [outputExpanded, setOutputExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -176,6 +180,16 @@ export function ActionConfirmationCard({
       setIsDenying(false);
     }
   }, [onDeny, toolCall.id]);
+
+  const handleStop = useCallback(async () => {
+    if (!onStop) return;
+    setIsStopping(true);
+    try {
+      await onStop(toolCall.id);
+    } finally {
+      setIsStopping(false);
+    }
+  }, [onStop, toolCall.id]);
 
   const handleCopyOutput = useCallback(async () => {
     if (!result?.output) return;
@@ -308,6 +322,26 @@ export function ActionConfirmationCard({
                 <div className="h-full bg-primary/60 rounded-full animate-pulse w-2/3" />
               </div>
             </div>
+            {/* Stop button */}
+            {onStop && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleStop}
+                disabled={isStopping}
+                className={cn(
+                  'shrink-0',
+                  'border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500/50'
+                )}
+              >
+                {isStopping ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                ) : (
+                  <X className="w-4 h-4 mr-1.5" />
+                )}
+                Stop
+              </Button>
+            )}
           </div>
         </div>
       )}

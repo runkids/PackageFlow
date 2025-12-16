@@ -404,7 +404,15 @@ pub fn run() {
             ai_assistant::ai_assistant_get_tools,
             ai_assistant::ai_assistant_approve_tool_call,
             ai_assistant::ai_assistant_deny_tool_call,
+            ai_assistant::ai_assistant_stop_tool_execution,
+            ai_assistant::ai_assistant_continue_after_tool,
             ai_assistant::ai_assistant_get_suggestions,
+            // AI Assistant - Interactive Elements (023-enhanced-ai-chat US3)
+            ai_assistant::ai_assistant_parse_interactive,
+            ai_assistant::ai_assistant_execute_lazy_action,
+            // AI Assistant - Autocomplete & Context (023-enhanced-ai-chat US5)
+            ai_assistant::ai_assistant_get_autocomplete,
+            ai_assistant::ai_assistant_summarize_context,
         ])
         // Setup hook - sync incoming webhook server and start database watcher on app start
         .setup(|app| {

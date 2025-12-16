@@ -12,7 +12,8 @@ use std::time::Instant;
 
 use super::{AIError, AIProvider, AIResult};
 use crate::models::ai::{
-    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
+    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, ChatToolCall, ChatFunctionCall,
+    FinishReason, ModelInfo,
 };
 
 /// Gemini Provider
@@ -50,17 +51,54 @@ struct GeminiRequest {
     contents: Vec<GeminiContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     generation_config: Option<GeminiGenerationConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<GeminiTool>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct GeminiContent {
     role: String,
     parts: Vec<GeminiPart>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// Gemini part can be text, functionCall, or functionResponse
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct GeminiPart {
-    text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    function_call: Option<GeminiFunctionCall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    function_response: Option<GeminiFunctionResponse>,
+}
+
+/// Tool definition for Gemini
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GeminiTool {
+    function_declarations: Vec<GeminiFunctionDeclaration>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct GeminiFunctionDeclaration {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+/// Function call in response
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct GeminiFunctionCall {
+    name: String,
+    args: serde_json::Value,
+}
+
+/// Function response to send back
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct GeminiFunctionResponse {
+    name: String,
+    response: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,10 +206,61 @@ impl AIProvider for GeminiProvider {
         let mut system_prefix = String::new();
 
         for msg in messages {
-            let msg_content = msg.content.unwrap_or_default();
             if msg.role == "system" {
-                system_prefix = format!("{}\n\n", msg_content);
+                system_prefix = format!("{}\n\n", msg.content.unwrap_or_default());
+            } else if msg.role == "tool" {
+                // Tool result - send as functionResponse
+                let tool_call_id = msg.tool_call_id.unwrap_or_default();
+                // Extract function name from tool_call_id (we encode it as "funcname_id")
+                let func_name = tool_call_id.split('_').next().unwrap_or(&tool_call_id).to_string();
+
+                contents.push(GeminiContent {
+                    role: "user".to_string(),
+                    parts: vec![GeminiPart {
+                        text: None,
+                        function_call: None,
+                        function_response: Some(GeminiFunctionResponse {
+                            name: func_name,
+                            response: serde_json::json!({ "result": msg.content.unwrap_or_default() }),
+                        }),
+                    }],
+                });
+            } else if msg.role == "assistant" && msg.tool_calls.is_some() {
+                // Assistant message with function calls
+                let mut parts = Vec::new();
+
+                // Add text if present
+                if let Some(ref text) = msg.content {
+                    if !text.is_empty() {
+                        parts.push(GeminiPart {
+                            text: Some(text.clone()),
+                            function_call: None,
+                            function_response: None,
+                        });
+                    }
+                }
+
+                // Add function calls
+                for tc in msg.tool_calls.unwrap_or_default() {
+                    let args: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+                        .unwrap_or(serde_json::json!({}));
+                    parts.push(GeminiPart {
+                        text: None,
+                        function_call: Some(GeminiFunctionCall {
+                            name: tc.function.name,
+                            args,
+                        }),
+                        function_response: None,
+                    });
+                }
+
+                contents.push(GeminiContent {
+                    role: "model".to_string(),
+                    parts,
+                });
             } else {
+                // Regular text message
+                let msg_content = msg.content.unwrap_or_default();
                 let content = if !system_prefix.is_empty() && msg.role == "user" {
                     let full_content = format!("{}{}", system_prefix, msg_content);
                     system_prefix.clear();
@@ -182,7 +271,11 @@ impl AIProvider for GeminiProvider {
 
                 contents.push(GeminiContent {
                     role: to_gemini_role(&msg.role),
-                    parts: vec![GeminiPart { text: content }],
+                    parts: vec![GeminiPart {
+                        text: Some(content),
+                        function_call: None,
+                        function_response: None,
+                    }],
                 });
             }
         }
@@ -200,10 +293,24 @@ impl AIProvider for GeminiProvider {
             None
         };
 
+        // Convert tools to Gemini format
+        let gemini_tools: Option<Vec<GeminiTool>> = options.tools.map(|tools| {
+            vec![GeminiTool {
+                function_declarations: tools.into_iter().map(|t| GeminiFunctionDeclaration {
+                    name: t.function.name,
+                    description: t.function.description,
+                    parameters: t.function.parameters,
+                }).collect(),
+            }]
+        });
+
         let request = GeminiRequest {
             contents,
             generation_config,
+            tools: gemini_tools,
         };
+
+        log::debug!("Gemini request: {:?}", serde_json::to_string(&request));
 
         let response = self.client
             .post(&url)
@@ -227,7 +334,13 @@ impl AIProvider for GeminiProvider {
                     }
 
                     if error_code == 429 || error_status == "RESOURCE_EXHAUSTED" {
-                        return Err(AIError::RateLimited);
+                        // Log the actual message for debugging
+                        log::warn!("Gemini RESOURCE_EXHAUSTED: {}", error.message);
+                        // Include actual message - could be quota, billing, or rate limit
+                        return Err(AIError::ApiError(format!(
+                            "Gemini API limit: {}",
+                            error.message
+                        )));
                     }
 
                     if error_status == "NOT_FOUND" || error.message.contains("not found") {
@@ -246,13 +359,33 @@ impl AIProvider for GeminiProvider {
 
         let gemini_response: GeminiResponse = serde_json::from_str(&body)?;
 
+        log::debug!("Gemini response: {:?}", gemini_response);
+
         let first_candidate = gemini_response.candidates.and_then(|c| c.into_iter().next());
 
-        let content = first_candidate
-            .as_ref()
-            .and_then(|c| c.content.parts.first())
-            .map(|p| p.text.clone())
-            .unwrap_or_default();
+        // Extract text content and function calls
+        let mut text_content = String::new();
+        let mut tool_calls: Vec<ChatToolCall> = Vec::new();
+
+        if let Some(ref candidate) = first_candidate {
+            for part in &candidate.content.parts {
+                if let Some(ref text) = part.text {
+                    text_content.push_str(text);
+                }
+                if let Some(ref fc) = part.function_call {
+                    // Generate a unique ID for the tool call
+                    let id = format!("{}_{}", fc.name, uuid::Uuid::new_v4().to_string().replace("-", "")[..8].to_string());
+                    tool_calls.push(ChatToolCall {
+                        id,
+                        tool_type: "function".to_string(),
+                        function: ChatFunctionCall {
+                            name: fc.name.clone(),
+                            arguments: fc.args.to_string(),
+                        },
+                    });
+                }
+            }
+        }
 
         let tokens_used = gemini_response
             .usage_metadata
@@ -269,12 +402,19 @@ impl AIProvider for GeminiProvider {
                 _ => FinishReason::Unknown,
             });
 
+        // If we have tool calls, the finish reason should be ToolCalls
+        let finish_reason = if !tool_calls.is_empty() {
+            Some(FinishReason::ToolCalls)
+        } else {
+            finish_reason
+        };
+
         Ok(ChatResponse {
-            content,
+            content: text_content,
             tokens_used,
             model: self.config.model.clone(),
             finish_reason,
-            tool_calls: None, // Gemini tool calling not yet implemented
+            tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
         })
     }
 

@@ -741,10 +741,20 @@ const ActivityTab: React.FC<ActivityTabProps> = ({
   onLoadLogs,
   onClearLogs,
 }) => {
+  const [hasLoadedLogs, setHasLoadedLogs] = useState(false);
+
+  // Handle tab change - auto-load logs when logs tab is first selected
+  const handleTabChange = useCallback((value: string) => {
+    if (value === 'logs' && !hasLoadedLogs && !isLoadingLogs) {
+      setHasLoadedLogs(true);
+      onLoadLogs();
+    }
+  }, [hasLoadedLogs, isLoadingLogs, onLoadLogs]);
+
   return (
     <div className="space-y-4">
       {/* Nested tabs for History and Logs */}
-      <Tabs defaultValue="history" className="space-y-4">
+      <Tabs defaultValue="history" className="space-y-4" onValueChange={handleTabChange}>
         <TabsList className="w-fit">
           <TabsTrigger value="history" className="flex items-center gap-1.5">
             <History className="w-3.5 h-3.5" />

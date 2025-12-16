@@ -327,7 +327,7 @@ impl ToolResult {
         Self {
             call_id,
             success: false,
-            output: String::new(),
+            output: error.clone(),
             error: Some(error),
             duration_ms: None,
             metadata: None,
@@ -554,4 +554,246 @@ pub struct ToolDefinition {
 #[serde(rename_all = "camelCase")]
 pub struct AvailableTools {
     pub tools: Vec<ToolDefinition>,
+}
+
+// ============================================================================
+// Feature 023: Enhanced AI Chat Experience
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Response Status (T007)
+// ----------------------------------------------------------------------------
+
+/// Response processing phase
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ResponsePhase {
+    Idle,
+    Thinking,
+    Generating,
+    Tool,
+    Complete,
+    Error,
+}
+
+impl std::fmt::Display for ResponsePhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResponsePhase::Idle => write!(f, "idle"),
+            ResponsePhase::Thinking => write!(f, "thinking"),
+            ResponsePhase::Generating => write!(f, "generating"),
+            ResponsePhase::Tool => write!(f, "tool"),
+            ResponsePhase::Complete => write!(f, "complete"),
+            ResponsePhase::Error => write!(f, "error"),
+        }
+    }
+}
+
+/// Timing breakdown for response
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ResponseTiming {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generating_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_ms: Option<u64>,
+}
+
+/// Response status tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResponseStatus {
+    pub phase: ResponsePhase,
+    pub start_time: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timing: Option<ResponseTiming>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+impl ResponseStatus {
+    /// Create a new idle status
+    pub fn idle() -> Self {
+        Self {
+            phase: ResponsePhase::Idle,
+            start_time: Self::now_ms(),
+            tool_name: None,
+            timing: None,
+            model: None,
+        }
+    }
+
+    /// Create a new thinking status
+    pub fn thinking() -> Self {
+        Self {
+            phase: ResponsePhase::Thinking,
+            start_time: Self::now_ms(),
+            tool_name: None,
+            timing: None,
+            model: None,
+        }
+    }
+
+    /// Create a new generating status
+    pub fn generating(model: Option<String>) -> Self {
+        Self {
+            phase: ResponsePhase::Generating,
+            start_time: Self::now_ms(),
+            tool_name: None,
+            timing: None,
+            model,
+        }
+    }
+
+    /// Create a new tool status
+    pub fn tool(tool_name: String) -> Self {
+        Self {
+            phase: ResponsePhase::Tool,
+            start_time: Self::now_ms(),
+            tool_name: Some(tool_name),
+            timing: None,
+            model: None,
+        }
+    }
+
+    /// Create a new complete status with timing and optional model
+    pub fn complete_with_model(timing: ResponseTiming, model: Option<String>) -> Self {
+        Self {
+            phase: ResponsePhase::Complete,
+            start_time: Self::now_ms(),
+            tool_name: None,
+            timing: Some(timing),
+            model,
+        }
+    }
+
+    /// Create a new complete status with timing
+    pub fn complete(timing: ResponseTiming) -> Self {
+        Self::complete_with_model(timing, None)
+    }
+
+    /// Create a new error status
+    pub fn error() -> Self {
+        Self {
+            phase: ResponsePhase::Error,
+            start_time: Self::now_ms(),
+            tool_name: None,
+            timing: None,
+            model: None,
+        }
+    }
+
+    /// Get current time in milliseconds
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Interactive Elements (T008)
+// ----------------------------------------------------------------------------
+
+/// Interactive element type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InteractiveElementType {
+    Navigation,
+    Action,
+    Entity,
+}
+
+/// Interactive UI element embedded in AI response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractiveElement {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub element_type: InteractiveElementType,
+    pub label: String,
+    pub payload: String,
+    pub requires_confirm: bool,
+    pub start_index: usize,
+    pub end_index: usize,
+}
+
+// ----------------------------------------------------------------------------
+// Lazy Actions (T009)
+// ----------------------------------------------------------------------------
+
+/// Lazy action type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LazyActionType {
+    Navigate,
+    ExecuteTool,
+    Copy,
+}
+
+/// Lazy action that executes directly
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LazyAction {
+    #[serde(rename = "type")]
+    pub action_type: LazyActionType,
+    pub payload: String,
+}
+
+// ----------------------------------------------------------------------------
+// Context Management (T010)
+// ----------------------------------------------------------------------------
+
+/// Entity mentioned in conversation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextEntity {
+    #[serde(rename = "type")]
+    pub entity_type: String,
+    pub id: String,
+    pub name: String,
+    pub last_mentioned: usize,
+}
+
+/// Recent tool call for reference tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentToolCall {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub success: bool,
+    pub message_index: usize,
+}
+
+/// Summarized context for long conversations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationContext {
+    pub summary: String,
+    pub key_entities: Vec<ContextEntity>,
+    pub recent_tool_calls: Vec<RecentToolCall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_context: Option<ProjectContext>,
+    pub token_count: u32,
+}
+
+// ----------------------------------------------------------------------------
+// Status Update Event (T011)
+// ----------------------------------------------------------------------------
+
+/// Payload for ai:status-update event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusUpdatePayload {
+    pub stream_session_id: String,
+    pub conversation_id: String,
+    pub status: ResponseStatus,
 }

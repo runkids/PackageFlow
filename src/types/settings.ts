@@ -12,7 +12,8 @@ export type SettingsSection =
   | 'prompts'
   | 'mcp'
   | 'toolchain'
-  | 'data';
+  | 'data'
+  | 'about';
 
 export interface SettingsSidebarSection {
   id: string;

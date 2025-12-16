@@ -298,6 +298,9 @@ export const MCP_TOOL_DEFINITIONS: McpToolWithPermission[] = [
   { name: 'list_workflows', description: 'List all workflows, optionally filtered by project', category: 'read' },
   { name: 'get_workflow', description: 'Get detailed workflow info including all steps', category: 'read' },
   { name: 'list_step_templates', description: 'List available step templates (built-in + custom)', category: 'read' },
+  // Background process read tools
+  { name: 'get_background_process_output', description: 'Get output from a background process', category: 'read' },
+  { name: 'list_background_processes', description: 'List all background processes', category: 'read' },
 
   // Write tools
   { name: 'create_workflow', description: 'Create a new workflow', category: 'write' },
@@ -306,6 +309,8 @@ export const MCP_TOOL_DEFINITIONS: McpToolWithPermission[] = [
 
   // Execute tools
   { name: 'run_workflow', description: 'Execute a workflow and return results', category: 'execute' },
+  { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script (supports background mode)', category: 'execute' },
+  { name: 'stop_background_process', description: 'Stop/terminate a background process', category: 'execute' },
 ];
 
 /** Get tools by category */
@@ -483,7 +488,12 @@ export const TOOL_DEFINITIONS_WITH_PERMISSIONS: ToolDefinitionWithPermissions[] 
   { name: 'run_script', description: 'Execute a script action', category: 'execute', applicablePermissions: ['read', 'execute'] },
   { name: 'trigger_webhook', description: 'Trigger a webhook action', category: 'execute', applicablePermissions: ['read', 'execute'] },
   { name: 'run_mcp_workflow', description: 'Execute a workflow via MCP action', category: 'execute', applicablePermissions: ['read', 'execute'] },
-  { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script from package.json', category: 'execute', applicablePermissions: ['read', 'execute'] },
+  { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script (supports background mode)', category: 'execute', applicablePermissions: ['read', 'execute'] },
+
+  // Background Process tools
+  { name: 'get_background_process_output', description: 'Get output from a background process', category: 'read', applicablePermissions: ['read'] },
+  { name: 'list_background_processes', description: 'List all background processes', category: 'read', applicablePermissions: ['read'] },
+  { name: 'stop_background_process', description: 'Stop/terminate a background process', category: 'execute', applicablePermissions: ['read', 'execute'] },
 
   // Write tools - 'read' and 'write' permissions are applicable
   { name: 'create_workflow', description: 'Create a new workflow', category: 'write', applicablePermissions: ['read', 'write'] },

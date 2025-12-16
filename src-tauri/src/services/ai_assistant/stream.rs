@@ -15,7 +15,9 @@ use tokio::sync::{mpsc, RwLock};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
-use crate::models::ai_assistant::{AIAssistantEvent, ToolCall};
+use crate::models::ai_assistant::{
+    AIAssistantEvent, ToolCall, ResponseStatus, ResponseTiming, StatusUpdatePayload,
+};
 
 /// Manages active streaming sessions
 pub struct StreamManager {
@@ -161,6 +163,23 @@ impl StreamManager {
         app.emit("ai:chat-error", &event)
             .map_err(|e| format!("Failed to emit error event: {}", e))
     }
+
+    /// Emit a status update event to the frontend (Feature 023)
+    pub fn emit_status(
+        app: &AppHandle,
+        stream_session_id: &str,
+        conversation_id: &str,
+        status: ResponseStatus,
+    ) -> Result<(), String> {
+        let payload = StatusUpdatePayload {
+            stream_session_id: stream_session_id.to_string(),
+            conversation_id: conversation_id.to_string(),
+            status,
+        };
+
+        app.emit("ai:status-update", &payload)
+            .map_err(|e| format!("Failed to emit status update event: {}", e))
+    }
 }
 
 impl Default for StreamManager {
@@ -176,6 +195,14 @@ pub struct StreamContext {
     pub message_id: String,
     pub app: AppHandle,
     accumulated_content: String,
+    /// Timestamp when thinking started (ms) - Feature 023
+    thinking_start: Option<u64>,
+    /// Timestamp when generating started (ms) - Feature 023
+    generating_start: Option<u64>,
+    /// Timestamp when tool call started (ms) - Feature 023
+    tool_start: Option<u64>,
+    /// Current model name - Feature 023
+    model_name: Option<String>,
 }
 
 impl StreamContext {
@@ -192,7 +219,75 @@ impl StreamContext {
             message_id,
             app,
             accumulated_content: String::new(),
+            thinking_start: None,
+            generating_start: None,
+            tool_start: None,
+            model_name: None,
         }
+    }
+
+    /// Get current time in milliseconds
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    /// Emit status update and track timing (Feature 023)
+    pub fn emit_status(&mut self, status: ResponseStatus) -> Result<(), String> {
+        StreamManager::emit_status(
+            &self.app,
+            &self.session_id,
+            &self.conversation_id,
+            status,
+        )
+    }
+
+    /// Emit thinking status (Feature 023)
+    pub fn emit_thinking(&mut self) -> Result<(), String> {
+        self.thinking_start = Some(Self::now_ms());
+        self.emit_status(ResponseStatus::thinking())
+    }
+
+    /// Emit generating status (Feature 023)
+    pub fn emit_generating(&mut self, model: Option<String>) -> Result<(), String> {
+        self.generating_start = Some(Self::now_ms());
+        self.model_name = model.clone();
+        self.emit_status(ResponseStatus::generating(model))
+    }
+
+    /// Emit tool status (Feature 023)
+    pub fn emit_tool_status(&mut self, tool_name: &str) -> Result<(), String> {
+        self.tool_start = Some(Self::now_ms());
+        self.emit_status(ResponseStatus::tool(tool_name.to_string()))
+    }
+
+    /// Emit complete status with timing (Feature 023)
+    pub fn emit_complete_status(&mut self) -> Result<(), String> {
+        let now = Self::now_ms();
+
+        let timing = ResponseTiming {
+            thinking_ms: self.thinking_start.map(|start| {
+                self.generating_start.unwrap_or(now).saturating_sub(start)
+            }),
+            generating_ms: self.generating_start.map(|start| {
+                now.saturating_sub(start)
+            }),
+            tool_ms: self.tool_start.map(|start| {
+                now.saturating_sub(start)
+            }),
+            total_ms: self.thinking_start.map(|start| {
+                now.saturating_sub(start)
+            }),
+        };
+
+        self.emit_status(ResponseStatus::complete_with_model(timing, self.model_name.clone()))
+    }
+
+    /// Emit error status (Feature 023)
+    pub fn emit_error_status(&mut self) -> Result<(), String> {
+        self.emit_status(ResponseStatus::error())
     }
 
     /// Emit a token and accumulate content

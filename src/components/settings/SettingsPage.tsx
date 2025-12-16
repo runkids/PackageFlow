@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
-import { X, Loader2, Search, HardDrive, Users, Bot, FileText, Server, Palette, Keyboard, ArrowLeftRight, Sun, Moon, Wrench, Bell } from 'lucide-react';
+import { X, Loader2, Search, HardDrive, Users, Bot, FileText, Server, Palette, Keyboard, ArrowLeftRight, Sun, Moon, Wrench, Bell, Info } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { cn } from '../../lib/utils';
 import type { SettingsSection } from '../../types/settings';
@@ -49,6 +49,9 @@ const NotificationSettingsPanel = lazy(() =>
 const DataSettingsPanel = lazy(() =>
   import('./panels/DataSettingsPanel').then((m) => ({ default: m.DataSettingsPanel }))
 );
+const AboutSettingsPanel = lazy(() =>
+  import('./panels/AboutSettingsPanel').then((m) => ({ default: m.AboutSettingsPanel }))
+);
 
 interface SettingsPageProps {
   isOpen: boolean;
@@ -69,6 +72,7 @@ const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
   shortcuts: Keyboard,
   toolchain: Wrench,
   data: ArrowLeftRight,
+  about: Info,
 };
 
 // Panel components mapping
@@ -83,6 +87,7 @@ const SECTION_PANELS: Record<SettingsSection, React.LazyExoticComponent<React.Co
   shortcuts: ShortcutsSettingsPanel,
   toolchain: ToolchainPreferencesPanel,
   data: DataSettingsPanel,
+  about: AboutSettingsPanel,
 };
 
 // Sidebar categories structure (Discord-style grouping)
@@ -106,6 +111,11 @@ const SIDEBAR_CATEGORIES: { id: SettingsCategory; label: string; sections: Setti
     id: 'data',
     label: 'Data',
     sections: ['data'],
+  },
+  {
+    id: 'about',
+    label: 'About',
+    sections: ['about'],
   },
 ];
 

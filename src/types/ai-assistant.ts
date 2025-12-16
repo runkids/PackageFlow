@@ -93,6 +93,17 @@ export interface ParameterDefinition {
 // Quick Actions / Suggestions
 // ============================================================================
 
+/** Lazy action type */
+export type LazyActionType = 'navigate' | 'execute_tool' | 'copy';
+
+/** Lazy action that executes directly without chat */
+export interface LazyAction {
+  /** Type of action */
+  type: LazyActionType;
+  /** Action-specific payload */
+  payload: string;
+}
+
 /** Suggested quick action */
 export interface SuggestedAction {
   id: string;
@@ -101,6 +112,10 @@ export interface SuggestedAction {
   icon?: string;
   variant?: 'default' | 'primary' | 'warning';
   category?: 'git' | 'project' | 'workflow' | 'general';
+  /** Is this a lazy action (one-click, no confirm)? */
+  isLazyAction?: boolean;
+  /** Action to execute directly (bypasses chat) */
+  directAction?: LazyAction;
 }
 
 // ============================================================================
@@ -337,4 +352,146 @@ export interface PendingAction {
   sourceClient?: string;
   projectContext?: string;
   requestedAt: Date;
+}
+
+// ============================================================================
+// Feature 023: Enhanced AI Chat Experience
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Response Status Types (T001)
+// ----------------------------------------------------------------------------
+
+/** Current processing phase of AI response */
+export type ResponsePhase = 'idle' | 'thinking' | 'generating' | 'tool' | 'complete' | 'error';
+
+/** Detailed timing breakdown for response */
+export interface ResponseTiming {
+  /** Time spent before first token (ms) */
+  thinkingMs?: number;
+  /** Time spent generating response (ms) */
+  generatingMs?: number;
+  /** Time spent on tool execution (ms) */
+  toolMs?: number;
+  /** Total response time (ms) */
+  totalMs?: number;
+}
+
+/** Response status tracking */
+export interface ResponseStatus {
+  /** Current processing phase */
+  phase: ResponsePhase;
+  /** Timestamp when this phase started (Unix ms) */
+  startTime: number;
+  /** Tool name if phase is 'tool' */
+  toolName?: string;
+  /** Detailed timing breakdown */
+  timing?: ResponseTiming;
+  /** Model being used */
+  model?: string;
+}
+
+// ----------------------------------------------------------------------------
+// Interactive Element Types (T002)
+// ----------------------------------------------------------------------------
+
+/** Type of interactive element */
+export type InteractiveElementType = 'navigation' | 'action' | 'entity';
+
+/** Interactive UI element embedded in AI response */
+export interface InteractiveElement {
+  /** Unique identifier */
+  id: string;
+  /** Element type */
+  type: InteractiveElementType;
+  /** Display label */
+  label: string;
+  /** Type-specific payload */
+  payload: string;
+  /** Whether action requires confirmation */
+  requiresConfirm: boolean;
+  /** Start position in content string */
+  startIndex: number;
+  /** End position in content string */
+  endIndex: number;
+}
+
+// ----------------------------------------------------------------------------
+// Conversation Context Types (T004)
+// ----------------------------------------------------------------------------
+
+/** Entity type for context tracking */
+export type ContextEntityType = 'project' | 'workflow' | 'script' | 'file';
+
+/** Entity mentioned in conversation */
+export interface ContextEntity {
+  /** Entity type */
+  type: ContextEntityType;
+  /** Entity identifier */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Last mentioned in message index */
+  lastMentioned: number;
+}
+
+/** Recent tool call for reference tracking */
+export interface RecentToolCall {
+  /** Tool call ID */
+  id: string;
+  /** Tool name */
+  name: string;
+  /** Brief description of what was done */
+  description: string;
+  /** Whether it succeeded */
+  success: boolean;
+  /** Message index where this occurred */
+  messageIndex: number;
+}
+
+/** Summarized context for long conversations */
+export interface ConversationContext {
+  /** AI-generated summary of earlier conversation */
+  summary: string;
+  /** Key entities mentioned */
+  keyEntities: ContextEntity[];
+  /** Recent tool calls (for reference tracking) */
+  recentToolCalls: RecentToolCall[];
+  /** Active project context if any */
+  projectContext?: ProjectContext;
+  /** Token count of summarized content */
+  tokenCount: number;
+}
+
+// ----------------------------------------------------------------------------
+// Autocomplete Types (T005)
+// ----------------------------------------------------------------------------
+
+/** Source of autocomplete suggestion */
+export type AutocompleteSource = 'recent' | 'tool' | 'context';
+
+/** Autocomplete suggestion for input */
+export interface AutocompleteSuggestion {
+  /** Display text */
+  text: string;
+  /** Full prompt to insert */
+  fullPrompt: string;
+  /** Source of suggestion */
+  source: AutocompleteSource;
+  /** Relevance score (0-1) */
+  score: number;
+}
+
+// ----------------------------------------------------------------------------
+// Status Update Event (T006)
+// ----------------------------------------------------------------------------
+
+/** Payload for ai:status-update event */
+export interface StatusUpdatePayload {
+  /** Stream session ID for matching */
+  streamSessionId: string;
+  /** Conversation ID */
+  conversationId: string;
+  /** Response status */
+  status: ResponseStatus;
 }

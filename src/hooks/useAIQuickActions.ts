@@ -29,47 +29,32 @@ interface UseAIQuickActionsReturn {
 
 /**
  * Default quick actions when no project context is available
+ * These map directly to PackageFlow MCP tools for practical use
  */
 const DEFAULT_SUGGESTIONS: SuggestedAction[] = [
   {
-    id: 'help',
-    label: 'What can you do?',
-    prompt: 'What can you help me with?',
-    icon: 'HelpCircle',
-    variant: 'default',
-    category: 'general',
+    id: 'list-projects',
+    label: 'Projects',
+    prompt: 'Use list_projects to show all registered projects',
+    icon: 'FolderOpen',
+    variant: 'primary',
+    category: 'project',
   },
   {
-    id: 'explain',
-    label: 'Explain code',
-    prompt: 'Please explain what this code does',
-    icon: 'FileSearch',
+    id: 'list-workflows',
+    label: 'Workflows',
+    prompt: 'Use list_workflows to show all available workflows',
+    icon: 'Workflow',
     variant: 'default',
-    category: 'general',
+    category: 'workflow',
   },
   {
-    id: 'refactor',
-    label: 'Refactor',
-    prompt: 'Suggest how to refactor and improve this code',
-    icon: 'Hammer',
+    id: 'list-actions',
+    label: 'Actions',
+    prompt: 'Use list_actions to show all MCP actions',
+    icon: 'Zap',
     variant: 'default',
-    category: 'general',
-  },
-  {
-    id: 'debug',
-    label: 'Debug issue',
-    prompt: 'Help me debug this issue',
-    icon: 'TestTube',
-    variant: 'warning',
-    category: 'general',
-  },
-  {
-    id: 'terminal',
-    label: 'Run command',
-    prompt: 'Run a terminal command for me',
-    icon: 'Terminal',
-    variant: 'default',
-    category: 'general',
+    category: 'workflow',
   },
 ];
 
@@ -131,6 +116,7 @@ export function useAIQuickActions(options: UseAIQuickActionsOptions = {}): UseAI
 
 /**
  * Get quick actions based on detected project context
+ * These map directly to PackageFlow MCP tools
  */
 export function getContextualQuickActions(
   hasGit: boolean,
@@ -141,22 +127,31 @@ export function getContextualQuickActions(
 
   // Git actions
   if (hasGit) {
+    actions.push({
+      id: 'git-status',
+      label: 'Git Status',
+      prompt: 'Use get_git_status for this project',
+      icon: 'GitBranch',
+      variant: 'default',
+      category: 'git',
+    });
+
     if (hasStagedChanges) {
       actions.push({
-        id: 'commit-message',
-        label: 'Generate commit',
-        prompt: 'Generate a commit message for my staged changes',
-        icon: 'GitCommit',
-        variant: 'primary',
+        id: 'git-diff',
+        label: 'Staged Diff',
+        prompt: 'Use get_staged_diff to show staged changes',
+        icon: 'FileDiff',
+        variant: 'default',
         category: 'git',
       });
     }
 
     actions.push({
-      id: 'review-changes',
-      label: 'Review changes',
-      prompt: 'Review my current changes and suggest improvements',
-      icon: 'FileSearch',
+      id: 'list-worktrees',
+      label: 'Worktrees',
+      prompt: 'Use list_worktrees for this project',
+      icon: 'GitFork',
       variant: 'default',
       category: 'git',
     });
@@ -165,33 +160,41 @@ export function getContextualQuickActions(
   // Node.js project actions
   if (hasPackageJson) {
     actions.push({
-      id: 'run-tests',
-      label: 'Run tests',
-      prompt: 'Run the test suite for this project',
-      icon: 'TestTube',
+      id: 'list-scripts',
+      label: 'Scripts',
+      prompt: 'Use list_project_scripts to show available npm scripts',
+      icon: 'Terminal',
       variant: 'default',
       category: 'project',
     });
 
     actions.push({
-      id: 'build-project',
-      label: 'Build project',
-      prompt: 'Build this project',
+      id: 'run-dev',
+      label: 'npm dev',
+      prompt: 'Use run_npm_script with scriptName "dev"',
+      icon: 'Play',
+      variant: 'primary',
+      category: 'project',
+    });
+
+    actions.push({
+      id: 'run-build',
+      label: 'npm build',
+      prompt: 'Use run_npm_script with scriptName "build"',
       icon: 'Hammer',
       variant: 'default',
       category: 'project',
     });
-  }
 
-  // Always include general help
-  actions.push({
-    id: 'help',
-    label: 'Help',
-    prompt: 'What can you help me with?',
-    icon: 'HelpCircle',
-    variant: 'default',
-    category: 'general',
-  });
+    actions.push({
+      id: 'run-test',
+      label: 'npm test',
+      prompt: 'Use run_npm_script with scriptName "test"',
+      icon: 'TestTube',
+      variant: 'default',
+      category: 'project',
+    });
+  }
 
   return actions;
 }

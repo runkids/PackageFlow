@@ -71,7 +71,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
       {isOpen && (
         <div
           className={cn(
-            'absolute z-50 mt-1 min-w-[160px] bg-card border border-border rounded-lg shadow-lg py-1',
+            'absolute z-[1000] mt-1 min-w-[160px] rounded-lg shadow-xl py-1',
+            'bg-secondary border border-border',
             'animate-in fade-in-0 zoom-in-95',
             align === 'right' ? 'right-0' : 'left-0'
           )}

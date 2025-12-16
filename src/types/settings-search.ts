@@ -5,7 +5,7 @@
 
 import type { SettingsSection } from './settings';
 
-export type SettingsCategory = 'project' | 'ai' | 'preferences' | 'data';
+export type SettingsCategory = 'project' | 'ai' | 'preferences' | 'data' | 'about';
 
 export interface SettingsSearchIndexItem {
   id: SettingsSection;
@@ -102,6 +102,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchIndexItem[] = [
     description: 'Backup and restore your data',
     keywords: ['import', 'export', 'backup', 'restore', 'json', 'data'],
   },
+  {
+    id: 'about',
+    category: 'about',
+    title: 'About',
+    description: 'View app version and check for updates',
+    keywords: ['version', 'update', 'about', 'info', 'changelog', 'release'],
+  },
 ];
 
 /**
@@ -111,7 +118,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
   {
     id: 'all',
     label: 'All',
-    sections: ['storage', 'deploy-accounts', 'ai-providers', 'prompts', 'mcp', 'appearance', 'notifications', 'shortcuts', 'toolchain', 'data'],
+    sections: ['storage', 'deploy-accounts', 'ai-providers', 'prompts', 'mcp', 'appearance', 'notifications', 'shortcuts', 'toolchain', 'data', 'about'],
   },
   {
     id: 'project',
@@ -132,6 +139,11 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
     id: 'data',
     label: 'Data',
     sections: ['data'],
+  },
+  {
+    id: 'about',
+    label: 'About',
+    sections: ['about'],
   },
 ];
 

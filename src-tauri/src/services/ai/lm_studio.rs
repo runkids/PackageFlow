@@ -12,7 +12,8 @@ use std::time::Instant;
 
 use super::{AIError, AIProvider, AIResult};
 use crate::models::ai::{
-    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
+    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, ChatToolCall, ChatFunctionCall,
+    FinishReason, ModelInfo,
 };
 
 /// LM Studio Provider
@@ -36,7 +37,7 @@ impl LMStudioProvider {
 }
 
 // OpenAI-compatible API types for LM Studio
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct OpenAIChatRequest {
     model: String,
     messages: Vec<OpenAIMessage>,
@@ -47,12 +48,49 @@ struct OpenAIChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OpenAITool>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct OpenAIMessage {
     role: String,
-    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OpenAIToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+/// Tool definition for OpenAI-compatible API
+#[derive(Debug, Serialize, Clone)]
+struct OpenAITool {
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: OpenAIFunctionDef,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct OpenAIFunctionDef {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+/// Tool call in request/response
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OpenAIToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: OpenAIFunctionCall,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OpenAIFunctionCall {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +108,10 @@ struct OpenAIChoice {
 
 #[derive(Debug, Deserialize)]
 struct OpenAIResponseMessage {
-    content: String,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<OpenAIToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,13 +175,42 @@ impl AIProvider for LMStudioProvider {
     ) -> AIResult<ChatResponse> {
         let url = self.api_url("/chat/completions");
 
+        // Convert messages to OpenAI format
         let openai_messages: Vec<OpenAIMessage> = messages
             .into_iter()
-            .map(|m| OpenAIMessage {
-                role: m.role,
-                content: m.content.unwrap_or_default(),
+            .map(|m| {
+                // Convert tool_calls if present
+                let tool_calls = m.tool_calls.map(|calls| {
+                    calls.into_iter().map(|tc| OpenAIToolCall {
+                        id: tc.id,
+                        tool_type: tc.tool_type,
+                        function: OpenAIFunctionCall {
+                            name: tc.function.name,
+                            arguments: tc.function.arguments,
+                        },
+                    }).collect()
+                });
+
+                OpenAIMessage {
+                    role: m.role,
+                    content: m.content,
+                    tool_calls,
+                    tool_call_id: m.tool_call_id,
+                }
             })
             .collect();
+
+        // Convert tools to OpenAI format
+        let openai_tools: Option<Vec<OpenAITool>> = options.tools.map(|tools| {
+            tools.into_iter().map(|t| OpenAITool {
+                tool_type: t.tool_type,
+                function: OpenAIFunctionDef {
+                    name: t.function.name,
+                    description: t.function.description,
+                    parameters: t.function.parameters,
+                },
+            }).collect()
+        });
 
         let request = OpenAIChatRequest {
             model: self.config.model.clone(),
@@ -149,7 +219,10 @@ impl AIProvider for LMStudioProvider {
             max_tokens: options.max_tokens,
             top_p: options.top_p,
             stream: false,
+            tools: openai_tools,
         };
+
+        log::debug!("LM Studio request: {:?}", serde_json::to_string(&request));
 
         let response = self.client
             .post(&url)
@@ -167,6 +240,57 @@ impl AIProvider for LMStudioProvider {
                 return Err(AIError::ModelNotFound(self.config.model.clone()));
             }
 
+            // Check if it's a tool-related error - retry without tools
+            if (body.contains("tool") || body.contains("function")) &&
+               (body.contains("invalid") || body.contains("error") || body.contains("not supported")) {
+                log::warn!(
+                    "LM Studio model {} doesn't support function calling properly, retrying without tools",
+                    self.config.model
+                );
+
+                // Retry without tools
+                let retry_request = OpenAIChatRequest {
+                    model: request.model.clone(),
+                    messages: request.messages.clone(),
+                    temperature: request.temperature,
+                    max_tokens: request.max_tokens,
+                    top_p: request.top_p,
+                    stream: false,
+                    tools: None, // Remove tools
+                };
+
+                let retry_response = self.client
+                    .post(&url)
+                    .json(&retry_request)
+                    .send()
+                    .await
+                    .map_err(|e| AIError::ConnectionFailed(e.to_string()))?;
+
+                if !retry_response.status().is_success() {
+                    let retry_body = retry_response.text().await.unwrap_or_default();
+                    return Err(AIError::ApiError(format!(
+                        "LM Studio API error ({}): {}",
+                        status, retry_body
+                    )));
+                }
+
+                let openai_response: OpenAIChatResponse = retry_response.json().await?;
+                let first_choice = openai_response.choices.first();
+                return Ok(ChatResponse {
+                    content: first_choice.and_then(|c| c.message.content.clone()).unwrap_or_default(),
+                    tokens_used: openai_response.usage.and_then(|u| u.total_tokens),
+                    model: openai_response.model,
+                    finish_reason: first_choice
+                        .and_then(|c| c.finish_reason.as_ref())
+                        .map(|r| match r.as_str() {
+                            "stop" => FinishReason::Stop,
+                            "length" => FinishReason::Length,
+                            _ => FinishReason::Unknown,
+                        }),
+                    tool_calls: None,
+                });
+            }
+
             return Err(AIError::ApiError(format!(
                 "LM Studio API error ({}): {}",
                 status, body
@@ -175,10 +299,12 @@ impl AIProvider for LMStudioProvider {
 
         let openai_response: OpenAIChatResponse = response.json().await?;
 
+        log::debug!("LM Studio response: {:?}", openai_response);
+
         let first_choice = openai_response.choices.first();
 
         let content = first_choice
-            .map(|c| c.message.content.clone())
+            .and_then(|c| c.message.content.clone())
             .unwrap_or_default();
 
         let tokens_used = openai_response
@@ -192,7 +318,22 @@ impl AIProvider for LMStudioProvider {
                 "stop" => FinishReason::Stop,
                 "length" => FinishReason::Length,
                 "content_filter" => FinishReason::ContentFilter,
+                "tool_calls" | "function_call" => FinishReason::ToolCalls,
                 _ => FinishReason::Unknown,
+            });
+
+        // Convert tool_calls to our format
+        let tool_calls = first_choice
+            .and_then(|c| c.message.tool_calls.clone())
+            .map(|calls| {
+                calls.into_iter().map(|tc| ChatToolCall {
+                    id: tc.id,
+                    tool_type: tc.tool_type,
+                    function: ChatFunctionCall {
+                        name: tc.function.name,
+                        arguments: tc.function.arguments,
+                    },
+                }).collect()
             });
 
         Ok(ChatResponse {
@@ -200,7 +341,7 @@ impl AIProvider for LMStudioProvider {
             tokens_used,
             model: openai_response.model,
             finish_reason,
-            tool_calls: None, // LM Studio tool calling not yet implemented
+            tool_calls,
         })
     }
 

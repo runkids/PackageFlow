@@ -6,8 +6,10 @@
 //
 // This server uses SQLite database for data storage with WAL mode for concurrent access.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::time::timeout as tokio_timeout;
@@ -115,13 +117,555 @@ static TOOL_RATE_LIMITERS: Lazy<ToolRateLimiters> = Lazy::new(ToolRateLimiters::
 
 /// Concurrency limiter for action execution
 /// Limits concurrent action executions to prevent resource exhaustion
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, RwLock};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// Maximum concurrent action executions (scripts, webhooks, workflows)
 const MAX_CONCURRENT_ACTIONS: usize = 10;
 
 /// Global semaphore for action concurrency control
 static ACTION_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(MAX_CONCURRENT_ACTIONS));
+
+// ============================================================================
+// Background Process Management
+// ============================================================================
+
+/// Maximum number of concurrent background processes
+const MAX_BACKGROUND_PROCESSES: usize = 20;
+
+/// Maximum output buffer size per process (1MB)
+const MAX_OUTPUT_BUFFER_BYTES: usize = 1024 * 1024;
+
+/// Maximum lines to keep in buffer
+const MAX_OUTPUT_BUFFER_LINES: usize = 10000;
+
+/// Default success pattern timeout (30 seconds)
+const DEFAULT_SUCCESS_TIMEOUT_MS: u64 = 30_000;
+
+/// Process cleanup interval (check every 60 seconds)
+const CLEANUP_INTERVAL_SECS: u64 = 60;
+
+/// Time after completion before process is removed (5 minutes)
+const COMPLETED_PROCESS_TTL_SECS: u64 = 300;
+
+/// Status of a background process
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundProcessStatus {
+    /// Process is starting, waiting for success pattern
+    Starting,
+    /// Process is running (success pattern matched or no pattern specified)
+    Running,
+    /// Process completed successfully (exit code 0)
+    Completed,
+    /// Process failed (non-zero exit code)
+    Failed,
+    /// Process was stopped by user
+    Stopped,
+    /// Process timed out waiting for success pattern
+    TimedOut,
+}
+
+impl std::fmt::Display for BackgroundProcessStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Starting => write!(f, "starting"),
+            Self::Running => write!(f, "running"),
+            Self::Completed => write!(f, "completed"),
+            Self::Failed => write!(f, "failed"),
+            Self::Stopped => write!(f, "stopped"),
+            Self::TimedOut => write!(f, "timed_out"),
+        }
+    }
+}
+
+/// Information about a background process (returned to AI)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundProcessInfo {
+    pub id: String,
+    pub pid: u32,
+    pub script_name: String,
+    pub project_path: String,
+    pub status: BackgroundProcessStatus,
+    pub started_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Whether success pattern was matched
+    pub pattern_matched: bool,
+    /// Command that was executed
+    pub command: String,
+}
+
+/// Circular buffer for output with configurable max size
+struct CircularBuffer {
+    lines: VecDeque<String>,
+    max_lines: usize,
+    total_bytes: usize,
+    max_bytes: usize,
+}
+
+impl CircularBuffer {
+    fn new(max_lines: usize, max_bytes: usize) -> Self {
+        Self {
+            lines: VecDeque::new(),
+            max_lines,
+            total_bytes: 0,
+            max_bytes,
+        }
+    }
+
+    fn push(&mut self, line: String) {
+        let line_len = line.len();
+
+        // Remove old lines if we exceed limits
+        while (self.lines.len() >= self.max_lines || self.total_bytes + line_len > self.max_bytes)
+            && !self.lines.is_empty()
+        {
+            if let Some(old) = self.lines.pop_front() {
+                self.total_bytes = self.total_bytes.saturating_sub(old.len());
+            }
+        }
+
+        self.total_bytes += line_len;
+        self.lines.push_back(line);
+    }
+
+    fn tail(&self, n: usize) -> Vec<String> {
+        self.lines.iter().rev().take(n).rev().cloned().collect()
+    }
+
+    fn len(&self) -> usize {
+        self.lines.len()
+    }
+}
+
+/// Internal state for tracking a background process
+struct BackgroundProcessState {
+    info: BackgroundProcessInfo,
+    /// Handle to the child process
+    child: Option<tokio::process::Child>,
+    /// Output buffer (combined stdout/stderr)
+    output_buffer: CircularBuffer,
+    /// Task handle for output reading
+    _output_task: Option<tokio::task::JoinHandle<()>>,
+    /// Whether success pattern was matched
+    pattern_matched: Arc<AtomicBool>,
+    /// Completion flag
+    completed: Arc<AtomicBool>,
+}
+
+/// Output from a background process
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessOutput {
+    pub process_id: String,
+    pub status: BackgroundProcessStatus,
+    pub pid: u32,
+    pub script_name: String,
+    pub started_at: String,
+    pub output_lines: Vec<String>,
+    pub has_more: bool,
+    pub total_lines: usize,
+}
+
+/// Background process manager
+pub struct BackgroundProcessManager {
+    processes: RwLock<HashMap<String, BackgroundProcessState>>,
+    /// Semaphore to limit concurrent background processes
+    semaphore: Semaphore,
+}
+
+impl BackgroundProcessManager {
+    pub fn new() -> Self {
+        Self {
+            processes: RwLock::new(HashMap::new()),
+            semaphore: Semaphore::new(MAX_BACKGROUND_PROCESSES),
+        }
+    }
+
+    /// Start a background process
+    pub async fn start_process(
+        &self,
+        script_name: String,
+        project_path: String,
+        command: String,
+        success_pattern: Option<String>,
+        success_timeout_ms: Option<u64>,
+    ) -> Result<BackgroundProcessInfo, String> {
+        // Try to acquire semaphore
+        let _permit = self.semaphore.try_acquire()
+            .map_err(|_| format!("Maximum background processes ({}) reached", MAX_BACKGROUND_PROCESSES))?;
+
+        // Generate unique ID
+        let id = format!("bp_{}", Uuid::new_v4().to_string().split('-').next().unwrap_or("unknown"));
+
+        // Use path_resolver for proper environment setup
+        let mut cmd = path_resolver::create_async_command("sh");
+        cmd.arg("-c")
+            .arg(&command)
+            .current_dir(&project_path)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        // Spawn the child process
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to spawn command: {}", e))?;
+
+        let pid = child.id().unwrap_or(0);
+
+        // Create initial info
+        let info = BackgroundProcessInfo {
+            id: id.clone(),
+            pid,
+            script_name: script_name.clone(),
+            project_path: project_path.clone(),
+            status: if success_pattern.is_some() {
+                BackgroundProcessStatus::Starting
+            } else {
+                BackgroundProcessStatus::Running
+            },
+            started_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+            exit_code: None,
+            pattern_matched: false,
+            command: command.clone(),
+        };
+
+        // Create shared state
+        let pattern_matched = Arc::new(AtomicBool::new(false));
+        let completed = Arc::new(AtomicBool::new(false));
+        let output_buffer = Arc::new(tokio::sync::Mutex::new(
+            CircularBuffer::new(MAX_OUTPUT_BUFFER_LINES, MAX_OUTPUT_BUFFER_BYTES)
+        ));
+
+        // Take stdout and stderr
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Clone for tasks
+        let pattern_matched_clone = pattern_matched.clone();
+        let completed_clone = completed.clone();
+        let output_buffer_clone = output_buffer.clone();
+        let id_clone = id.clone();
+
+        // Compile regex pattern if provided
+        let compiled_pattern = if let Some(ref pattern) = success_pattern {
+            Some(regex::Regex::new(pattern)
+                .map_err(|e| format!("Invalid success pattern regex: {}", e))?)
+        } else {
+            None
+        };
+        let compiled_pattern = Arc::new(compiled_pattern);
+
+        // Spawn output reader task
+        let output_task = tokio::spawn({
+            let compiled_pattern = compiled_pattern.clone();
+            async move {
+                let mut handles = Vec::new();
+
+                if let Some(stdout) = stdout {
+                    let buffer = output_buffer_clone.clone();
+                    let pattern = compiled_pattern.clone();
+                    let matched = pattern_matched_clone.clone();
+                    handles.push(tokio::spawn(async move {
+                        let reader = BufReader::new(stdout);
+                        let mut lines = reader.lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            // Check pattern match
+                            if let Some(ref regex) = *pattern {
+                                if regex.is_match(&line) {
+                                    matched.store(true, Ordering::SeqCst);
+                                }
+                            }
+                            buffer.lock().await.push(format!("[stdout] {}", line));
+                        }
+                    }));
+                }
+
+                if let Some(stderr) = stderr {
+                    let buffer = output_buffer_clone.clone();
+                    let pattern = compiled_pattern.clone();
+                    let matched = pattern_matched_clone.clone();
+                    handles.push(tokio::spawn(async move {
+                        let reader = BufReader::new(stderr);
+                        let mut lines = reader.lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            // Check pattern match on stderr too
+                            if let Some(ref regex) = *pattern {
+                                if regex.is_match(&line) {
+                                    matched.store(true, Ordering::SeqCst);
+                                }
+                            }
+                            buffer.lock().await.push(format!("[stderr] {}", line));
+                        }
+                    }));
+                }
+
+                // Wait for all readers to complete
+                for handle in handles {
+                    let _ = handle.await;
+                }
+
+                completed_clone.store(true, Ordering::SeqCst);
+            }
+        });
+
+        // If success pattern provided, wait for it with timeout
+        let mut final_info = info.clone();
+        if success_pattern.is_some() {
+            let timeout_ms = success_timeout_ms.unwrap_or(DEFAULT_SUCCESS_TIMEOUT_MS);
+            let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+
+            loop {
+                if Instant::now() >= deadline {
+                    final_info.status = BackgroundProcessStatus::TimedOut;
+                    break;
+                }
+
+                if pattern_matched.load(Ordering::SeqCst) {
+                    final_info.status = BackgroundProcessStatus::Running;
+                    final_info.pattern_matched = true;
+                    break;
+                }
+
+                if completed.load(Ordering::SeqCst) {
+                    // Process exited before pattern matched
+                    final_info.status = BackgroundProcessStatus::Failed;
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+
+        // Get initial output
+        let initial_output = {
+            let buffer = output_buffer.lock().await;
+            buffer.tail(20)
+        };
+
+        // Create state - move buffer out of Arc
+        let state = BackgroundProcessState {
+            info: final_info.clone(),
+            child: Some(child),
+            output_buffer: CircularBuffer::new(MAX_OUTPUT_BUFFER_LINES, MAX_OUTPUT_BUFFER_BYTES),
+            _output_task: Some(output_task),
+            pattern_matched: pattern_matched.clone(),
+            completed: completed.clone(),
+        };
+
+        // Copy initial output to state buffer
+        {
+            let mut processes = self.processes.write().await;
+            let mut state = state;
+            for line in initial_output {
+                state.output_buffer.push(line);
+            }
+            processes.insert(id.clone(), state);
+        }
+
+        // Spawn a task to move output from Arc buffer to state buffer and monitor process
+        let id_for_monitor = id.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            loop {
+                interval.tick().await;
+
+                // Copy new output from shared buffer
+                let new_lines: Vec<String> = {
+                    let mut buffer = output_buffer.lock().await;
+                    let lines = buffer.tail(buffer.len());
+                    buffer.lines.clear();
+                    buffer.total_bytes = 0;
+                    lines
+                };
+
+                let mut processes = BACKGROUND_PROCESS_MANAGER.processes.write().await;
+                if let Some(state) = processes.get_mut(&id_for_monitor) {
+                    for line in new_lines {
+                        state.output_buffer.push(line);
+                    }
+
+                    // Update pattern_matched status
+                    if pattern_matched.load(Ordering::SeqCst) && !state.info.pattern_matched {
+                        state.info.pattern_matched = true;
+                        if state.info.status == BackgroundProcessStatus::Starting {
+                            state.info.status = BackgroundProcessStatus::Running;
+                        }
+                    }
+
+                    // Check if process completed
+                    if let Some(ref mut child) = state.child {
+                        match child.try_wait() {
+                            Ok(Some(status)) => {
+                                state.info.exit_code = status.code();
+                                state.info.status = if status.success() {
+                                    BackgroundProcessStatus::Completed
+                                } else {
+                                    BackgroundProcessStatus::Failed
+                                };
+                                state.info.completed_at = Some(Utc::now().to_rfc3339());
+                                state.child = None;
+                                break;
+                            }
+                            Ok(None) => {
+                                // Still running
+                            }
+                            Err(_) => {
+                                state.info.status = BackgroundProcessStatus::Failed;
+                                state.info.completed_at = Some(Utc::now().to_rfc3339());
+                                break;
+                            }
+                        }
+                    } else if completed.load(Ordering::SeqCst) {
+                        break;
+                    }
+                } else {
+                    break; // Process removed
+                }
+            }
+        });
+
+        Ok(final_info)
+    }
+
+    /// Get process info by ID
+    pub async fn get_process(&self, id: &str) -> Option<BackgroundProcessInfo> {
+        let processes = self.processes.read().await;
+        processes.get(id).map(|s| s.info.clone())
+    }
+
+    /// Get process output
+    pub async fn get_output(&self, id: &str, tail_lines: usize) -> Result<ProcessOutput, String> {
+        let processes = self.processes.read().await;
+        let state = processes.get(id)
+            .ok_or_else(|| format!("Process not found: {}", id))?;
+
+        let output_lines = state.output_buffer.tail(tail_lines);
+        let total_lines = state.output_buffer.len();
+
+        Ok(ProcessOutput {
+            process_id: id.to_string(),
+            status: state.info.status.clone(),
+            pid: state.info.pid,
+            script_name: state.info.script_name.clone(),
+            started_at: state.info.started_at.clone(),
+            output_lines,
+            has_more: total_lines > tail_lines,
+            total_lines,
+        })
+    }
+
+    /// Stop a process
+    pub async fn stop_process(&self, id: &str, force: bool) -> Result<(), String> {
+        let mut processes = self.processes.write().await;
+        let state = processes.get_mut(id)
+            .ok_or_else(|| format!("Process not found: {}", id))?;
+
+        if let Some(ref mut child) = state.child {
+            if force {
+                child.kill().await
+                    .map_err(|e| format!("Failed to kill process: {}", e))?;
+            } else {
+                // Send SIGTERM on Unix
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::CommandExt;
+                    if let Some(pid) = child.id() {
+                        unsafe {
+                            libc::kill(pid as i32, libc::SIGTERM);
+                        }
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    child.kill().await
+                        .map_err(|e| format!("Failed to terminate process: {}", e))?;
+                }
+            }
+
+            state.info.status = BackgroundProcessStatus::Stopped;
+            state.info.completed_at = Some(Utc::now().to_rfc3339());
+            state.child = None;
+        }
+
+        Ok(())
+    }
+
+    /// List all processes
+    pub async fn list_processes(&self) -> Vec<BackgroundProcessInfo> {
+        let processes = self.processes.read().await;
+        processes.values().map(|s| s.info.clone()).collect()
+    }
+
+    /// Stop all processes (called on shutdown)
+    pub async fn shutdown(&self) {
+        eprintln!("[MCP Server] Stopping all background processes...");
+
+        let mut processes = self.processes.write().await;
+
+        for (id, state) in processes.iter_mut() {
+            if let Some(ref mut child) = state.child {
+                eprintln!("[MCP Server] Stopping background process: {}", id);
+
+                // Try graceful termination first
+                #[cfg(unix)]
+                {
+                    if let Some(pid) = child.id() {
+                        unsafe {
+                            libc::kill(pid as i32, libc::SIGTERM);
+                        }
+                    }
+                }
+
+                // Wait up to 5 seconds for graceful termination
+                let timeout = tokio_timeout(
+                    Duration::from_secs(5),
+                    child.wait()
+                ).await;
+
+                if timeout.is_err() {
+                    // Force kill if still running
+                    let _ = child.kill().await;
+                }
+            }
+        }
+
+        processes.clear();
+        eprintln!("[MCP Server] All background processes stopped");
+    }
+
+    /// Cleanup completed processes older than TTL
+    pub async fn cleanup(&self) {
+        let now = Utc::now();
+        let mut processes = self.processes.write().await;
+
+        let to_remove: Vec<String> = processes.iter()
+            .filter(|(_, state)| {
+                if let Some(ref completed_at) = state.info.completed_at {
+                    if let Ok(completed_time) = chrono::DateTime::parse_from_rfc3339(completed_at) {
+                        let elapsed = now.signed_duration_since(completed_time);
+                        return elapsed.num_seconds() > COMPLETED_PROCESS_TTL_SECS as i64;
+                    }
+                }
+                false
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        for id in to_remove {
+            processes.remove(&id);
+            eprintln!("[MCP Server] Cleaned up completed process: {}", id);
+        }
+    }
+}
+
+/// Global background process manager
+static BACKGROUND_PROCESS_MANAGER: Lazy<BackgroundProcessManager> =
+    Lazy::new(|| BackgroundProcessManager::new());
 
 // Note: MCP permission types are now imported from packageflow_lib::models::mcp
 
@@ -144,11 +688,14 @@ fn get_tool_category(tool_name: &str) -> ToolCategory {
         "list_workflows" | "get_workflow" | "list_step_templates" |
         // MCP Action read-only tools
         "list_actions" | "get_action" | "list_action_executions" | "get_execution_status" |
-        "get_action_permissions" => ToolCategory::ReadOnly,
+        "get_action_permissions" |
+        // Background process read-only tools
+        "get_background_process_output" | "list_background_processes" => ToolCategory::ReadOnly,
         // Write tools
         "create_workflow" | "add_workflow_step" | "create_step_template" => ToolCategory::Write,
-        // Execute tools (including MCP action execution)
-        "run_workflow" | "run_script" | "trigger_webhook" | "run_mcp_workflow" | "run_npm_script" => ToolCategory::Execute,
+        // Execute tools (including MCP action execution and background process control)
+        "run_workflow" | "run_script" | "trigger_webhook" | "run_mcp_workflow" | "run_npm_script" |
+        "stop_background_process" => ToolCategory::Execute,
         // Unknown tools default to Execute (most restrictive)
         _ => ToolCategory::Execute,
     }
@@ -883,6 +1430,44 @@ pub struct RunNpmScriptParams {
     /// Timeout in milliseconds (default: 5 minutes, max: 1 hour)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
+    /// Run in background mode (default: false). When true, returns immediately with process ID.
+    #[serde(default)]
+    pub run_in_background: bool,
+    /// Pattern to match in output to consider process started successfully.
+    /// Examples: "ready in", "Local:", "Server running", "Compiled successfully"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_pattern: Option<String>,
+    /// Timeout for success pattern matching in milliseconds (default: 30000ms)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_timeout_ms: Option<u64>,
+}
+
+// ============================================================================
+// Background Process Tool Parameters
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetBackgroundProcessOutputParams {
+    /// The process ID returned from run_npm_script (e.g., "bp_abc123")
+    pub process_id: String,
+    /// Number of lines to return from the end (default: 100)
+    #[serde(default = "default_tail_lines")]
+    pub tail_lines: usize,
+}
+
+fn default_tail_lines() -> usize {
+    100
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StopBackgroundProcessParams {
+    /// The process ID to stop
+    pub process_id: String,
+    /// Send SIGKILL instead of SIGTERM (default: false)
+    #[serde(default)]
+    pub force: bool,
 }
 
 // ============================================================================
@@ -2378,45 +2963,101 @@ impl PackageFlowMcp {
             (cmd, strategy.to_string())
         };
 
-        // Validate and apply timeout (default 5 min, max 1 hour)
-        let timeout_ms = params.timeout_ms.map(|t| t.min(3_600_000)).unwrap_or(300_000);
+        // Check if background mode is requested
+        if params.run_in_background {
+            // Background execution mode
+            match BACKGROUND_PROCESS_MANAGER.start_process(
+                params.script_name.clone(),
+                params.project_path.clone(),
+                command.clone(),
+                params.success_pattern.clone(),
+                params.success_timeout_ms,
+            ).await {
+                Ok(process_info) => {
+                    // Get initial output
+                    let initial_output = BACKGROUND_PROCESS_MANAGER
+                        .get_output(&process_info.id, 20)
+                        .await
+                        .map(|o| o.output_lines.join("\n"))
+                        .unwrap_or_default();
 
-        // Execute the command
-        match Self::shell_command_async(&params.project_path, &command, Some(timeout_ms)).await {
-            Ok((exit_code, stdout, stderr)) => {
-                // Sanitize outputs
-                let sanitized_stdout = sanitize_output(&stdout);
-                let sanitized_stderr = sanitize_output(&stderr);
+                    let response = serde_json::json!({
+                        "success": true,
+                        "background": true,
+                        "process_id": process_info.id,
+                        "pid": process_info.pid,
+                        "script_name": params.script_name,
+                        "package_manager": package_manager,
+                        "package_manager_version": pm_version,
+                        "toolchain_strategy": strategy_used,
+                        "status": process_info.status.to_string(),
+                        "pattern_matched": process_info.pattern_matched,
+                        "initial_output": sanitize_output(&initial_output),
+                        "command": command,
+                        "message": "Background process started. Use get_background_process_output to view output, stop_background_process to terminate."
+                    });
 
-                let response = serde_json::json!({
-                    "success": exit_code == 0,
-                    "script_name": params.script_name,
-                    "package_manager": package_manager,
-                    "package_manager_version": pm_version,
-                    "toolchain_strategy": strategy_used,
-                    "volta_available": volta_available,
-                    "volta_config": volta_config.is_some(),
-                    "corepack_config": package_manager_field.is_some(),
-                    "command": command,
-                    "exit_code": exit_code,
-                    "stdout": sanitized_stdout,
-                    "stderr": sanitized_stderr,
-                });
+                    let json = serde_json::to_string_pretty(&response)
+                        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-                let json = serde_json::to_string_pretty(&response)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-                if exit_code == 0 {
-                    Ok(CallToolResult::success(vec![Content::text(json)]))
-                } else {
-                    Ok(CallToolResult::error(vec![Content::text(json)]))
+                    // Return error if pattern matching timed out or process failed early
+                    if process_info.status == BackgroundProcessStatus::TimedOut
+                        || process_info.status == BackgroundProcessStatus::Failed {
+                        Ok(CallToolResult::error(vec![Content::text(json)]))
+                    } else {
+                        Ok(CallToolResult::success(vec![Content::text(json)]))
+                    }
+                }
+                Err(e) => {
+                    let sanitized_error = sanitize_error(&e);
+                    Ok(CallToolResult::error(vec![Content::text(
+                        format!("Failed to start background process '{}': {}", params.script_name, sanitized_error)
+                    )]))
                 }
             }
-            Err(e) => {
-                let sanitized_error = sanitize_error(&e);
-                Ok(CallToolResult::error(vec![Content::text(
-                    format!("Failed to execute script '{}': {}", params.script_name, sanitized_error)
-                )]))
+        } else {
+            // Foreground execution mode (existing behavior)
+            // Validate and apply timeout (default 5 min, max 1 hour)
+            let timeout_ms = params.timeout_ms.map(|t| t.min(3_600_000)).unwrap_or(300_000);
+
+            // Execute the command
+            match Self::shell_command_async(&params.project_path, &command, Some(timeout_ms)).await {
+                Ok((exit_code, stdout, stderr)) => {
+                    // Sanitize outputs
+                    let sanitized_stdout = sanitize_output(&stdout);
+                    let sanitized_stderr = sanitize_output(&stderr);
+
+                    let response = serde_json::json!({
+                        "success": exit_code == 0,
+                        "background": false,
+                        "script_name": params.script_name,
+                        "package_manager": package_manager,
+                        "package_manager_version": pm_version,
+                        "toolchain_strategy": strategy_used,
+                        "volta_available": volta_available,
+                        "volta_config": volta_config.is_some(),
+                        "corepack_config": package_manager_field.is_some(),
+                        "command": command,
+                        "exit_code": exit_code,
+                        "stdout": sanitized_stdout,
+                        "stderr": sanitized_stderr,
+                    });
+
+                    let json = serde_json::to_string_pretty(&response)
+                        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+                    if exit_code == 0 {
+                        Ok(CallToolResult::success(vec![Content::text(json)]))
+                    } else {
+                        Ok(CallToolResult::error(vec![Content::text(json)]))
+                    }
+                }
+                Err(e) => {
+                    let sanitized_error = sanitize_error(&e);
+                    Ok(CallToolResult::error(vec![Content::text(
+                        format!("Failed to execute script '{}': {}", params.script_name, sanitized_error)
+                    )]))
+                }
             }
         }
     }
@@ -2933,6 +3574,74 @@ impl PackageFlowMcp {
             Ok(CallToolResult::success(vec![Content::text(json)]))
         }
     }
+
+    // ========================================================================
+    // Background Process Management Tools
+    // ========================================================================
+
+    /// Get output from a background process
+    #[tool(description = "Get output from a background process started with run_npm_script (runInBackground: true). Returns the tail of stdout/stderr output.")]
+    async fn get_background_process_output(
+        &self,
+        Parameters(params): Parameters<GetBackgroundProcessOutputParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match BACKGROUND_PROCESS_MANAGER.get_output(&params.process_id, params.tail_lines).await {
+            Ok(output) => {
+                let json = serde_json::to_string_pretty(&output)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => {
+                Ok(CallToolResult::error(vec![Content::text(e)]))
+            }
+        }
+    }
+
+    /// Stop a background process
+    #[tool(description = "Stop/terminate a background process. Use force=true to send SIGKILL instead of SIGTERM.")]
+    async fn stop_background_process(
+        &self,
+        Parameters(params): Parameters<StopBackgroundProcessParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match BACKGROUND_PROCESS_MANAGER.stop_process(&params.process_id, params.force).await {
+            Ok(()) => {
+                let response = serde_json::json!({
+                    "success": true,
+                    "process_id": params.process_id,
+                    "message": if params.force {
+                        "Process killed (SIGKILL)"
+                    } else {
+                        "Process terminated (SIGTERM)"
+                    }
+                });
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => {
+                Ok(CallToolResult::error(vec![Content::text(e)]))
+            }
+        }
+    }
+
+    /// List all background processes
+    #[tool(description = "List all background processes (running and recently completed).")]
+    async fn list_background_processes(
+        &self,
+        #[allow(unused_variables)]
+        Parameters(_params): Parameters<serde_json::Value>,
+    ) -> Result<CallToolResult, McpError> {
+        let processes = BACKGROUND_PROCESS_MANAGER.list_processes().await;
+
+        let response = serde_json::json!({
+            "processes": processes,
+            "total": processes.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 }
 
 // Implement ServerHandler trait for the MCP server
@@ -3183,6 +3892,12 @@ MCP TOOLS:
 
   🔧 NPM/PACKAGE SCRIPTS
     run_npm_script      Run npm/yarn/pnpm scripts (volta/corepack support)
+                        Supports background mode with runInBackground parameter
+
+  🔄 BACKGROUND PROCESSES
+    get_background_process_output  Get output from a background process
+    stop_background_process        Stop/terminate a background process
+    list_background_processes      List all background processes
 
   🎯 MCP ACTIONS
     list_actions        List all available MCP actions
@@ -3234,7 +3949,12 @@ fn list_tools_simple() {
         ("run_workflow", "Execute a workflow synchronously"),
         ("list_step_templates", "List available step templates"),
         ("create_step_template", "Create a reusable step template"),
-        ("run_npm_script", "Run npm/yarn/pnpm scripts (volta/corepack support)"),
+        ("run_npm_script", "Run npm/yarn/pnpm scripts (supports background mode)"),
+        // Background process tools
+        ("get_background_process_output", "Get output from a background process"),
+        ("stop_background_process", "Stop/terminate a background process"),
+        ("list_background_processes", "List all background processes"),
+        // MCP action tools
         ("list_actions", "List all MCP actions"),
         ("get_action", "Get action details by ID"),
         ("run_script", "Execute a script action"),
@@ -3245,7 +3965,7 @@ fn list_tools_simple() {
     ];
 
     for (name, desc) in tools {
-        println!("  {:<25} {}", name, desc);
+        println!("  {:<35} {}", name, desc);
     }
     println!();
 }
@@ -3299,6 +4019,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start the server using serve_server
     let service = rmcp::serve_server(server, transport).await?;
 
+    // Spawn background process cleanup task
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
+        loop {
+            interval.tick().await;
+            BACKGROUND_PROCESS_MANAGER.cleanup().await;
+        }
+    });
+
     // Set up signal handlers for graceful shutdown (Unix only)
     #[cfg(unix)]
     {
@@ -3331,6 +4060,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         service.waiting().await?;
     }
+
+    // Stop all background processes before shutdown
+    BACKGROUND_PROCESS_MANAGER.shutdown().await;
 
     eprintln!("[MCP Server] Shutdown complete");
     Ok(())

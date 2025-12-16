@@ -117,6 +117,48 @@ export default {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0.85' },
         },
+        // Quick Action Chips - Staggered enter/exit animations
+        'chip-enter': {
+          '0%': {
+            opacity: '0',
+            transform: 'translateX(-8px) scale(0.95)'
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'translateX(0) scale(1)'
+          },
+        },
+        'chip-exit': {
+          '0%': {
+            opacity: '1',
+            transform: 'translateX(0) scale(1)'
+          },
+          '100%': {
+            opacity: '0',
+            transform: 'translateX(-8px) scale(0.95)'
+          },
+        },
+        // Quick Action Chips - Horizontal slide animations
+        'chip-slide-in': {
+          '0%': {
+            opacity: '0',
+            transform: 'translateX(-12px) scale(0.9)'
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'translateX(0) scale(1)'
+          },
+        },
+        'chip-slide-out': {
+          '0%': {
+            opacity: '1',
+            transform: 'translateX(0) scale(1)'
+          },
+          '100%': {
+            opacity: '0',
+            transform: 'translateX(-12px) scale(0.9)'
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -137,6 +179,12 @@ export default {
         'security-sparkle': 'security-sparkle 1.2s ease-in-out infinite',
         // Subtle pulse for running items
         'pulse-subtle': 'pulse-subtle 2s ease-in-out infinite',
+        // Quick Action Chips animations (duration controlled via style)
+        'chip-enter': 'chip-enter ease-out forwards',
+        'chip-exit': 'chip-exit ease-out forwards',
+        // Horizontal slide animations for collapsible quick actions
+        'chip-slide-in': 'chip-slide-in ease-out forwards',
+        'chip-slide-out': 'chip-slide-out ease-out forwards',
       },
     },
   },

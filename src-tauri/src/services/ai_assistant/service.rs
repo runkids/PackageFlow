@@ -231,6 +231,14 @@ impl AIAssistantService {
                 app,
             );
 
+            // Feature 023: Emit thinking status (T024)
+            if let Err(e) = ctx.emit_thinking() {
+                log::warn!("Failed to emit thinking status: {}", e);
+            }
+
+            // Simulate thinking delay
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
             // TODO: Integrate with actual AI provider
             // For now, emit a placeholder response
             let placeholder_response = format!(
@@ -240,10 +248,17 @@ impl AIAssistantService {
                 sanitized_content
             );
 
+            // Feature 023: Emit generating status (T025)
+            if let Err(e) = ctx.emit_generating(Some("placeholder".to_string())) {
+                log::warn!("Failed to emit generating status: {}", e);
+            }
+
             // Simulate streaming by emitting tokens
             for word in placeholder_response.split_whitespace() {
                 if let Err(e) = ctx.emit_token(&format!("{} ", word)) {
                     log::error!("Failed to emit token: {}", e);
+                    // Feature 023: Emit error status (T028)
+                    let _ = ctx.emit_error_status();
                     break;
                 }
                 // Small delay for visual effect
@@ -259,7 +274,12 @@ impl AIAssistantService {
                 None,
             );
 
-            // Emit completion
+            // Feature 023: Emit complete status with timing (T027)
+            if let Err(e) = ctx.emit_complete_status() {
+                log::warn!("Failed to emit complete status: {}", e);
+            }
+
+            // Emit completion event
             let _ = ctx.emit_complete(0, "placeholder", "stop");
 
             // Remove session
@@ -320,6 +340,8 @@ impl AIAssistantService {
     // =========================================================================
 
     /// Get suggested actions based on context
+    /// Feature 023 US2: Enhanced context-aware suggestions (T053-T056)
+    /// Prompts include MCP tool names to guide the AI to use specific tools
     pub fn get_suggestions(
         &self,
         _conversation_id: &str,
@@ -327,11 +349,11 @@ impl AIAssistantService {
     ) -> Result<SuggestionsResponse, String> {
         let mut suggestions = Vec::new();
 
-        // Default suggestions
+        // Default general suggestions
         suggestions.push(SuggestedAction {
-            id: "explain".to_string(),
-            label: "Explain this".to_string(),
-            prompt: "Please explain what this code does".to_string(),
+            id: "help".to_string(),
+            label: "What can you do?".to_string(),
+            prompt: "What tools and capabilities do you have? List all available MCP tools.".to_string(),
             icon: Some("HelpCircle".to_string()),
             variant: Some("default".to_string()),
             category: Some("general".to_string()),
@@ -339,11 +361,23 @@ impl AIAssistantService {
 
         // Project-specific suggestions
         if let Some(path) = project_path {
-            if std::path::Path::new(path).join(".git").exists() {
+            let project_path = std::path::Path::new(path);
+
+            // T054: Git operations suggestions (uses get_worktree_status, get_git_diff)
+            if project_path.join(".git").exists() {
+                suggestions.push(SuggestedAction {
+                    id: "git-status".to_string(),
+                    label: "Check git status".to_string(),
+                    prompt: "Show the git status of this project using get_worktree_status".to_string(),
+                    icon: Some("GitBranch".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("git".to_string()),
+                });
+
                 suggestions.push(SuggestedAction {
                     id: "commit".to_string(),
                     label: "Generate commit".to_string(),
-                    prompt: "Generate a commit message for the staged changes".to_string(),
+                    prompt: "Generate a commit message based on the staged changes (use get_git_diff first)".to_string(),
                     icon: Some("GitCommit".to_string()),
                     variant: Some("primary".to_string()),
                     category: Some("git".to_string()),
@@ -352,33 +386,127 @@ impl AIAssistantService {
                 suggestions.push(SuggestedAction {
                     id: "review".to_string(),
                     label: "Review changes".to_string(),
-                    prompt: "Review the staged changes and suggest improvements".to_string(),
+                    prompt: "Review the staged changes using get_git_diff and suggest improvements".to_string(),
                     icon: Some("FileSearch".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("git".to_string()),
+                });
+
+                suggestions.push(SuggestedAction {
+                    id: "diff".to_string(),
+                    label: "Show diff".to_string(),
+                    prompt: "Show the staged changes diff using get_git_diff".to_string(),
+                    icon: Some("FileDiff".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("git".to_string()),
+                });
+
+                suggestions.push(SuggestedAction {
+                    id: "list-worktrees".to_string(),
+                    label: "List worktrees".to_string(),
+                    prompt: "List all git worktrees for this project using list_worktrees".to_string(),
+                    icon: Some("GitFork".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("git".to_string()),
                 });
             }
 
-            // Check for package.json
-            if std::path::Path::new(path).join("package.json").exists() {
+            // T055: Node.js project suggestions (uses get_project, run_npm_script)
+            if project_path.join("package.json").exists() {
+                suggestions.push(SuggestedAction {
+                    id: "list-scripts".to_string(),
+                    label: "Project info".to_string(),
+                    prompt: "Get project details including available scripts using get_project".to_string(),
+                    icon: Some("Info".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("project".to_string()),
+                });
+
+                suggestions.push(SuggestedAction {
+                    id: "run-dev".to_string(),
+                    label: "Run dev".to_string(),
+                    prompt: "Run the dev script using run_npm_script".to_string(),
+                    icon: Some("Play".to_string()),
+                    variant: Some("primary".to_string()),
+                    category: Some("project".to_string()),
+                });
+
+                suggestions.push(SuggestedAction {
+                    id: "run-build".to_string(),
+                    label: "Build project".to_string(),
+                    prompt: "Run the build script using run_npm_script".to_string(),
+                    icon: Some("Hammer".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("project".to_string()),
+                });
+
                 suggestions.push(SuggestedAction {
                     id: "run-tests".to_string(),
                     label: "Run tests".to_string(),
-                    prompt: "Run the test suite for this project".to_string(),
+                    prompt: "Run the test script using run_npm_script".to_string(),
                     icon: Some("TestTube".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
                 });
 
                 suggestions.push(SuggestedAction {
-                    id: "build".to_string(),
-                    label: "Build project".to_string(),
-                    prompt: "Build the project".to_string(),
-                    icon: Some("Hammer".to_string()),
+                    id: "run-lint".to_string(),
+                    label: "Run lint".to_string(),
+                    prompt: "Run the lint script using run_npm_script".to_string(),
+                    icon: Some("FileWarning".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
                 });
             }
+
+            // T056: Rust project suggestions (uses run_script for cargo commands)
+            if project_path.join("Cargo.toml").exists() {
+                suggestions.push(SuggestedAction {
+                    id: "cargo-check".to_string(),
+                    label: "Cargo check".to_string(),
+                    prompt: "Run cargo check to verify the code compiles using run_script".to_string(),
+                    icon: Some("CheckCircle".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("project".to_string()),
+                });
+
+                suggestions.push(SuggestedAction {
+                    id: "cargo-build".to_string(),
+                    label: "Cargo build".to_string(),
+                    prompt: "Build the Rust project with cargo build using run_script".to_string(),
+                    icon: Some("Hammer".to_string()),
+                    variant: Some("primary".to_string()),
+                    category: Some("project".to_string()),
+                });
+
+                suggestions.push(SuggestedAction {
+                    id: "cargo-test".to_string(),
+                    label: "Cargo test".to_string(),
+                    prompt: "Run the Rust tests with cargo test using run_script".to_string(),
+                    icon: Some("TestTube".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("project".to_string()),
+                });
+
+                suggestions.push(SuggestedAction {
+                    id: "cargo-clippy".to_string(),
+                    label: "Run clippy".to_string(),
+                    prompt: "Run clippy to check for linting issues using run_script".to_string(),
+                    icon: Some("FileWarning".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("project".to_string()),
+                });
+            }
+
+            // T053: Workflow suggestions (uses list_workflows)
+            suggestions.push(SuggestedAction {
+                id: "list-workflows".to_string(),
+                label: "List workflows".to_string(),
+                prompt: "List available workflows using list_workflows".to_string(),
+                icon: Some("Workflow".to_string()),
+                variant: Some("default".to_string()),
+                category: Some("workflow".to_string()),
+            });
         }
 
         Ok(SuggestionsResponse { suggestions })
@@ -522,34 +650,13 @@ impl ProjectContextBuilder {
 }
 
 /// Build the system prompt with project context
+/// Feature 023: Now uses SystemPromptBuilder for structured prompts
 pub fn build_system_prompt(project_context: Option<&ProjectContext>) -> String {
-    let base_prompt = r#"You are an AI assistant integrated into PackageFlow, a developer tool for managing projects, workflows, and automation.
+    use super::prompt_builder::SystemPromptBuilder;
 
-You can help users with:
-- Understanding their code and projects
-- Running scripts and workflows
-- Git operations (commits, reviews, etc.)
-- Project management tasks
-
-When users ask you to perform actions, you may use tools to execute them. Always explain what you're about to do before executing actions."#;
-
-    match project_context {
-        Some(ctx) => {
-            format!(
-                "{}\n\n## Current Project Context\n- **Name**: {}\n- **Type**: {}\n- **Package Manager**: {}\n- **Available Scripts**: {}",
-                base_prompt,
-                ctx.project_name,
-                ctx.project_type,
-                ctx.package_manager,
-                if ctx.available_scripts.is_empty() {
-                    "None".to_string()
-                } else {
-                    ctx.available_scripts.join(", ")
-                }
-            )
-        }
-        None => base_prompt.to_string(),
-    }
+    SystemPromptBuilder::new()
+        .with_context(project_context.cloned())
+        .build()
 }
 
 #[cfg(test)]
@@ -625,6 +732,7 @@ mod tests {
     fn test_build_system_prompt_without_context() {
         let prompt = build_system_prompt(None);
         assert!(prompt.contains("PackageFlow"));
+        // Feature 023: Uses SystemPromptBuilder, no project context section
         assert!(!prompt.contains("Current Project Context"));
     }
 
@@ -640,6 +748,8 @@ mod tests {
 
         let prompt = build_system_prompt(Some(&context));
 
+        // Feature 023: Uses SystemPromptBuilder format
+        assert!(prompt.contains("PackageFlow"));
         assert!(prompt.contains("TestApp"));
         assert!(prompt.contains("Node.js"));
         assert!(prompt.contains("pnpm"));

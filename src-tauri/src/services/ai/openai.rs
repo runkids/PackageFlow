@@ -259,7 +259,11 @@ impl AIProvider for OpenAIProvider {
                 }
 
                 if status.as_u16() == 429 || error_type == "rate_limit_exceeded" {
-                    return Err(AIError::RateLimited);
+                    log::warn!("OpenAI rate limit: {}", error.error.message);
+                    return Err(AIError::ApiError(format!(
+                        "OpenAI API limit: {}",
+                        error.error.message
+                    )));
                 }
 
                 if code == "model_not_found" || error.error.message.contains("does not exist") {

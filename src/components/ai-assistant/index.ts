@@ -1,5 +1,6 @@
 // AI Assistant Components - Barrel Export
 // Feature: AI Assistant Tab (022-ai-assistant-tab)
+// Enhancement: Enhanced AI Chat Experience (023-enhanced-ai-chat)
 
 // Phase 1 components (US1 - Basic Chat):
 export { AIAssistantPage } from './AIAssistantPage';
@@ -23,3 +24,6 @@ export { ProjectContextCard, ProjectContextBadge } from './ProjectContextCard';
 
 // Enhanced UI components (UI Redesign):
 export { ConversationHeader } from './ConversationHeader';
+
+// Feature 023: Enhanced AI Chat Experience
+export { ResponseStatusIndicator, TimingBreakdown } from './ResponseStatusIndicator';
