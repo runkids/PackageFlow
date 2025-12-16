@@ -524,7 +524,6 @@ export function ProjectExplorer({
               variant="ghost"
               size="icon"
               onClick={() => setIsQuickSwitcherOpen(true)}
-              className="h-auto"
               title="Quick Switcher (⌘K)"
             >
               <Search className="w-4 h-4 text-muted-foreground" />
@@ -534,9 +533,8 @@ export function ProjectExplorer({
             <div className="relative">
               <Button
                 variant="ghost"
-                size="icon"
                 onClick={() => setIsEditorDropdownOpen(!isEditorDropdownOpen)}
-                className="gap-1.5 h-auto"
+                className="flex items-center gap-0.5 h-9 px-1.5"
                 title="Open in Editor"
               >
                 <Code2 className="w-4 h-4 text-muted-foreground" />
@@ -597,7 +595,6 @@ export function ProjectExplorer({
                 setVersionRefreshKey(prev => prev + 1);
               }}
               disabled={isLoading}
-              className="h-auto"
               title="Refresh"
             >
               <RefreshCw className={`w-4 h-4 text-muted-foreground ${isLoading ? 'animate-spin' : ''}`} />
@@ -606,7 +603,6 @@ export function ProjectExplorer({
               variant="ghost"
               size="icon"
               onClick={onOpenInFinder}
-              className="h-auto"
               title="Open in Finder"
             >
               <ExternalLink className="w-4 h-4 text-muted-foreground" />

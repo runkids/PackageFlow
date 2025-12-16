@@ -7,6 +7,7 @@ import React, { useState, useCallback } from 'react';
 import { Terminal, Settings2, Copy, Check, ChevronDown, ExternalLink, Bot } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { cn } from '../../../lib/utils';
+import { openUrl } from '../../../lib/tauri-api';
 
 interface QuickSetupSectionProps {
   /** Server binary path */
@@ -223,17 +224,15 @@ const ClientSetupCard: React.FC<{
 
           {/* Docs link */}
           {client.docsUrl && (
-            <a
-              href={client.docsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openUrl(client.docsUrl!)}
               className={cn(
                 'inline-flex items-center gap-1.5 text-xs text-primary hover:underline'
               )}
             >
               <ExternalLink className="w-3 h-3" />
               <span>View documentation</span>
-            </a>
+            </button>
           )}
         </div>
       )}

@@ -28,6 +28,7 @@ import { useAISecurityAnalysis } from '../../hooks/useAISecurityAnalysis';
 import { useAIService } from '../../hooks/useAIService';
 import { cn } from '../../lib/utils';
 import { formatDate } from '../../lib/utils';
+import { openUrl } from '../../lib/tauri-api';
 
 interface SecurityTabProps {
   /** Project ID (reserved for future use) */
@@ -389,15 +390,13 @@ function NotScannedState({ projectName, onScan, isScanning }: NotScannedStatePro
       </Button>
       <div className="mt-6 flex flex-col items-center gap-2 text-xs text-muted-foreground">
         <p>Supports npm, pnpm, yarn, and bun</p>
-        <a
-          href="https://docs.npmjs.com/cli/v9/commands/npm-audit"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={() => openUrl('https://docs.npmjs.com/cli/v9/commands/npm-audit')}
           className="flex items-center gap-1 text-blue-500 hover:text-blue-400"
         >
           <ExternalLink className="w-3 h-3" />
           Learn about npm audit
-        </a>
+        </button>
       </div>
     </div>
   );

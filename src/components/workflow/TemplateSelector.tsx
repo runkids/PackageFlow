@@ -308,13 +308,13 @@ function TemplateItem({
       variant="ghost"
       onClick={onClick}
       className={cn(
-        'w-full justify-start h-auto flex-col gap-0.5 px-3 py-2.5 rounded-md group relative',
+        'w-full justify-start items-start h-auto flex-col gap-0.5 px-3 py-2.5 rounded-md group relative',
         isSelected
           ? 'bg-blue-600/20 ring-1 ring-blue-500'
           : 'hover:bg-accent'
       )}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="w-full flex items-center justify-between gap-2">
         <span className={cn('text-sm font-medium flex items-center gap-1.5', isSelected ? 'text-blue-300' : 'text-foreground')}>
           {isCustom && <Star className="w-3 h-3 text-yellow-500" />}
           {highlightMatch(template.name, searchQuery)}
@@ -345,11 +345,11 @@ function TemplateItem({
           )}
         </div>
       </div>
-      <code className="text-xs text-muted-foreground font-mono truncate">
+      <code className="w-full text-left text-xs text-muted-foreground font-mono truncate">
         {highlightMatch(template.command, searchQuery)}
       </code>
       {template.description && (
-        <span className="text-xs text-muted-foreground truncate">
+        <span className="w-full text-left text-xs text-muted-foreground truncate">
           {highlightMatch(template.description, searchQuery)}
         </span>
       )}

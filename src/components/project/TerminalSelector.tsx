@@ -77,8 +77,7 @@ export const TerminalSelector: React.FC<TerminalSelectorProps> = ({
   const trigger = (
     <Button
       variant="ghost"
-      size="sm"
-      className={cn('gap-1 px-2', className)}
+      className={cn('flex items-center gap-0.5 h-9 px-1.5', className)}
       title="Open Terminal"
       disabled={disabled || isLoading}
     >
@@ -92,7 +91,7 @@ export const TerminalSelector: React.FC<TerminalSelectorProps> = ({
       <Button
         variant="ghost"
         size="icon"
-        className={cn('h-auto', className)}
+        className={className}
         title="Loading terminals..."
         disabled
       >

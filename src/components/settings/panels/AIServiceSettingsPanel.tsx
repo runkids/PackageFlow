@@ -45,6 +45,7 @@ import type {
 } from '../../../types/ai';
 import { AI_PROVIDERS, getProviderInfo, providerRequiresApiKey, CLI_TOOLS } from '../../../types/ai';
 import { cn } from '../../../lib/utils';
+import { openUrl } from '../../../lib/tauri-api';
 
 // ============================================================================
 // Loading & Error States
@@ -936,10 +937,8 @@ const CLIToolsTab: React.FC<CLIToolsTabProps> = ({
                     )}
 
                     {!isAvailable && (
-                      <a
-                        href={tool.installUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => openUrl(tool.installUrl)}
                         className={cn(
                           'px-3 py-1.5 text-xs font-medium rounded-lg transition-all',
                           'bg-accent text-accent-foreground hover:bg-accent/80',
@@ -947,7 +946,7 @@ const CLIToolsTab: React.FC<CLIToolsTabProps> = ({
                         )}
                       >
                         Install
-                      </a>
+                      </button>
                     )}
                   </div>
                 </div>

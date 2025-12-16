@@ -13,7 +13,7 @@ import {
   ExternalLink,
   Clock,
 } from 'lucide-react';
-import { deployEvents } from '../../../lib/tauri-api';
+import { deployEvents, openUrl } from '../../../lib/tauri-api';
 import type { Deployment, DeploymentStatus, DeploymentProgressEvent } from '../../../types/deploy';
 import { buttonVariants } from '../../ui/Button';
 
@@ -232,23 +232,19 @@ export function DeploymentProgress({ deployment, onComplete }: DeploymentProgres
       {/* Success URL */}
       {isCompleted && deployment.url && (
         <div className="mt-4 flex items-center justify-between rounded-md bg-green-50 p-3 dark:bg-green-950/30">
-          <a
-            href={deployment.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 truncate text-sm text-green-700 hover:underline dark:text-green-400"
+          <button
+            onClick={() => openUrl(deployment.url!)}
+            className="flex-1 truncate text-sm text-green-700 hover:underline dark:text-green-400 text-left"
           >
             {deployment.url}
-          </a>
-          <a
-            href={deployment.url}
-            target="_blank"
-            rel="noopener noreferrer"
+          </button>
+          <button
+            onClick={() => openUrl(deployment.url!)}
             className={buttonVariants({ variant: 'success', size: 'sm', className: 'ml-2 gap-1.5' })}
           >
             <ExternalLink className="h-3.5 w-3.5" />
             Open Site
-          </a>
+          </button>
         </div>
       )}
 

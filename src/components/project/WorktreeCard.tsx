@@ -223,7 +223,7 @@ export function WorktreeCard({
                 trigger={
                   <Button
                     variant="ghost"
-                    className="flex items-center gap-0.5 h-auto p-1.5"
+                    className="flex items-center gap-0.5 h-9 px-1.5"
                     title="Open in Editor"
                   >
                     <Code2 className="w-3.5 h-3.5 text-blue-400" />

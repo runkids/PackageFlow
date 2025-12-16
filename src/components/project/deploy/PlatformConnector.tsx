@@ -12,6 +12,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Button } from '../../ui/Button';
+import { openUrl } from '../../../lib/tauri-api';
 import type { PlatformType, ConnectedPlatform } from '../../../types/deploy';
 import { NetlifyIcon } from '../../ui/icons';
 
@@ -175,15 +176,13 @@ export function PlatformConnector({
               {/* Connected Account Actions */}
               {connected && account && (
                 <div className="mt-3 flex items-center gap-3 border-t border-border/50 pt-3">
-                  <a
-                    href="https://app.netlify.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => openUrl('https://app.netlify.com')}
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                   >
                     <ExternalLink className="h-3 w-3" />
                     <span>Open Dashboard</span>
-                  </a>
+                  </button>
                   <span className="text-xs text-muted-foreground">
                     Connected {new Date(account.connectedAt).toLocaleDateString('en-US')}
                   </span>

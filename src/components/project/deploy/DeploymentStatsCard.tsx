@@ -13,7 +13,7 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react';
-import { deployAPI } from '../../../lib/tauri-api';
+import { deployAPI, openUrl } from '../../../lib/tauri-api';
 import { Button } from '../../ui/Button';
 import type { DeploymentStats, PlatformType } from '../../../types/deploy';
 
@@ -225,14 +225,12 @@ export function DeploymentStatsCard({ projectId, onStatsLoaded, refreshTrigger }
           </div>
 
           <div className="mt-2 flex items-center gap-2">
-            <a
-              href={stats.lastSuccessfulDeployment.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 truncate text-sm text-green-700 hover:underline dark:text-green-400"
+            <button
+              onClick={() => openUrl(stats.lastSuccessfulDeployment!.url)}
+              className="flex-1 truncate text-sm text-green-700 hover:underline dark:text-green-400 text-left"
             >
               {stats.lastSuccessfulDeployment.url}
-            </a>
+            </button>
             <div className="flex shrink-0 items-center gap-1">
               <Button
                 variant="ghost"
@@ -243,15 +241,13 @@ export function DeploymentStatsCard({ projectId, onStatsLoaded, refreshTrigger }
               >
                 <Copy className={`h-4 w-4 ${copied ? 'text-green-500' : 'text-green-600 dark:text-green-500'}`} />
               </Button>
-              <a
-                href={stats.lastSuccessfulDeployment.url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => openUrl(stats.lastSuccessfulDeployment!.url)}
                 className="rounded p-1 hover:bg-green-100 dark:hover:bg-green-900"
                 title="Open in new tab"
               >
                 <ExternalLink className="h-4 w-4 text-green-600 dark:text-green-500" />
-              </a>
+              </button>
             </div>
           </div>
 

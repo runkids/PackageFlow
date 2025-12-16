@@ -16,7 +16,7 @@ import {
   AlertTriangle,
   ExternalLink,
 } from 'lucide-react';
-import { gitAPI } from '../../../lib/tauri-api';
+import { gitAPI, openUrl } from '../../../lib/tauri-api';
 import type { GitAuthStatus, GitRemote } from '../../../types/git';
 import { Button } from '../../ui/Button';
 
@@ -299,47 +299,39 @@ export function GitAuthPanel({ projectPath, remotes }: GitAuthPanelProps) {
         <div>
           <p className="text-xs text-muted-foreground mb-2">SSH Setup Guides</p>
           <div className="flex flex-wrap gap-2">
-            <a
-              href="https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openUrl('https://docs.github.com/en/authentication/connecting-to-github-with-ssh')}
               className="flex items-center gap-1.5 px-2 py-1 text-xs bg-card hover:bg-accent text-foreground rounded transition-colors"
             >
               <ExternalLink className="w-3 h-3" />
               GitHub
-            </a>
-            <a
-              href="https://support.atlassian.com/bitbucket-cloud/docs/configure-ssh-and-two-step-verification/"
-              target="_blank"
-              rel="noopener noreferrer"
+            </button>
+            <button
+              onClick={() => openUrl('https://support.atlassian.com/bitbucket-cloud/docs/configure-ssh-and-two-step-verification/')}
               className="flex items-center gap-1.5 px-2 py-1 text-xs bg-card hover:bg-accent text-foreground rounded transition-colors"
             >
               <ExternalLink className="w-3 h-3" />
               Bitbucket
-            </a>
-            <a
-              href="https://docs.gitlab.com/ee/user/ssh.html"
-              target="_blank"
-              rel="noopener noreferrer"
+            </button>
+            <button
+              onClick={() => openUrl('https://docs.gitlab.com/ee/user/ssh.html')}
               className="flex items-center gap-1.5 px-2 py-1 text-xs bg-card hover:bg-accent text-foreground rounded transition-colors"
             >
               <ExternalLink className="w-3 h-3" />
               GitLab
-            </a>
+            </button>
           </div>
         </div>
         <div>
           <p className="text-xs text-muted-foreground mb-2">HTTPS Credential Storage</p>
           <div className="flex flex-wrap gap-2">
-            <a
-              href="https://git-scm.com/book/en/v2/Git-Tools-Credential-Storage"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openUrl('https://git-scm.com/book/en/v2/Git-Tools-Credential-Storage')}
               className="flex items-center gap-1.5 px-2 py-1 text-xs bg-card hover:bg-accent text-foreground rounded transition-colors"
             >
               <ExternalLink className="w-3 h-3" />
               Git Credential Helper
-            </a>
+            </button>
           </div>
         </div>
       </div>

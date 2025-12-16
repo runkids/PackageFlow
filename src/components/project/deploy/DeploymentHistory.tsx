@@ -38,7 +38,7 @@ import {
   Ban,
 } from 'lucide-react';
 import type { Deployment, DeploymentStatus, PlatformType } from '../../../types/deploy';
-import { deployAPI } from '../../../lib/tauri-api';
+import { deployAPI, openUrl } from '../../../lib/tauri-api';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { Button } from '../../ui/Button';
 import { Select } from '../../ui/Select';
@@ -387,10 +387,8 @@ function DeploymentItem({
         {/* Action buttons - absolute positioned */}
         <div className="absolute right-3 top-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-l from-transparent via-transparent to-transparent">
           {deployment.url && (
-            <a
-              href={deployment.url}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openUrl(deployment.url!)}
               className={cn(
                 'flex h-7 w-7 items-center justify-center rounded',
                 'bg-background/80 backdrop-blur-sm border border-border/50',
@@ -399,13 +397,11 @@ function DeploymentItem({
               title="Open deployed site"
             >
               <ExternalLink className="h-3.5 w-3.5 text-primary" />
-            </a>
+            </button>
           )}
           {deployment.adminUrl && (
-            <a
-              href={deployment.adminUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openUrl(deployment.adminUrl!)}
               className={cn(
                 'flex h-7 w-7 items-center justify-center rounded',
                 'bg-background/80 backdrop-blur-sm border border-border/50',
@@ -414,7 +410,7 @@ function DeploymentItem({
               title="Open Dashboard"
             >
               <Settings className="h-3.5 w-3.5" />
-            </a>
+            </button>
           )}
           <Button
             variant="ghost"
@@ -452,14 +448,12 @@ function DeploymentItem({
       {deployment.previewUrl && deployment.previewUrl !== deployment.url && (
         <div className="mt-2 flex items-center gap-2 text-xs">
           <span className="text-muted-foreground">Preview:</span>
-          <a
-            href={deployment.previewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="truncate text-primary hover:underline"
+          <button
+            onClick={() => openUrl(deployment.previewUrl!)}
+            className="truncate text-primary hover:underline text-left"
           >
             {deployment.previewUrl}
-          </a>
+          </button>
         </div>
       )}
 

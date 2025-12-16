@@ -29,6 +29,7 @@
 <p align="center">
   <a href="https://github.com/runkids/PackageFlow/releases">📥 Download</a> •
   <a href="#-features">✨ Features</a> •
+  <a href="#-documentation">📚 Docs</a> •
   <a href="#-screenshots">📸 Screenshots</a> •
   <a href="#-roadmap">🗺️ Roadmap</a> •
   <a href="#-faq">❓ FAQ</a>
@@ -74,6 +75,31 @@ Powered by **Tauri + Rust** for a tiny binary and instant startup.
 | 🌳 | **Worktree Magic** | See, switch, and resume worktrees instantly |
 | 🔧 | **Toolchain Smart** | Detect Volta / Corepack conflicts automatically |
 | 🛡️ | **Security Scan** | Visual npm audit with one-click fixes |
+
+---
+
+## 📚 Documentation
+
+Learn more about each feature in our detailed documentation:
+
+| Feature | Description |
+|---------|-------------|
+| [Getting Started](./docs/getting-started.md) | Installation and first steps |
+| [Project Management](./docs/features/project-management.md) | Import and manage projects |
+| [One-Click Scripts](./docs/features/one-click-scripts.md) | Run npm scripts with live terminal |
+| [Visual Workflow](./docs/features/visual-workflow.md) | Drag-and-drop automation |
+| [Monorepo Support](./docs/features/monorepo-support.md) | Nx, Turbo, Lerna integration |
+| [Git Integration](./docs/features/git-integration.md) | Visual Git operations |
+| [Worktree Management](./docs/features/worktree-management.md) | Quick worktree switching |
+| [One-Click Deploy](./docs/features/one-click-deploy.md) | Deploy to Netlify/Cloudflare |
+| [Security Audit](./docs/features/security-audit.md) | Vulnerability scanning |
+| [AI Integration](./docs/features/ai-integration.md) | Multi-provider AI support |
+| [MCP Server](./docs/features/mcp-server.md) | AI tool integration |
+| [Webhooks](./docs/features/webhooks.md) | Incoming/outgoing automation |
+| [Toolchain Management](./docs/features/toolchain-management.md) | Node.js version management |
+| [Keyboard Shortcuts](./docs/features/keyboard-shortcuts.md) | Complete shortcut reference |
+
+📖 [Full Documentation Index](./docs/README.md)
 
 ---
 
