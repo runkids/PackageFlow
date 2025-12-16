@@ -227,12 +227,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     };
   }, []);
 
-  // Update active section when initialSection changes
+  // Update active section when opening with a specific section
   useEffect(() => {
-    if (initialSection) {
+    if (isOpen && initialSection) {
       setActiveSection(initialSection);
     }
-  }, [initialSection]);
+  }, [isOpen, initialSection]);
 
   // Close with animation
   const handleClose = useCallback(() => {
@@ -502,7 +502,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         {/* Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 max-w-3xl w-full mx-auto p-6 overflow-y-auto flex flex-col">
+          <div className="flex-1 max-w-3xl w-full mx-auto p-6 flex flex-col min-h-0">
             <Suspense fallback={<PanelLoadingFallback />}>
               <ActivePanelComponent
                 onExport={activeSection === 'data' ? handleOpenExport : undefined}

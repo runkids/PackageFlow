@@ -120,9 +120,9 @@ export const NotificationSettingsPanel: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Header - Fixed */}
+      <div className="shrink-0 pb-6">
         <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
           <Bell className="w-5 h-5" />
           Notifications
@@ -133,7 +133,9 @@ export const NotificationSettingsPanel: React.FC = () => {
         </p>
       </div>
 
-      {/* General Section */}
+      {/* Content - Scrollable */}
+      <div className="flex-1 overflow-y-auto space-y-6 min-h-0">
+        {/* General Section */}
       <SettingSection
         title="General"
         description="Master controls for notifications"
@@ -261,6 +263,7 @@ export const NotificationSettingsPanel: React.FC = () => {
           </div>
         )}
       </SettingSection>
+      </div>
     </div>
   );
 };

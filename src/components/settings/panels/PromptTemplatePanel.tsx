@@ -919,7 +919,7 @@ const AddTemplateTab: React.FC<AddTemplateTabProps> = ({
                 value={formData.template}
                 onChange={(e) => onFormDataChange({ template: e.target.value })}
                 placeholder="Enter prompt template..."
-                rows={10}
+                rows={16}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg text-sm font-mono',
                   'bg-background border border-border',
@@ -1237,8 +1237,8 @@ export function PromptTemplatePanel() {
   // Render
   if (isLoadingTemplates && templates.length === 0) {
     return (
-      <div className="space-y-4">
-        <div>
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="shrink-0 pb-4">
           <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <FileText className="w-5 h-5" />
             Prompt Templates
@@ -1247,15 +1247,17 @@ export function PromptTemplatePanel() {
             Customize prompts for AI-powered features
           </p>
         </div>
-        <LoadingSkeleton />
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <LoadingSkeleton />
+        </div>
       </div>
     );
   }
 
   if (templatesError) {
     return (
-      <div className="space-y-4">
-        <div>
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="shrink-0 pb-4">
           <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <FileText className="w-5 h-5" />
             Prompt Templates
@@ -1264,15 +1266,17 @@ export function PromptTemplatePanel() {
             Customize prompts for AI-powered features
           </p>
         </div>
-        <ErrorState message={templatesError} onRetry={loadTemplates} />
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <ErrorState message={templatesError} onRetry={loadTemplates} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div>
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Header - Fixed */}
+      <div className="shrink-0 pb-4">
         <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
           <FileText className="w-5 h-5" />
           Prompt Templates
@@ -1282,17 +1286,19 @@ export function PromptTemplatePanel() {
         </p>
       </div>
 
-      {/* Status Card */}
-      <TemplateStatusCard
-        totalTemplates={templates.length}
-        builtinCount={builtinCount}
-        customCount={customCount}
-        defaultTemplates={defaultTemplateNames}
-      />
+      {/* Status Card - Fixed */}
+      <div className="shrink-0 pb-4">
+        <TemplateStatusCard
+          totalTemplates={templates.length}
+          builtinCount={builtinCount}
+          customCount={customCount}
+          defaultTemplates={defaultTemplateNames}
+        />
+      </div>
 
-      {/* Tabbed Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="w-full grid grid-cols-3">
+      {/* Tabs - Fixed header, scrollable content */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
+        <TabsList className="w-full grid grid-cols-3 shrink-0 mb-4">
           <TabsTrigger value="overview" className="flex items-center gap-1.5">
             <Settings2 className="w-3.5 h-3.5" />
             <span>Overview</span>
@@ -1312,38 +1318,41 @@ export function PromptTemplatePanel() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="max-h-[calc(100vh-280px)] overflow-y-auto scroll-pb-6">
-          <OverviewTab
-            templates={templates}
-            templateCounts={templateCounts}
-            defaultTemplates={defaultTemplates}
-          />
-        </TabsContent>
+        {/* Tab Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <TabsContent value="overview" className="mt-0">
+            <OverviewTab
+              templates={templates}
+              templateCounts={templateCounts}
+              defaultTemplates={defaultTemplates}
+            />
+          </TabsContent>
 
-        <TabsContent value="templates" className="max-h-[calc(100vh-280px)] overflow-y-auto scroll-pb-16">
-          <TemplatesTab
-            templatesByCategory={templatesByCategory}
-            templateCounts={templateCounts}
-            onEdit={handleStartEdit}
-            onDelete={setDeleteTarget}
-            onSetDefault={setDefaultTemplate}
-            onPreview={setPreviewTemplate}
-          />
-        </TabsContent>
+          <TabsContent value="templates" className="mt-0">
+            <TemplatesTab
+              templatesByCategory={templatesByCategory}
+              templateCounts={templateCounts}
+              onEdit={handleStartEdit}
+              onDelete={setDeleteTarget}
+              onSetDefault={setDefaultTemplate}
+              onPreview={setPreviewTemplate}
+            />
+          </TabsContent>
 
-        <TabsContent value="add" className="h-[calc(100vh-280px)]">
-          <AddTemplateTab
-            editingTemplate={editingTemplate}
-            formData={formData}
-            formError={formError}
-            isSubmitting={isSubmitting}
-            formId={formId}
-            onFormDataChange={handleFormDataChange}
-            onCategoryChange={handleCategoryChange}
-            onSubmit={handleSubmit}
-            onCancel={handleCancelForm}
-          />
-        </TabsContent>
+          <TabsContent value="add" className="mt-0">
+            <AddTemplateTab
+              editingTemplate={editingTemplate}
+              formData={formData}
+              formError={formError}
+              isSubmitting={isSubmitting}
+              formId={formId}
+              onFormDataChange={handleFormDataChange}
+              onCategoryChange={handleCategoryChange}
+              onSubmit={handleSubmit}
+              onCancel={handleCancelForm}
+            />
+          </TabsContent>
+        </div>
       </Tabs>
 
       {/* Preview Dialog */}
