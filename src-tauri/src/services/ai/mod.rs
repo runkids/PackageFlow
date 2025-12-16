@@ -23,7 +23,7 @@ pub use openai::OpenAIProvider;
 pub use storage::AIStorage;
 
 use crate::models::ai::{
-    AIProvider as AIProviderType, AIServiceConfig, ChatMessage, ChatOptions, ChatResponse,
+    AIProvider as AIProviderType, AIProviderConfig, ChatMessage, ChatOptions, ChatResponse,
     ModelInfo,
 };
 
@@ -35,7 +35,7 @@ pub trait AIProvider: Send + Sync {
     fn name(&self) -> &str;
 
     /// Get the current configuration
-    fn config(&self) -> &AIServiceConfig;
+    fn config(&self) -> &AIProviderConfig;
 
     /// List available models
     /// For cloud providers, returns a static list
@@ -64,7 +64,7 @@ pub type BoxedAIProvider = Box<dyn AIProvider>;
 ///
 /// # Returns
 /// A boxed AI provider instance
-pub fn create_provider(config: AIServiceConfig, api_key: Option<String>) -> AIResult<BoxedAIProvider> {
+pub fn create_provider(config: AIProviderConfig, api_key: Option<String>) -> AIResult<BoxedAIProvider> {
     match config.provider {
         AIProviderType::Ollama => Ok(Box::new(OllamaProvider::new(config))),
         AIProviderType::LMStudio => Ok(Box::new(LMStudioProvider::new(config))),
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_create_ollama_provider() {
-        let config = AIServiceConfig::new(
+        let config = AIProviderConfig::new(
             "Test".to_string(),
             AIProviderType::Ollama,
             "http://127.0.0.1:11434".to_string(),
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_create_openai_provider_without_key() {
-        let config = AIServiceConfig::new(
+        let config = AIProviderConfig::new(
             "Test".to_string(),
             AIProviderType::OpenAI,
             "https://api.openai.com/v1".to_string(),
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn test_create_openai_provider_with_key() {
-        let config = AIServiceConfig::new(
+        let config = AIProviderConfig::new(
             "Test".to_string(),
             AIProviderType::OpenAI,
             "https://api.openai.com/v1".to_string(),

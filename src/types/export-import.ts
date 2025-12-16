@@ -5,7 +5,7 @@
 
 import type { Project, Workflow, AppSettings } from './index';
 import type { WorktreeTemplate, CustomStepTemplate, McpServerConfig, DeploymentConfig } from '../lib/tauri-api';
-import type { AIServiceConfig, PromptTemplate } from './ai';
+import type { AIProviderConfig, PromptTemplate } from './ai';
 
 export type DataType =
   | 'projects'
@@ -13,7 +13,7 @@ export type DataType =
   | 'templates'
   | 'stepTemplates'
   | 'settings'
-  | 'aiServices'
+  | 'aiProviders'
   | 'aiTemplates'
   | 'mcpConfig'
   | 'deployAccounts'
@@ -42,7 +42,7 @@ export interface ExportDeployPreferences {
 /** Project AI settings for export */
 export interface ExportProjectAISettings {
   projectPath: string;
-  preferredServiceId?: string;
+  preferredProviderId?: string;
   preferredTemplateId?: string;
 }
 
@@ -64,7 +64,7 @@ export interface ExportData {
     customStepTemplates?: CustomStepTemplate[];
     settings?: AppSettings;
     // AI Integration (020-ai-cli-integration)
-    aiServices?: AIServiceConfig[];
+    aiProviders?: AIProviderConfig[];
     aiTemplates?: PromptTemplate[];
     projectAiSettings?: ExportProjectAISettings[];
     // MCP Configuration
@@ -90,7 +90,7 @@ export interface ExportCounts {
   stepTemplates: number;
   hasSettings: boolean;
   // AI Integration
-  aiServices: number;
+  aiProviders: number;
   aiTemplates: number;
   projectAiSettings: number;
   // MCP
@@ -155,7 +155,7 @@ export interface ImportSummaryItem {
   workflows: number;
   templates: number;
   stepTemplates: number;
-  aiServices: number;
+  aiProviders: number;
   aiTemplates: number;
   deployAccounts: number;
   deploymentConfigs: number;

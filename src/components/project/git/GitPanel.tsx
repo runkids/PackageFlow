@@ -400,7 +400,7 @@ export function GitPanel({
                   hasStagedChanges={status.stagedCount > 0}
                   onCommit={handleCommit}
                   projectPath={projectPath}
-                  onOpenAISettings={() => onOpenSettings?.('ai-services')}
+                  onOpenAISettings={() => onOpenSettings?.('ai-providers')}
                 />
               </div>
             </>

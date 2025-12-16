@@ -2,6 +2,7 @@
 // Rust structs that map to TypeScript interfaces
 
 pub mod ai;
+pub mod ai_assistant;
 pub mod apk;
 pub mod cli_tool;
 pub mod deploy;

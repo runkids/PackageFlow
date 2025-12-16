@@ -22,8 +22,9 @@ import { UpdateDialog } from './components/ui/UpdateDialog';
 import { useMcpStatus } from './hooks/useMcpStatus';
 import { NotificationButton, BackgroundTasksButton, StopProcessesButton, McpStatusButton } from './components/status-bar';
 import { ActionConfirmationDialog } from './components/settings/mcp';
+import { AIAssistantPage } from './components/ai-assistant';
 
-type AppTab = 'workflow' | 'project-manager';
+type AppTab = 'workflow' | 'project-manager' | 'ai-assistant';
 
 const DEFAULT_SHORTCUT_KEYS: Record<string, string> = {
   'refresh': 'cmd+r',
@@ -34,6 +35,7 @@ const DEFAULT_SHORTCUT_KEYS: Record<string, string> = {
   'import': 'cmd+i',
   'tab-projects': 'cmd+1',
   'tab-workflows': 'cmd+2',
+  'tab-ai-assistant': 'cmd+3',
   'stop-all': 'cmd+shift+k',
   'deploy': 'cmd+shift+d',
   'help': 'cmd+/',
@@ -411,6 +413,17 @@ function App() {
       },
     },
     {
+      id: 'tab-ai-assistant',
+      key: getEffectiveKey('tab-ai-assistant', DEFAULT_SHORTCUT_KEYS['tab-ai-assistant']),
+      description: 'Switch to AI Assistant tab',
+      category: 'Navigation',
+      enabled: isShortcutEnabled('tab-ai-assistant'),
+      action: () => {
+        setActiveTab('ai-assistant');
+        showShortcutToast('AI Assistant', getEffectiveKey('tab-ai-assistant', DEFAULT_SHORTCUT_KEYS['tab-ai-assistant']));
+      },
+    },
+    {
       id: 'stop-all',
       key: getEffectiveKey('stop-all', DEFAULT_SHORTCUT_KEYS['stop-all']),
       description: 'Stop all running processes',
@@ -468,6 +481,7 @@ function App() {
     { id: 'import', key: DEFAULT_SHORTCUT_KEYS['import'], description: 'Import data', category: 'Data', action: () => {} },
     { id: 'tab-projects', key: DEFAULT_SHORTCUT_KEYS['tab-projects'], description: 'Switch to Projects tab', category: 'Navigation', action: () => {} },
     { id: 'tab-workflows', key: DEFAULT_SHORTCUT_KEYS['tab-workflows'], description: 'Switch to Workflows tab', category: 'Navigation', action: () => {} },
+    { id: 'tab-ai-assistant', key: DEFAULT_SHORTCUT_KEYS['tab-ai-assistant'], description: 'Switch to AI Assistant tab', category: 'Navigation', action: () => {} },
     { id: 'stop-all', key: DEFAULT_SHORTCUT_KEYS['stop-all'], description: 'Stop all running processes', category: 'Execution', action: () => {} },
     { id: 'deploy', key: DEFAULT_SHORTCUT_KEYS['deploy'], description: 'Quick deploy current project', category: 'Execution', action: () => {} },
     { id: 'help', key: DEFAULT_SHORTCUT_KEYS['help'], description: 'Show keyboard shortcuts', category: 'Help', action: () => {} },
@@ -531,6 +545,20 @@ function App() {
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
             )}
           </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setActiveTab('ai-assistant')}
+            className={`relative py-2.5 text-sm font-medium h-auto rounded-none ${
+              activeTab === 'ai-assistant'
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            AI Assistant
+            {activeTab === 'ai-assistant' && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+            )}
+          </Button>
         </nav>
 
         {activeTab === 'workflow' && (
@@ -554,6 +582,12 @@ function App() {
               onToggleTerminalCollapse={() => setIsTerminalCollapsed(!isTerminalCollapsed)}
               onOpenSettings={openSettings}
             />
+          </div>
+        )}
+
+        {activeTab === 'ai-assistant' && (
+          <div className="flex-1 overflow-hidden">
+            <AIAssistantPage onOpenSettings={() => openSettings('ai-providers')} />
           </div>
         )}
       </main>
@@ -584,7 +618,7 @@ function App() {
       <KeyboardShortcutsFloatingButton
         onClick={() => setShortcutsDialogOpen(true)}
         position="bottom-right"
-        bottomOffset={64}
+        bottomOffset={activeTab === 'ai-assistant' ? 150 : activeTab === 'workflow' ? 250 : 64}
       />
 
       <KeyboardShortcutsDialog

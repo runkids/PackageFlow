@@ -388,14 +388,12 @@ export function ProjectWorkflows({
           <div
             className={cn(
               'w-14 h-14 rounded-2xl mb-4',
-              'bg-gradient-to-br from-blue-500/20 via-blue-600/10 to-purple-500/10',
-              'dark:from-blue-500/15 dark:via-blue-600/10 dark:to-purple-500/10',
+              'bg-muted/50',
               'flex items-center justify-center',
-              'border border-blue-500/20',
-              'shadow-lg shadow-blue-500/5'
+              'border border-border'
             )}
           >
-            <WorkflowIcon className="w-7 h-7 text-blue-500 dark:text-blue-400" />
+            <WorkflowIcon className="w-7 h-7 text-muted-foreground/60" />
           </div>
           <h3 className="text-sm font-semibold text-foreground">No workflows yet</h3>
           <p className="mt-2 text-xs text-muted-foreground max-w-[200px] leading-relaxed">

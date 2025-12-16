@@ -9,7 +9,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { aiAPI, aiCLIAPI } from '../lib/tauri-api';
 import { listen } from '@tauri-apps/api/event';
 import type {
-  AIServiceConfig,
+  AIProviderConfig,
   PromptTemplate,
   TestConnectionResult,
   ModelInfo,
@@ -128,16 +128,16 @@ export interface UseAIServiceOptions {
 
 export interface UseAIServiceResult {
   // Services
-  services: AIServiceConfig[];
+  services: AIProviderConfig[];
   isLoadingServices: boolean;
   servicesError: string | null;
   loadServices: () => Promise<void>;
-  addService: (config: AddServiceRequest) => Promise<AIServiceConfig | null>;
-  updateService: (config: UpdateServiceRequest) => Promise<AIServiceConfig | null>;
+  addService: (config: AddServiceRequest) => Promise<AIProviderConfig | null>;
+  updateService: (config: UpdateServiceRequest) => Promise<AIProviderConfig | null>;
   deleteService: (id: string) => Promise<boolean>;
   setDefaultService: (id: string) => Promise<boolean>;
   testConnection: (id: string) => Promise<TestConnectionResult | null>;
-  listModels: (serviceId: string) => Promise<ModelInfo[]>;
+  listModels: (providerId: string) => Promise<ModelInfo[]>;
   probeModels: (request: ProbeModelsRequest) => Promise<ModelInfo[]>;
 
   // Templates
@@ -158,13 +158,13 @@ export interface UseAIServiceResult {
   // Commit message generation
   isGenerating: boolean;
   generateError: string | null;
-  generateCommitMessage: (options?: { serviceId?: string; templateId?: string }) => Promise<string | null>;
+  generateCommitMessage: (options?: { providerId?: string; templateId?: string }) => Promise<string | null>;
   tokensUsed: number | null;
 
   // Computed helpers
-  defaultService: AIServiceConfig | undefined;
+  defaultService: AIProviderConfig | undefined;
   defaultTemplate: PromptTemplate | undefined;
-  enabledServices: AIServiceConfig[];
+  enabledServices: AIProviderConfig[];
   hasConfiguredService: boolean;
 }
 
@@ -176,7 +176,7 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
   const { projectPath, autoLoad = true } = options;
 
   // Services state
-  const [services, setServices] = useState<AIServiceConfig[]>([]);
+  const [services, setServices] = useState<AIProviderConfig[]>([]);
   const [isLoadingServices, setIsLoadingServices] = useState(false);
   const [servicesError, setServicesError] = useState<string | null>(null);
 
@@ -217,7 +217,7 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
     }
   }, []);
 
-  const addService = useCallback(async (config: AddServiceRequest): Promise<AIServiceConfig | null> => {
+  const addService = useCallback(async (config: AddServiceRequest): Promise<AIProviderConfig | null> => {
     try {
       const response = await aiAPI.addService(config);
       if (response.success && response.data) {
@@ -236,7 +236,7 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
     }
   }, [loadServices]);
 
-  const updateService = useCallback(async (config: UpdateServiceRequest): Promise<AIServiceConfig | null> => {
+  const updateService = useCallback(async (config: UpdateServiceRequest): Promise<AIProviderConfig | null> => {
     try {
       const response = await aiAPI.updateService(config);
       if (response.success && response.data) {
@@ -311,9 +311,9 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
     }
   }, []);
 
-  const listModelsHandler = useCallback(async (serviceId: string): Promise<ModelInfo[]> => {
+  const listModelsHandler = useCallback(async (providerId: string): Promise<ModelInfo[]> => {
     try {
-      const response = await aiAPI.listModels(serviceId);
+      const response = await aiAPI.listModels(providerId);
       if (response.success && response.data) {
         return response.data;
       } else {
@@ -454,7 +454,7 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
         // Not having project settings is not an error, use defaults
         setProjectSettings({
           projectPath,
-          preferredServiceId: undefined,
+          preferredProviderId: undefined,
           preferredTemplateId: undefined,
         });
       }
@@ -462,7 +462,7 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
       console.error('Load project settings error:', err);
       setProjectSettings({
         projectPath,
-        preferredServiceId: undefined,
+        preferredProviderId: undefined,
         preferredTemplateId: undefined,
       });
     }
@@ -499,7 +499,7 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
   // ============================================================================
 
   const generateCommitMessage = useCallback(async (
-    options?: { serviceId?: string; templateId?: string }
+    options?: { providerId?: string; templateId?: string }
   ): Promise<string | null> => {
     if (!projectPath) {
       setGenerateError('Please select a project first');
@@ -513,7 +513,7 @@ export function useAIService(options: UseAIServiceOptions = {}): UseAIServiceRes
     try {
       const request: GenerateCommitMessageRequest = {
         projectPath,
-        serviceId: options?.serviceId,
+        providerId: options?.providerId,
         templateId: options?.templateId,
       };
 
@@ -644,7 +644,7 @@ export interface UseAICommitMessageOptions {
 export interface UseAICommitMessageResult {
   /** Generate a commit message */
   generate: (options?: {
-    serviceId?: string;
+    providerId?: string;
     templateId?: string;
     /** Override CLI usage for this generation */
     useCli?: boolean;
@@ -680,7 +680,7 @@ export function useAICommitMessage(options: UseAICommitMessageOptions): UseAICom
 
   const generate = useCallback(async (
     genOptions?: {
-      serviceId?: string;
+      providerId?: string;
       templateId?: string;
       useCli?: boolean;
     }
@@ -725,7 +725,7 @@ Only output the commit message, nothing else.`;
       // Fall back to API
       const request: GenerateCommitMessageRequest = {
         projectPath,
-        serviceId: genOptions?.serviceId,
+        providerId: genOptions?.providerId,
         templateId: genOptions?.templateId,
       };
 
@@ -778,7 +778,7 @@ export interface UseAICodeReviewResult {
   generate: (options: {
     filePath: string;
     staged: boolean;
-    serviceId?: string;
+    providerId?: string;
     templateId?: string;
     /** Override CLI usage for this generation */
     useCli?: boolean;
@@ -819,7 +819,7 @@ export function useAICodeReview(options: UseAICodeReviewOptions): UseAICodeRevie
     genOptions: {
       filePath: string;
       staged: boolean;
-      serviceId?: string;
+      providerId?: string;
       templateId?: string;
       useCli?: boolean;
     }
@@ -873,7 +873,7 @@ Be specific and actionable in your feedback.`;
         projectPath,
         filePath: genOptions.filePath,
         staged: genOptions.staged,
-        serviceId: genOptions.serviceId,
+        providerId: genOptions.providerId,
         templateId: genOptions.templateId,
       };
 
@@ -926,7 +926,7 @@ export interface UseAIStagedReviewOptions {
 export interface UseAIStagedReviewResult {
   /** Generate a code review for all staged changes */
   generate: (options?: {
-    serviceId?: string;
+    providerId?: string;
     templateId?: string;
     /** Override CLI usage for this generation */
     useCli?: boolean;
@@ -965,7 +965,7 @@ export function useAIStagedReview(options: UseAIStagedReviewOptions): UseAIStage
 
   const generate = useCallback(async (
     genOptions?: {
-      serviceId?: string;
+      providerId?: string;
       templateId?: string;
       useCli?: boolean;
     }
@@ -1009,7 +1009,7 @@ Be specific and actionable in your feedback.`;
       // Fall back to API
       const request: GenerateStagedReviewRequest = {
         projectPath,
-        serviceId: genOptions?.serviceId,
+        providerId: genOptions?.providerId,
         templateId: genOptions?.templateId,
       };
 

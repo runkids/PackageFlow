@@ -16,10 +16,11 @@ use commands::script::ScriptExecutionState;
 use commands::workflow::WorkflowExecutionState;
 use commands::ai_cli::CLIExecutorState;
 use commands::{
-    ai, ai_cli, apk, deploy, file_watcher, git, incoming_webhook, ipa, mcp, monorepo, notification, project, script, security,
+    ai, ai_assistant, ai_cli, apk, deploy, file_watcher, git, incoming_webhook, ipa, mcp, monorepo, notification, project, script, security,
     settings, shortcuts, step_template, toolchain, version, webhook, workflow, worktree,
 };
 use services::{DatabaseWatcher, FileWatcherManager, IncomingWebhookManager};
+use services::ai_assistant::StreamManager;
 use tauri::Manager;
 use utils::database::{Database, get_database_path};
 
@@ -74,6 +75,7 @@ pub fn run() {
         .manage(FileWatcherManager::new())
         .manage(DatabaseWatcher::new())
         .manage(CLIExecutorState::new())
+        .manage(StreamManager::new())
         // Register commands
         .invoke_handler(tauri::generate_handler![
             // Settings commands (US7)
@@ -323,11 +325,11 @@ pub fn run() {
             toolchain::fix_pnpm_home_conflict,
             toolchain::get_all_toolchain_preferences,
             // AI Integration (020-ai-cli-integration)
-            ai::ai_list_services,
+            ai::ai_list_providers,
             ai::ai_add_service,
             ai::ai_update_service,
-            ai::ai_delete_service,
-            ai::ai_set_default_service,
+            ai::ai_delete_provider,
+            ai::ai_set_default_provider,
             ai::ai_test_connection,
             ai::ai_list_models,
             ai::ai_probe_models,
@@ -388,6 +390,21 @@ pub fn run() {
             notification::delete_notification,
             notification::cleanup_old_notifications,
             notification::clear_all_notifications,
+            // AI Assistant (022-ai-assistant-tab)
+            ai_assistant::ai_assistant_create_conversation,
+            ai_assistant::ai_assistant_get_conversation,
+            ai_assistant::ai_assistant_list_conversations,
+            ai_assistant::ai_assistant_update_conversation,
+            ai_assistant::ai_assistant_update_conversation_service,
+            ai_assistant::ai_assistant_delete_conversation,
+            ai_assistant::ai_assistant_send_message,
+            ai_assistant::ai_assistant_cancel_stream,
+            ai_assistant::ai_assistant_get_messages,
+            // AI Assistant - Tool Calls (022-ai-assistant-tab US2)
+            ai_assistant::ai_assistant_get_tools,
+            ai_assistant::ai_assistant_approve_tool_call,
+            ai_assistant::ai_assistant_deny_tool_call,
+            ai_assistant::ai_assistant_get_suggestions,
         ])
         // Setup hook - sync incoming webhook server and start database watcher on app start
         .setup(|app| {

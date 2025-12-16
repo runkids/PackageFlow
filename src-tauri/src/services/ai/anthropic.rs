@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use super::{AIError, AIProvider, AIResult};
 use crate::models::ai::{
-    AIServiceConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
+    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
 };
 
 /// Anthropic API version header value
@@ -20,13 +20,13 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 /// Anthropic Provider
 pub struct AnthropicProvider {
-    config: AIServiceConfig,
+    config: AIProviderConfig,
     client: Client,
     api_key: String,
 }
 
 impl AnthropicProvider {
-    pub fn new(config: AIServiceConfig, api_key: String) -> Self {
+    pub fn new(config: AIProviderConfig, api_key: String) -> Self {
         Self {
             config,
             client: Client::new(),
@@ -123,7 +123,7 @@ impl AIProvider for AnthropicProvider {
         "Anthropic"
     }
 
-    fn config(&self) -> &AIServiceConfig {
+    fn config(&self) -> &AIProviderConfig {
         &self.config
     }
 
@@ -154,11 +154,11 @@ impl AIProvider for AnthropicProvider {
 
         for msg in messages {
             if msg.role == "system" {
-                system_message = Some(msg.content);
+                system_message = msg.content;
             } else {
                 anthropic_messages.push(AnthropicMessage {
                     role: msg.role,
-                    content: msg.content,
+                    content: msg.content.unwrap_or_default(),
                 });
             }
         }
@@ -248,6 +248,7 @@ impl AIProvider for AnthropicProvider {
             tokens_used,
             model: anthropic_response.model,
             finish_reason,
+            tool_calls: None, // TODO: Implement Anthropic tool calling
         })
     }
 
@@ -326,8 +327,8 @@ mod tests {
     use super::*;
     use crate::models::ai::AIProvider as AIProviderEnum;
 
-    fn create_test_config() -> AIServiceConfig {
-        AIServiceConfig::new(
+    fn create_test_config() -> AIProviderConfig {
+        AIProviderConfig::new(
             "Test Anthropic".to_string(),
             AIProviderEnum::Anthropic,
             "https://api.anthropic.com/v1".to_string(),

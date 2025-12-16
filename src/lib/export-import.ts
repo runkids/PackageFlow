@@ -46,7 +46,7 @@ import {
   STEP_FILE_EXTENSION,
 } from '../types/export-import';
 import type { Workflow, WorkflowNode } from '../types/workflow';
-import type { AIServiceConfig, PromptTemplate } from '../types/ai';
+import type { AIProviderConfig, PromptTemplate } from '../types/ai';
 import type { DeploymentConfig } from './tauri-api';
 
 // ============================================================================
@@ -206,7 +206,7 @@ export async function exportAllData(): Promise<ExportResult> {
       keyboardShortcuts,
       appVersion,
       // AI Integration data
-      aiServicesRes,
+      aiProvidersRes,
       aiTemplatesRes,
       // MCP config
       mcpConfig,
@@ -235,7 +235,7 @@ export async function exportAllData(): Promise<ExportResult> {
     const stepTemplates = stepTemplatesRes.templates ?? [];
 
     // Extract AI data from response wrappers
-    const aiServices: AIServiceConfig[] = aiServicesRes.data ?? [];
+    const aiProviders: AIProviderConfig[] = aiProvidersRes.data ?? [];
     const aiTemplates: PromptTemplate[] = aiTemplatesRes.data ?? [];
 
     // Load project-specific AI settings for each project
@@ -243,10 +243,10 @@ export async function exportAllData(): Promise<ExportResult> {
     for (const project of projects) {
       try {
         const settingsRes = await aiAPI.getProjectSettings(project.path);
-        if (settingsRes.data && (settingsRes.data.preferredServiceId || settingsRes.data.preferredTemplateId)) {
+        if (settingsRes.data && (settingsRes.data.preferredProviderId || settingsRes.data.preferredTemplateId)) {
           projectAiSettings.push({
             projectPath: settingsRes.data.projectPath,
-            preferredServiceId: settingsRes.data.preferredServiceId,
+            preferredProviderId: settingsRes.data.preferredProviderId,
             preferredTemplateId: settingsRes.data.preferredTemplateId,
           });
         }
@@ -309,7 +309,7 @@ export async function exportAllData(): Promise<ExportResult> {
         customStepTemplates: stepTemplates,
         settings: settingsWithShortcuts,
         // AI Integration
-        aiServices,
+        aiProviders,
         aiTemplates,
         projectAiSettings,
         // MCP
@@ -335,7 +335,7 @@ export async function exportAllData(): Promise<ExportResult> {
       templates: templates.length,
       stepTemplates: stepTemplates.length,
       hasSettings: true,
-      aiServices: aiServices.length,
+      aiProviders: aiProviders.length,
       aiTemplates: aiTemplates.length,
       projectAiSettings: projectAiSettings.length,
       hasMcpConfig: true,
@@ -418,7 +418,7 @@ export async function selectImportFile(): Promise<ImportFileResult> {
       stepTemplates: data.data.customStepTemplates?.length ?? 0,
       hasSettings: !!data.data.settings,
       // AI Integration
-      aiServices: data.data.aiServices?.length ?? 0,
+      aiProviders: data.data.aiProviders?.length ?? 0,
       aiTemplates: data.data.aiTemplates?.length ?? 0,
       projectAiSettings: data.data.projectAiSettings?.length ?? 0,
       // MCP
@@ -462,7 +462,7 @@ export async function executeImport(
     workflows: 0,
     templates: 0,
     stepTemplates: 0,
-    aiServices: 0,
+    aiProviders: 0,
     aiTemplates: 0,
     deployAccounts: 0,
     deploymentConfigs: 0,
@@ -540,15 +540,15 @@ export async function executeImport(
         summary.imported.settings = true;
       }
 
-      // Import AI Services (replace mode)
-      if (importData.data.aiServices) {
+      // Import AI Providers (replace mode)
+      if (importData.data.aiProviders) {
         // Delete existing AI services first
         const existingServicesRes = await aiAPI.listServices();
         for (const service of existingServicesRes.data ?? []) {
           await aiAPI.deleteService(service.id);
         }
         // Add imported services (note: API keys are not included in export)
-        for (const service of importData.data.aiServices) {
+        for (const service of importData.data.aiProviders) {
           await aiAPI.addService({
             name: service.name,
             provider: service.provider,
@@ -556,7 +556,7 @@ export async function executeImport(
             model: service.model,
           });
         }
-        summary.imported.aiServices = importData.data.aiServices.length;
+        summary.imported.aiProviders = importData.data.aiProviders.length;
       }
 
       // Import AI Templates (replace mode)
@@ -588,7 +588,7 @@ export async function executeImport(
         for (const settings of importData.data.projectAiSettings) {
           await aiAPI.updateProjectSettings({
             projectPath: settings.projectPath,
-            preferredServiceId: settings.preferredServiceId,
+            preferredProviderId: settings.preferredProviderId,
             preferredTemplateId: settings.preferredTemplateId,
           });
         }
@@ -711,12 +711,12 @@ export async function executeImport(
       summary.imported.settings = true;
     }
 
-    // Import AI Services (merge mode - add new ones only)
-    if (importData.data.aiServices) {
+    // Import AI Providers (merge mode - add new ones only)
+    if (importData.data.aiProviders) {
       const existingServicesRes = await aiAPI.listServices();
       const existingIds = new Set((existingServicesRes.data ?? []).map((s) => s.id));
 
-      for (const service of importData.data.aiServices) {
+      for (const service of importData.data.aiProviders) {
         if (!existingIds.has(service.id)) {
           await aiAPI.addService({
             name: service.name,
@@ -724,9 +724,9 @@ export async function executeImport(
             endpoint: service.endpoint,
             model: service.model,
           });
-          summary.imported.aiServices++;
+          summary.imported.aiProviders++;
         } else {
-          summary.skipped.aiServices++;
+          summary.skipped.aiProviders++;
         }
       }
     }
@@ -757,7 +757,7 @@ export async function executeImport(
       for (const settings of importData.data.projectAiSettings) {
         await aiAPI.updateProjectSettings({
           projectPath: settings.projectPath,
-          preferredServiceId: settings.preferredServiceId,
+          preferredProviderId: settings.preferredProviderId,
           preferredTemplateId: settings.preferredTemplateId,
         });
         summary.imported.projectAiSettings++;

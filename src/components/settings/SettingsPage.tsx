@@ -31,8 +31,8 @@ const AppearanceSettingsPanel = lazy(() =>
 const ShortcutsSettingsPanel = lazy(() =>
   import('./panels/ShortcutsSettingsPanel').then((m) => ({ default: m.ShortcutsSettingsPanel }))
 );
-const AIServiceSettingsPanel = lazy(() =>
-  import('./panels/AIServiceSettingsPanel').then((m) => ({ default: m.AIServiceSettingsPanel }))
+const AIProviderSettingsPanel = lazy(() =>
+  import('./panels/AIProviderSettingsPanel').then((m) => ({ default: m.AIProviderSettingsPanel }))
 );
 const PromptTemplatePanel = lazy(() =>
   import('./panels/PromptTemplatePanel').then((m) => ({ default: m.PromptTemplatePanel }))
@@ -61,7 +61,7 @@ interface SettingsPageProps {
 const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
   storage: HardDrive,
   'deploy-accounts': Users,
-  'ai-services': Bot,
+  'ai-providers': Bot,
   prompts: FileText,
   mcp: Server,
   appearance: Palette,
@@ -75,7 +75,7 @@ const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
 const SECTION_PANELS: Record<SettingsSection, React.LazyExoticComponent<React.ComponentType<{ onExport?: () => void; onImport?: () => void }>>> = {
   storage: StorageSettingsPanel,
   'deploy-accounts': DeployAccountsPanel,
-  'ai-services': AIServiceSettingsPanel,
+  'ai-providers': AIProviderSettingsPanel,
   prompts: PromptTemplatePanel,
   mcp: McpSettingsFullPanel,
   appearance: AppearanceSettingsPanel,
@@ -95,7 +95,7 @@ const SIDEBAR_CATEGORIES: { id: SettingsCategory; label: string; sections: Setti
   {
     id: 'ai',
     label: 'AI & Automation',
-    sections: ['ai-services', 'prompts', 'mcp'],
+    sections: ['ai-providers', 'prompts', 'mcp'],
   },
   {
     id: 'preferences',

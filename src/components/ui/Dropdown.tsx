@@ -45,9 +45,29 @@ export const Dropdown: React.FC<DropdownProps> = ({
     };
   }, [isOpen]);
 
+  // Handle trigger click - inject onClick into the trigger element
+  const handleTriggerClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent parent click handlers
+    setIsOpen(!isOpen);
+  };
+
+  // Clone the trigger element and inject our onClick handler
+  const triggerWithHandler = React.isValidElement(trigger)
+    ? React.cloneElement(trigger as React.ReactElement<{ onClick?: (e: React.MouseEvent) => void }>, {
+        onClick: (e: React.MouseEvent) => {
+          handleTriggerClick(e);
+          // Also call the original onClick if it exists
+          const originalOnClick = (trigger as React.ReactElement<{ onClick?: (e: React.MouseEvent) => void }>).props.onClick;
+          if (originalOnClick) {
+            originalOnClick(e);
+          }
+        },
+      })
+    : trigger;
+
   return (
     <div ref={dropdownRef} className={cn('relative', className)}>
-      <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
+      {triggerWithHandler}
       {isOpen && (
         <div
           className={cn(

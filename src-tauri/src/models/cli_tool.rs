@@ -73,7 +73,7 @@ pub enum CLIAuthMode {
     /// e.g., `claude login`, `codex auth`
     #[default]
     CliNative,
-    /// Use API key from PackageFlow AI Services
+    /// Use API key from PackageFlow AI Providers
     ApiKey,
 }
 
@@ -89,8 +89,8 @@ pub struct CLIToolConfig {
     pub is_enabled: bool,
     /// Authentication mode
     pub auth_mode: CLIAuthMode,
-    /// Reference to ai_services for API key mode
-    pub api_key_service_id: Option<String>,
+    /// Reference to ai_providers for API key mode
+    pub api_key_provider_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -106,7 +106,7 @@ impl CLIToolConfig {
             binary_path: None,
             is_enabled: true,
             auth_mode: CLIAuthMode::CliNative,
-            api_key_service_id: None,
+            api_key_provider_id: None,
             created_at: now,
             updated_at: now,
         }

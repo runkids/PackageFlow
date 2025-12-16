@@ -4,7 +4,7 @@
 use rusqlite::{Connection, params};
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 12;
+pub const CURRENT_VERSION: i32 = 1;
 
 /// Migration struct containing version and SQL statements
 struct Migration {
@@ -17,7 +17,7 @@ struct Migration {
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
-        description: "Initial schema",
+        description: "Initial schema - all tables",
         up: r#"
             -- Schema version tracking
             CREATE TABLE IF NOT EXISTS schema_version (
@@ -37,6 +37,9 @@ const MIGRATIONS: &[Migration] = &[
                 package_manager TEXT DEFAULT 'unknown' CHECK(package_manager IN ('npm', 'yarn', 'pnpm', 'bun', 'unknown')),
                 scripts TEXT,
                 worktree_sessions TEXT,
+                monorepo_tool TEXT,
+                framework TEXT,
+                ui_framework TEXT,
                 created_at TEXT NOT NULL,
                 last_opened_at TEXT NOT NULL
             );
@@ -122,11 +125,24 @@ const MIGRATIONS: &[Migration] = &[
                 log_requests INTEGER DEFAULT 1,
                 encrypted_secrets TEXT
             );
-            -- Insert default MCP config
             INSERT OR IGNORE INTO mcp_config (id) VALUES (1);
 
-            -- AI services
-            CREATE TABLE IF NOT EXISTS ai_services (
+            -- MCP request logs
+            CREATE TABLE IF NOT EXISTS mcp_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                tool TEXT NOT NULL,
+                arguments TEXT NOT NULL DEFAULT '{}',
+                result TEXT NOT NULL,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                source TEXT DEFAULT 'mcp_server'
+            );
+            CREATE INDEX IF NOT EXISTS idx_mcp_logs_timestamp ON mcp_logs(timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_mcp_logs_tool ON mcp_logs(tool);
+
+            -- AI providers
+            CREATE TABLE IF NOT EXISTS ai_providers (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 provider TEXT NOT NULL CHECK(provider IN ('openai', 'anthropic', 'gemini', 'ollama', 'lm_studio')),
@@ -143,7 +159,10 @@ const MIGRATIONS: &[Migration] = &[
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT,
-                category TEXT NOT NULL DEFAULT 'git_commit' CHECK(category IN ('git_commit', 'pull_request', 'code_review', 'documentation', 'release_notes', 'custom')),
+                category TEXT NOT NULL DEFAULT 'git_commit' CHECK(category IN (
+                    'git_commit', 'pull_request', 'code_review',
+                    'documentation', 'release_notes', 'security_advisory', 'custom'
+                )),
                 template TEXT NOT NULL,
                 output_format TEXT,
                 is_default INTEGER DEFAULT 0,
@@ -152,6 +171,22 @@ const MIGRATIONS: &[Migration] = &[
                 updated_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_ai_templates_category ON ai_templates(category);
+
+            -- Project-specific AI settings
+            CREATE TABLE IF NOT EXISTS project_ai_settings (
+                project_path TEXT PRIMARY KEY,
+                preferred_provider_id TEXT REFERENCES ai_providers(id) ON DELETE SET NULL,
+                preferred_template_id TEXT REFERENCES ai_templates(id) ON DELETE SET NULL
+            );
+
+            -- AI API keys (encrypted)
+            CREATE TABLE IF NOT EXISTS ai_api_keys (
+                provider_id TEXT PRIMARY KEY REFERENCES ai_providers(id) ON DELETE CASCADE,
+                ciphertext TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
 
             -- Deploy accounts
             CREATE TABLE IF NOT EXISTS deploy_accounts (
@@ -168,6 +203,15 @@ const MIGRATIONS: &[Migration] = &[
             );
             CREATE INDEX IF NOT EXISTS idx_deploy_accounts_platform ON deploy_accounts(platform);
 
+            -- Deploy account tokens (encrypted)
+            CREATE TABLE IF NOT EXISTS deploy_account_tokens (
+                account_id TEXT PRIMARY KEY REFERENCES deploy_accounts(id) ON DELETE CASCADE,
+                ciphertext TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             -- Deploy preferences (singleton)
             CREATE TABLE IF NOT EXISTS deploy_preferences (
                 id INTEGER PRIMARY KEY CHECK(id = 1),
@@ -175,7 +219,6 @@ const MIGRATIONS: &[Migration] = &[
                 default_netlify_account_id TEXT REFERENCES deploy_accounts(id) ON DELETE SET NULL,
                 default_cloudflare_pages_account_id TEXT REFERENCES deploy_accounts(id) ON DELETE SET NULL
             );
-            -- Insert default deploy preferences
             INSERT OR IGNORE INTO deploy_preferences (id) VALUES (1);
 
             -- Deployment configurations per project
@@ -217,90 +260,7 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_deployments_project ON deployments(project_id);
             CREATE INDEX IF NOT EXISTS idx_deployments_created ON deployments(created_at DESC);
 
-            -- Incoming webhook configurations
-            CREATE TABLE IF NOT EXISTS incoming_webhooks (
-                id TEXT PRIMARY KEY,
-                workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
-                secret TEXT NOT NULL,
-                is_enabled INTEGER DEFAULT 1,
-                created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_incoming_webhooks_workflow ON incoming_webhooks(workflow_id);
-        "#,
-    },
-    Migration {
-        version: 2,
-        description: "Add MCP request logs table",
-        up: r#"
-            -- MCP request logs
-            CREATE TABLE IF NOT EXISTS mcp_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                tool TEXT NOT NULL,
-                arguments TEXT NOT NULL DEFAULT '{}',
-                result TEXT NOT NULL,
-                duration_ms INTEGER NOT NULL DEFAULT 0,
-                error TEXT,
-                source TEXT DEFAULT 'mcp_server'
-            );
-            CREATE INDEX IF NOT EXISTS idx_mcp_logs_timestamp ON mcp_logs(timestamp DESC);
-            CREATE INDEX IF NOT EXISTS idx_mcp_logs_tool ON mcp_logs(tool);
-        "#,
-    },
-    Migration {
-        version: 3,
-        description: "Add project AI settings table",
-        up: r#"
-            -- Project-specific AI settings
-            CREATE TABLE IF NOT EXISTS project_ai_settings (
-                project_path TEXT PRIMARY KEY,
-                preferred_service_id TEXT REFERENCES ai_services(id) ON DELETE SET NULL,
-                preferred_template_id TEXT REFERENCES ai_templates(id) ON DELETE SET NULL
-            );
-        "#,
-    },
-    Migration {
-        version: 4,
-        description: "Add AI API keys table",
-        up: r#"
-            -- AI API keys (encrypted)
-            CREATE TABLE IF NOT EXISTS ai_api_keys (
-                service_id TEXT PRIMARY KEY REFERENCES ai_services(id) ON DELETE CASCADE,
-                ciphertext TEXT NOT NULL,
-                nonce TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            -- Drop unused app_settings table if exists (was redundant with settings table)
-            DROP TABLE IF EXISTS app_settings;
-        "#,
-    },
-    Migration {
-        version: 5,
-        description: "Add encrypted deploy account tokens table",
-        up: r#"
-            -- Deploy account tokens (encrypted)
-            -- Stores access tokens separately with encryption for security
-            CREATE TABLE IF NOT EXISTS deploy_account_tokens (
-                account_id TEXT PRIMARY KEY REFERENCES deploy_accounts(id) ON DELETE CASCADE,
-                ciphertext TEXT NOT NULL,
-                nonce TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-        "#,
-    },
-    Migration {
-        version: 6,
-        description: "Add encrypted webhook tokens table and cleanup unused table",
-        up: r#"
-            -- Drop unused incoming_webhooks table (webhook config is stored in workflows.incoming_webhook JSON)
-            DROP TABLE IF EXISTS incoming_webhooks;
-
             -- Webhook tokens (encrypted)
-            -- Stores webhook tokens separately with encryption for security
-            -- workflow_id references workflows table
             CREATE TABLE IF NOT EXISTS webhook_tokens (
                 workflow_id TEXT PRIMARY KEY REFERENCES workflows(id) ON DELETE CASCADE,
                 ciphertext TEXT NOT NULL,
@@ -308,62 +268,8 @@ const MIGRATIONS: &[Migration] = &[
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-        "#,
-    },
-    Migration {
-        version: 7,
-        description: "Add missing project fields (monorepo_tool, framework, ui_framework)",
-        up: r#"
-            -- Add missing project fields that exist in frontend TypeScript but were missing in DB
-            ALTER TABLE projects ADD COLUMN monorepo_tool TEXT;
-            ALTER TABLE projects ADD COLUMN framework TEXT;
-            ALTER TABLE projects ADD COLUMN ui_framework TEXT;
-        "#,
-    },
-    Migration {
-        version: 8,
-        description: "Add security_advisory to ai_templates category constraint",
-        up: r#"
-            -- SQLite doesn't support ALTER TABLE to modify CHECK constraints
-            -- We need to recreate the table with the new constraint
 
-            -- 1. Create new table with updated CHECK constraint
-            CREATE TABLE ai_templates_new (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                category TEXT NOT NULL DEFAULT 'git_commit' CHECK(category IN (
-                    'git_commit', 'pull_request', 'code_review',
-                    'documentation', 'release_notes', 'security_advisory', 'custom'
-                )),
-                template TEXT NOT NULL,
-                output_format TEXT,
-                is_default INTEGER DEFAULT 0,
-                is_builtin INTEGER DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            -- 2. Copy existing data
-            INSERT INTO ai_templates_new
-                SELECT * FROM ai_templates;
-
-            -- 3. Drop old table
-            DROP TABLE ai_templates;
-
-            -- 4. Rename new table
-            ALTER TABLE ai_templates_new RENAME TO ai_templates;
-
-            -- 5. Recreate index
-            CREATE INDEX IF NOT EXISTS idx_ai_templates_category ON ai_templates(category);
-        "#,
-    },
-    Migration {
-        version: 9,
-        description: "Add AI CLI tools integration tables",
-        up: r#"
             -- CLI tools configuration
-            -- Stores configured AI CLI tools (Claude Code, Codex, Gemini CLI)
             CREATE TABLE IF NOT EXISTS cli_tools (
                 id TEXT PRIMARY KEY,
                 tool_type TEXT NOT NULL CHECK(tool_type IN ('claude_code', 'codex', 'gemini_cli')),
@@ -371,15 +277,14 @@ const MIGRATIONS: &[Migration] = &[
                 binary_path TEXT,
                 is_enabled INTEGER DEFAULT 1,
                 auth_mode TEXT NOT NULL DEFAULT 'cli_native' CHECK(auth_mode IN ('cli_native', 'api_key')),
-                api_key_service_id TEXT REFERENCES ai_services(id) ON DELETE SET NULL,
+                api_key_provider_id TEXT REFERENCES ai_providers(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_cli_tools_type ON cli_tools(tool_type);
             CREATE INDEX IF NOT EXISTS idx_cli_tools_enabled ON cli_tools(is_enabled);
 
-            -- CLI execution logs for audit/history
-            -- Note: prompt_hash stores SHA256 hash, not the actual prompt for privacy
+            -- CLI execution logs
             CREATE TABLE IF NOT EXISTS cli_execution_logs (
                 id TEXT PRIMARY KEY,
                 tool_type TEXT NOT NULL CHECK(tool_type IN ('claude_code', 'codex', 'gemini_cli')),
@@ -394,14 +299,8 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_cli_logs_created ON cli_execution_logs(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_cli_logs_project ON cli_execution_logs(project_path);
             CREATE INDEX IF NOT EXISTS idx_cli_logs_tool ON cli_execution_logs(tool_type);
-        "#,
-    },
-    Migration {
-        version: 11,
-        description: "Add notifications table for notification center",
-        up: r#"
-            -- Notifications history for notification center
-            -- Stores all notifications sent by the app for history viewing
+
+            -- Notifications history
             CREATE TABLE IF NOT EXISTS notifications (
                 id TEXT PRIMARY KEY,
                 notification_type TEXT NOT NULL,
@@ -418,14 +317,8 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(is_read, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);
-        "#,
-    },
-    Migration {
-        version: 12,
-        description: "Add MCP action tables for action execution via MCP",
-        up: r#"
+
             -- MCP action definitions
-            -- Stores registered actions (scripts, webhooks, workflows) that can be triggered via MCP
             CREATE TABLE IF NOT EXISTS mcp_actions (
                 id TEXT PRIMARY KEY,
                 action_type TEXT NOT NULL CHECK(action_type IN ('script', 'webhook', 'workflow')),
@@ -442,7 +335,6 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_mcp_actions_type ON mcp_actions(action_type);
 
             -- MCP action permission rules
-            -- Stores permission settings for actions (require_confirm, auto_approve, deny)
             CREATE TABLE IF NOT EXISTS mcp_action_permissions (
                 id TEXT PRIMARY KEY,
                 action_id TEXT,
@@ -455,7 +347,6 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_mcp_permissions_type ON mcp_action_permissions(action_type);
 
             -- MCP action execution history
-            -- Stores records of all action executions for audit trail
             CREATE TABLE IF NOT EXISTS mcp_action_executions (
                 id TEXT PRIMARY KEY,
                 action_id TEXT,
@@ -474,6 +365,36 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_mcp_executions_action ON mcp_action_executions(action_id);
             CREATE INDEX IF NOT EXISTS idx_mcp_executions_status ON mcp_action_executions(status);
             CREATE INDEX IF NOT EXISTS idx_mcp_executions_started ON mcp_action_executions(started_at DESC);
+
+            -- AI Assistant Conversations
+            CREATE TABLE IF NOT EXISTS ai_conversations (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT,
+                project_path TEXT,
+                provider_id TEXT,
+                message_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated ON ai_conversations(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_ai_conversations_project ON ai_conversations(project_path);
+
+            -- AI Assistant Messages
+            CREATE TABLE IF NOT EXISTS ai_messages (
+                id TEXT PRIMARY KEY NOT NULL,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+                content TEXT NOT NULL,
+                tool_calls TEXT,
+                tool_results TEXT,
+                status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'error')) DEFAULT 'sent',
+                tokens_used INTEGER,
+                model TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation ON ai_messages(conversation_id, created_at);
         "#,
     },
 ];
@@ -574,13 +495,17 @@ mod tests {
         assert!(table_exists(&conn, "workflows").unwrap());
         assert!(table_exists(&conn, "settings").unwrap());
         assert!(table_exists(&conn, "mcp_config").unwrap());
-        assert!(table_exists(&conn, "ai_services").unwrap());
+        assert!(table_exists(&conn, "ai_providers").unwrap());
+        assert!(table_exists(&conn, "ai_templates").unwrap());
+        assert!(table_exists(&conn, "ai_api_keys").unwrap());
         assert!(table_exists(&conn, "deploy_accounts").unwrap());
         assert!(table_exists(&conn, "deploy_account_tokens").unwrap());
         assert!(table_exists(&conn, "webhook_tokens").unwrap());
         assert!(table_exists(&conn, "notifications").unwrap());
-        // incoming_webhooks was dropped in migration 6
-        assert!(!table_exists(&conn, "incoming_webhooks").unwrap());
+        assert!(table_exists(&conn, "mcp_actions").unwrap());
+        assert!(table_exists(&conn, "cli_tools").unwrap());
+        assert!(table_exists(&conn, "ai_conversations").unwrap());
+        assert!(table_exists(&conn, "ai_messages").unwrap());
     }
 
     #[test]

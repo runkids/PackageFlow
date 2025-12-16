@@ -318,24 +318,25 @@ export function WorktreeSessionListDialog({
           <div className="px-6 py-4 border-b border-border bg-card/30">
             <div className="flex flex-col md:flex-row md:items-center gap-3">
               {/* Status filter pills */}
-              <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg flex-shrink-0">
                 {(['all', 'active', 'archived', 'broken'] as const).map((k) => {
                   const isActive = filter === k;
                   const badge = k === 'all' ? null : getStatusBadgeConfig(k);
                   return (
-                    <Button
+                    <button
                       key={k}
-                      variant="ghost"
+                      type="button"
                       onClick={() => setFilter(k)}
                       className={cn(
-                        'px-3 text-xs font-medium h-auto',
+                        'px-3 py-1.5 text-xs font-medium rounded-md',
+                        'transition-all duration-150',
                         isActive
                           ? 'bg-background text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                       )}
                     >
                       {k === 'all' ? 'All' : badge?.label}
-                    </Button>
+                    </button>
                   );
                 })}
               </div>
@@ -394,12 +395,13 @@ export function WorktreeSessionListDialog({
                         'hover:bg-accent/50 hover:border-teal-500/30',
                         'focus:outline-none focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500/30',
                         'transition-all duration-150',
-                        'group'
+                        'group',
+                        'overflow-hidden'
                       )}
                       title={s.worktreePath}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3 w-full overflow-hidden">
+                        <div className="min-w-0 flex-1 overflow-hidden">
                           <div className="flex items-center gap-2">
                             <FolderGit2 className="w-4 h-4 text-teal-500 dark:text-teal-400 flex-shrink-0" />
                             <span className="text-sm font-medium text-foreground truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">

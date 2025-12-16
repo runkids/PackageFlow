@@ -2,15 +2,20 @@
  * Worktree Quick Switcher Component
  * Quick navigation between worktrees with keyboard
  * @see specs/001-worktree-enhancements/tasks.md - T043-T044
+ * @see _docs/ui-design-spec.md - Quick Switcher improvements
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { GitBranch, Code2, Play, FolderOpen, Bookmark } from 'lucide-react';
 import { QuickSwitcher, type QuickSwitcherItem } from '../ui/QuickSwitcher';
 import type { Worktree, EditorDefinition } from '../../lib/tauri-api';
 import type { CategorizedScript } from '../../types';
 import type { WorktreeSession } from '../../types/worktree-sessions';
 import { useSettings } from '../../contexts/SettingsContext';
+
+/** Storage key for recent items */
+const RECENT_ITEMS_KEY = 'worktree-quick-switcher-recent';
+const MAX_RECENT_ITEMS = 5;
 
 interface WorktreeQuickSwitcherProps {
   isOpen: boolean;
@@ -39,6 +44,34 @@ export function WorktreeQuickSwitcher({
 }: WorktreeQuickSwitcherProps) {
   // Settings for path display format
   const { formatPath } = useSettings();
+
+  // Track recently used items
+  const [recentItemIds, setRecentItemIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(RECENT_ITEMS_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Save recent items to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENT_ITEMS_KEY, JSON.stringify(recentItemIds));
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [recentItemIds]);
+
+  // Handle item usage tracking
+  const handleItemUsed = useCallback((itemId: string) => {
+    setRecentItemIds(prev => {
+      // Remove if already exists, then add to front
+      const filtered = prev.filter(id => id !== itemId);
+      return [itemId, ...filtered].slice(0, MAX_RECENT_ITEMS);
+    });
+  }, []);
 
   // Build quick switcher items
   const items = useMemo((): QuickSwitcherItem[] => {
@@ -144,8 +177,15 @@ export function WorktreeQuickSwitcher({
       onClose={onClose}
       items={items}
       title="Quick Switcher"
+      subtitle={`${worktrees.length} worktrees • ${sessions.length} sessions`}
       placeholder="Search worktrees, sessions, actions..."
       emptyMessage="No matching worktrees or actions"
+      showCategoryFilter={true}
+      recentItemIds={recentItemIds}
+      maxRecentItems={MAX_RECENT_ITEMS}
+      onItemUsed={handleItemUsed}
+      themeColor="blue"
+      headerIcon={<GitBranch className="w-6 h-6 text-blue-400" />}
     />
   );
 }

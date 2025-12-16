@@ -2,6 +2,7 @@
 // Business logic and background services
 
 pub mod ai;
+pub mod ai_assistant;
 pub mod ai_cli;
 pub mod crypto;
 pub mod file_watcher;

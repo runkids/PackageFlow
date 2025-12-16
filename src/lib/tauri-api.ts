@@ -2123,7 +2123,7 @@ export const shortcutsEvents = {
 
 import type {
   AIProvider,
-  AIServiceConfig,
+  AIProviderConfig,
   PromptTemplate,
   ProjectAISettings,
   GenerateResult,
@@ -2146,7 +2146,7 @@ import type {
 
 export type {
   AIProvider,
-  AIServiceConfig,
+  AIProviderConfig,
   PromptTemplate,
   ProjectAISettings,
   GenerateResult,
@@ -2180,16 +2180,16 @@ export const aiAPI = {
   // ============================================================================
 
   /** List all AI service configurations */
-  listServices: (): Promise<AIApiResponse<AIServiceConfig[]>> =>
-    invoke<AIApiResponse<AIServiceConfig[]>>('ai_list_services'),
+  listServices: (): Promise<AIApiResponse<AIProviderConfig[]>> =>
+    invoke<AIApiResponse<AIProviderConfig[]>>('ai_list_services'),
 
   /** Add a new AI service configuration */
-  addService: (config: AddServiceRequest): Promise<AIApiResponse<AIServiceConfig>> =>
-    invoke<AIApiResponse<AIServiceConfig>>('ai_add_service', { config }),
+  addService: (config: AddServiceRequest): Promise<AIApiResponse<AIProviderConfig>> =>
+    invoke<AIApiResponse<AIProviderConfig>>('ai_add_service', { config }),
 
   /** Update an AI service configuration */
-  updateService: (config: UpdateServiceRequest): Promise<AIApiResponse<AIServiceConfig>> =>
-    invoke<AIApiResponse<AIServiceConfig>>('ai_update_service', { config }),
+  updateService: (config: UpdateServiceRequest): Promise<AIApiResponse<AIProviderConfig>> =>
+    invoke<AIApiResponse<AIProviderConfig>>('ai_update_service', { config }),
 
   /** Delete an AI service configuration */
   deleteService: (id: string): Promise<AIApiResponse<void>> =>
@@ -2204,8 +2204,8 @@ export const aiAPI = {
     invoke<AIApiResponse<TestConnectionResult>>('ai_test_connection', { id }),
 
   /** List available models for a service (Ollama/LMStudio) */
-  listModels: (serviceId: string): Promise<AIApiResponse<ModelInfo[]>> =>
-    invoke<AIApiResponse<ModelInfo[]>>('ai_list_models', { serviceId }),
+  listModels: (providerId: string): Promise<AIApiResponse<ModelInfo[]>> =>
+    invoke<AIApiResponse<ModelInfo[]>>('ai_list_models', { providerId }),
 
   /** Probe models for a provider/endpoint without saving a service */
   probeModels: (request: ProbeModelsRequest): Promise<AIApiResponse<ModelInfo[]>> =>
@@ -2284,18 +2284,18 @@ export const aiAPI = {
   // ============================================================================
 
   /** Manually store an API key for a service (diagnostic) */
-  storeApiKey: (serviceId: string, apiKey: string): Promise<AIApiResponse<string>> =>
-    invoke('ai_store_api_key', { serviceId, apiKey }),
+  storeApiKey: (providerId: string, apiKey: string): Promise<AIApiResponse<string>> =>
+    invoke('ai_store_api_key', { providerId, apiKey }),
 
   /** Check API key status for a service (diagnostic) */
-  checkApiKeyStatus: (serviceId: string): Promise<AIApiResponse<{
-    serviceId: string;
+  checkApiKeyStatus: (providerId: string): Promise<AIApiResponse<{
+    providerId: string;
     existsInDb: boolean;
     canDecrypt: boolean;
     keyPrefix: string | null;
     error: string | null;
   }>> =>
-    invoke('ai_check_api_key_status', { serviceId }),
+    invoke('ai_check_api_key_status', { providerId }),
 };
 
 // ============================================================================

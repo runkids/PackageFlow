@@ -47,9 +47,9 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchIndexItem[] = [
     keywords: ['deploy', 'account', 'platform', 'credentials', 'publish'],
   },
   {
-    id: 'ai-services',
+    id: 'ai-providers',
     category: 'ai',
-    title: 'AI Services',
+    title: 'AI Providers',
     description: 'Configure AI providers for code review and assistance',
     keywords: ['openai', 'claude', 'anthropic', 'ollama', 'llm', 'model', 'api', 'key', 'gpt', 'chatgpt'],
   },
@@ -111,7 +111,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
   {
     id: 'all',
     label: 'All',
-    sections: ['storage', 'deploy-accounts', 'ai-services', 'prompts', 'mcp', 'appearance', 'notifications', 'shortcuts', 'toolchain', 'data'],
+    sections: ['storage', 'deploy-accounts', 'ai-providers', 'prompts', 'mcp', 'appearance', 'notifications', 'shortcuts', 'toolchain', 'data'],
   },
   {
     id: 'project',
@@ -121,7 +121,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
   {
     id: 'ai',
     label: 'AI & Automation',
-    sections: ['ai-services', 'prompts', 'mcp'],
+    sections: ['ai-providers', 'prompts', 'mcp'],
   },
   {
     id: 'preferences',

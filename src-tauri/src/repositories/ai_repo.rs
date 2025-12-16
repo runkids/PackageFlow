@@ -1,13 +1,13 @@
 // AI Repository
-// Handles all database operations for AI services and templates
+// Handles all database operations for AI providers and templates
 
 use chrono::Utc;
 use rusqlite::params;
 
-use crate::models::ai::{AIProvider, AIServiceConfig, CommitFormat, PromptTemplate, TemplateCategory};
+use crate::models::ai::{AIProvider, AIProviderConfig, CommitFormat, PromptTemplate, TemplateCategory};
 use crate::utils::database::Database;
 
-/// Repository for AI service and template data access
+/// Repository for AI provider and template data access
 pub struct AIRepository {
     db: Database,
 }
@@ -19,18 +19,18 @@ impl AIRepository {
     }
 
     // =========================================================================
-    // AI Services
+    // AI Providers
     // =========================================================================
 
-    /// List all AI services
-    pub fn list_services(&self) -> Result<Vec<AIServiceConfig>, String> {
+    /// List all AI providers
+    pub fn list_providers(&self) -> Result<Vec<AIProviderConfig>, String> {
         self.db.with_connection(|conn| {
             let mut stmt = conn
                 .prepare(
                     r#"
                     SELECT id, name, provider, endpoint, model, is_default, is_enabled,
                            created_at, updated_at
-                    FROM ai_services
+                    FROM ai_providers
                     ORDER BY name
                     "#,
                 )
@@ -38,7 +38,7 @@ impl AIRepository {
 
             let rows = stmt
                 .query_map([], |row| {
-                    Ok(AIServiceRow {
+                    Ok(AIProviderRow {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         provider: row.get(2)?,
@@ -50,31 +50,31 @@ impl AIRepository {
                         updated_at: row.get(8)?,
                     })
                 })
-                .map_err(|e| format!("Failed to query AI services: {}", e))?;
+                .map_err(|e| format!("Failed to query AI providers: {}", e))?;
 
-            let mut services = Vec::new();
+            let mut providers = Vec::new();
             for row in rows {
                 let row = row.map_err(|e| format!("Failed to read row: {}", e))?;
-                services.push(row.into_service()?);
+                providers.push(row.into_provider()?);
             }
 
-            Ok(services)
+            Ok(providers)
         })
     }
 
-    /// Get an AI service by ID
-    pub fn get_service(&self, id: &str) -> Result<Option<AIServiceConfig>, String> {
+    /// Get an AI provider by ID
+    pub fn get_provider(&self, id: &str) -> Result<Option<AIProviderConfig>, String> {
         self.db.with_connection(|conn| {
             let result = conn.query_row(
                 r#"
                 SELECT id, name, provider, endpoint, model, is_default, is_enabled,
                        created_at, updated_at
-                FROM ai_services
+                FROM ai_providers
                 WHERE id = ?1
                 "#,
                 params![id],
                 |row| {
-                    Ok(AIServiceRow {
+                    Ok(AIProviderRow {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         provider: row.get(2)?,
@@ -89,27 +89,27 @@ impl AIRepository {
             );
 
             match result {
-                Ok(row) => Ok(Some(row.into_service()?)),
+                Ok(row) => Ok(Some(row.into_provider()?)),
                 Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(e) => Err(format!("Failed to get AI service: {}", e)),
+                Err(e) => Err(format!("Failed to get AI provider: {}", e)),
             }
         })
     }
 
-    /// Get the default AI service
-    pub fn get_default_service(&self) -> Result<Option<AIServiceConfig>, String> {
+    /// Get the default AI provider
+    pub fn get_default_provider(&self) -> Result<Option<AIProviderConfig>, String> {
         self.db.with_connection(|conn| {
             let result = conn.query_row(
                 r#"
                 SELECT id, name, provider, endpoint, model, is_default, is_enabled,
                        created_at, updated_at
-                FROM ai_services
+                FROM ai_providers
                 WHERE is_default = 1 AND is_enabled = 1
                 LIMIT 1
                 "#,
                 [],
                 |row| {
-                    Ok(AIServiceRow {
+                    Ok(AIProviderRow {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         provider: row.get(2)?,
@@ -124,16 +124,16 @@ impl AIRepository {
             );
 
             match result {
-                Ok(row) => Ok(Some(row.into_service()?)),
+                Ok(row) => Ok(Some(row.into_provider()?)),
                 Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(e) => Err(format!("Failed to get default AI service: {}", e)),
+                Err(e) => Err(format!("Failed to get default AI provider: {}", e)),
             }
         })
     }
 
-    /// Save an AI service
-    pub fn save_service(&self, service: &AIServiceConfig) -> Result<(), String> {
-        let provider_str = service.provider.to_string();
+    /// Save an AI provider
+    pub fn save_provider(&self, provider: &AIProviderConfig) -> Result<(), String> {
+        let provider_str = provider.provider.to_string();
         let now = Utc::now().to_rfc3339();
 
         self.db.with_connection(|conn| {
@@ -141,7 +141,7 @@ impl AIRepository {
             // INSERT OR REPLACE would delete the old row first, which cascades to ai_api_keys
             conn.execute(
                 r#"
-                INSERT INTO ai_services
+                INSERT INTO ai_providers
                 (id, name, provider, endpoint, model, is_default, is_enabled, created_at, updated_at)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                 ON CONFLICT(id) DO UPDATE SET
@@ -154,29 +154,29 @@ impl AIRepository {
                     updated_at = excluded.updated_at
                 "#,
                 params![
-                    service.id,
-                    service.name,
+                    provider.id,
+                    provider.name,
                     provider_str,
-                    service.endpoint,
-                    service.model,
-                    service.is_default as i32,
-                    service.is_enabled as i32,
-                    service.created_at.to_rfc3339(),
+                    provider.endpoint,
+                    provider.model,
+                    provider.is_default as i32,
+                    provider.is_enabled as i32,
+                    provider.created_at.to_rfc3339(),
                     now,
                 ],
             )
-            .map_err(|e| format!("Failed to save AI service: {}", e))?;
+            .map_err(|e| format!("Failed to save AI provider: {}", e))?;
 
             Ok(())
         })
     }
 
-    /// Delete an AI service
-    pub fn delete_service(&self, id: &str) -> Result<bool, String> {
+    /// Delete an AI provider
+    pub fn delete_provider(&self, id: &str) -> Result<bool, String> {
         self.db.with_connection(|conn| {
             let rows_affected = conn
-                .execute("DELETE FROM ai_services WHERE id = ?1", params![id])
-                .map_err(|e| format!("Failed to delete AI service: {}", e))?;
+                .execute("DELETE FROM ai_providers WHERE id = ?1", params![id])
+                .map_err(|e| format!("Failed to delete AI provider: {}", e))?;
 
             Ok(rows_affected > 0)
         })
@@ -330,7 +330,7 @@ impl AIRepository {
         self.db.with_connection(|conn| {
             let result = conn.query_row(
                 r#"
-                SELECT project_path, preferred_service_id, preferred_template_id
+                SELECT project_path, preferred_provider_id, preferred_template_id
                 FROM project_ai_settings
                 WHERE project_path = ?1
                 "#,
@@ -338,7 +338,7 @@ impl AIRepository {
                 |row| {
                     Ok(crate::models::ai::ProjectAISettings {
                         project_path: row.get(0)?,
-                        preferred_service_id: row.get(1)?,
+                        preferred_provider_id: row.get(1)?,
                         preferred_template_id: row.get(2)?,
                     })
                 },
@@ -349,7 +349,7 @@ impl AIRepository {
                 Err(rusqlite::Error::QueryReturnedNoRows) => {
                     Ok(crate::models::ai::ProjectAISettings {
                         project_path: project_path.to_string(),
-                        preferred_service_id: None,
+                        preferred_provider_id: None,
                         preferred_template_id: None,
                     })
                 }
@@ -367,12 +367,12 @@ impl AIRepository {
             conn.execute(
                 r#"
                 INSERT OR REPLACE INTO project_ai_settings
-                (project_path, preferred_service_id, preferred_template_id)
+                (project_path, preferred_provider_id, preferred_template_id)
                 VALUES (?1, ?2, ?3)
                 "#,
                 params![
                     settings.project_path,
-                    settings.preferred_service_id,
+                    settings.preferred_provider_id,
                     settings.preferred_template_id,
                 ],
             )
@@ -382,23 +382,23 @@ impl AIRepository {
         })
     }
 
-    /// Set default service (clears other defaults first)
-    pub fn set_default_service(&self, id: &str) -> Result<(), String> {
+    /// Set default provider (clears other defaults first)
+    pub fn set_default_provider(&self, id: &str) -> Result<(), String> {
         self.db.with_connection(|conn| {
             // Clear all defaults
-            conn.execute("UPDATE ai_services SET is_default = 0", [])
-                .map_err(|e| format!("Failed to clear default services: {}", e))?;
+            conn.execute("UPDATE ai_providers SET is_default = 0", [])
+                .map_err(|e| format!("Failed to clear default providers: {}", e))?;
 
             // Set new default
             let rows = conn
                 .execute(
-                    "UPDATE ai_services SET is_default = 1 WHERE id = ?1",
+                    "UPDATE ai_providers SET is_default = 1 WHERE id = ?1",
                     params![id],
                 )
-                .map_err(|e| format!("Failed to set default service: {}", e))?;
+                .map_err(|e| format!("Failed to set default provider: {}", e))?;
 
             if rows == 0 {
-                return Err(format!("Service not found: {}", id));
+                return Err(format!("Provider not found: {}", id));
             }
 
             Ok(())
@@ -537,23 +537,23 @@ impl AIRepository {
         })
     }
 
-    /// Check if a service name already exists (excluding given ID)
-    pub fn service_name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool, String> {
+    /// Check if a provider name already exists (excluding given ID)
+    pub fn provider_name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool, String> {
         self.db.with_connection(|conn| {
             let count: i64 = if let Some(id) = exclude_id {
                 conn.query_row(
-                    "SELECT COUNT(*) FROM ai_services WHERE name = ?1 AND id != ?2",
+                    "SELECT COUNT(*) FROM ai_providers WHERE name = ?1 AND id != ?2",
                     params![name, id],
                     |row| row.get(0),
                 )
             } else {
                 conn.query_row(
-                    "SELECT COUNT(*) FROM ai_services WHERE name = ?1",
+                    "SELECT COUNT(*) FROM ai_providers WHERE name = ?1",
                     params![name],
                     |row| row.get(0),
                 )
             }
-            .map_err(|e| format!("Failed to check service name: {}", e))?;
+            .map_err(|e| format!("Failed to check provider name: {}", e))?;
 
             Ok(count > 0)
         })
@@ -585,10 +585,10 @@ impl AIRepository {
     // API Key Management (encrypted storage)
     // =========================================================================
 
-    /// Store an encrypted API key for a service
+    /// Store an encrypted API key for a provider
     pub fn store_api_key(
         &self,
-        service_id: &str,
+        provider_id: &str,
         ciphertext: &str,
         nonce: &str,
     ) -> Result<(), String> {
@@ -597,10 +597,10 @@ impl AIRepository {
             conn.execute(
                 r#"
                 INSERT OR REPLACE INTO ai_api_keys
-                (service_id, ciphertext, nonce, created_at, updated_at)
-                VALUES (?1, ?2, ?3, COALESCE((SELECT created_at FROM ai_api_keys WHERE service_id = ?1), ?4), ?4)
+                (provider_id, ciphertext, nonce, created_at, updated_at)
+                VALUES (?1, ?2, ?3, COALESCE((SELECT created_at FROM ai_api_keys WHERE provider_id = ?1), ?4), ?4)
                 "#,
-                params![service_id, ciphertext, nonce, now],
+                params![provider_id, ciphertext, nonce, now],
             )
             .map_err(|e| format!("Failed to store API key: {}", e))?;
 
@@ -608,12 +608,12 @@ impl AIRepository {
         })
     }
 
-    /// Get encrypted API key for a service
-    pub fn get_api_key(&self, service_id: &str) -> Result<Option<(String, String)>, String> {
+    /// Get encrypted API key for a provider
+    pub fn get_api_key(&self, provider_id: &str) -> Result<Option<(String, String)>, String> {
         self.db.with_connection(|conn| {
             let result = conn.query_row(
-                "SELECT ciphertext, nonce FROM ai_api_keys WHERE service_id = ?1",
-                params![service_id],
+                "SELECT ciphertext, nonce FROM ai_api_keys WHERE provider_id = ?1",
+                params![provider_id],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             );
 
@@ -625,24 +625,24 @@ impl AIRepository {
         })
     }
 
-    /// Delete API key for a service
-    pub fn delete_api_key(&self, service_id: &str) -> Result<bool, String> {
+    /// Delete API key for a provider
+    pub fn delete_api_key(&self, provider_id: &str) -> Result<bool, String> {
         self.db.with_connection(|conn| {
             let rows = conn
-                .execute("DELETE FROM ai_api_keys WHERE service_id = ?1", params![service_id])
+                .execute("DELETE FROM ai_api_keys WHERE provider_id = ?1", params![provider_id])
                 .map_err(|e| format!("Failed to delete API key: {}", e))?;
 
             Ok(rows > 0)
         })
     }
 
-    /// Check if an API key exists for a service
-    pub fn has_api_key(&self, service_id: &str) -> Result<bool, String> {
+    /// Check if an API key exists for a provider
+    pub fn has_api_key(&self, provider_id: &str) -> Result<bool, String> {
         self.db.with_connection(|conn| {
             let count: i64 = conn
                 .query_row(
-                    "SELECT COUNT(*) FROM ai_api_keys WHERE service_id = ?1",
-                    params![service_id],
+                    "SELECT COUNT(*) FROM ai_api_keys WHERE provider_id = ?1",
+                    params![provider_id],
                     |row| row.get(0),
                 )
                 .map_err(|e| format!("Failed to check API key: {}", e))?;
@@ -651,11 +651,11 @@ impl AIRepository {
         })
     }
 
-    /// List all service IDs that have stored API keys
-    pub fn list_service_ids_with_keys(&self) -> Result<Vec<String>, String> {
+    /// List all provider IDs that have stored API keys
+    pub fn list_provider_ids_with_keys(&self) -> Result<Vec<String>, String> {
         self.db.with_connection(|conn| {
             let mut stmt = conn
-                .prepare("SELECT service_id FROM ai_api_keys")
+                .prepare("SELECT provider_id FROM ai_api_keys")
                 .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
             let rows = stmt
@@ -685,7 +685,7 @@ impl AIRepository {
                 .prepare(
                     r#"
                     SELECT id, tool_type, name, binary_path, is_enabled, auth_mode,
-                           api_key_service_id, created_at, updated_at
+                           api_key_provider_id, created_at, updated_at
                     FROM cli_tools
                     ORDER BY name
                     "#,
@@ -701,7 +701,7 @@ impl AIRepository {
                         binary_path: row.get(3)?,
                         is_enabled: row.get(4)?,
                         auth_mode: row.get(5)?,
-                        api_key_service_id: row.get(6)?,
+                        api_key_provider_id: row.get(6)?,
                         created_at: row.get(7)?,
                         updated_at: row.get(8)?,
                     })
@@ -724,7 +724,7 @@ impl AIRepository {
             let result = conn.query_row(
                 r#"
                 SELECT id, tool_type, name, binary_path, is_enabled, auth_mode,
-                       api_key_service_id, created_at, updated_at
+                       api_key_provider_id, created_at, updated_at
                 FROM cli_tools
                 WHERE id = ?1
                 "#,
@@ -737,7 +737,7 @@ impl AIRepository {
                         binary_path: row.get(3)?,
                         is_enabled: row.get(4)?,
                         auth_mode: row.get(5)?,
-                        api_key_service_id: row.get(6)?,
+                        api_key_provider_id: row.get(6)?,
                         created_at: row.get(7)?,
                         updated_at: row.get(8)?,
                     })
@@ -762,7 +762,7 @@ impl AIRepository {
             let result = conn.query_row(
                 r#"
                 SELECT id, tool_type, name, binary_path, is_enabled, auth_mode,
-                       api_key_service_id, created_at, updated_at
+                       api_key_provider_id, created_at, updated_at
                 FROM cli_tools
                 WHERE tool_type = ?1
                 "#,
@@ -775,7 +775,7 @@ impl AIRepository {
                         binary_path: row.get(3)?,
                         is_enabled: row.get(4)?,
                         auth_mode: row.get(5)?,
-                        api_key_service_id: row.get(6)?,
+                        api_key_provider_id: row.get(6)?,
                         created_at: row.get(7)?,
                         updated_at: row.get(8)?,
                     })
@@ -800,7 +800,7 @@ impl AIRepository {
             conn.execute(
                 r#"
                 INSERT INTO cli_tools (id, tool_type, name, binary_path, is_enabled, auth_mode,
-                                       api_key_service_id, created_at, updated_at)
+                                       api_key_provider_id, created_at, updated_at)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                 ON CONFLICT(id) DO UPDATE SET
                     tool_type = excluded.tool_type,
@@ -808,7 +808,7 @@ impl AIRepository {
                     binary_path = excluded.binary_path,
                     is_enabled = excluded.is_enabled,
                     auth_mode = excluded.auth_mode,
-                    api_key_service_id = excluded.api_key_service_id,
+                    api_key_provider_id = excluded.api_key_provider_id,
                     updated_at = excluded.updated_at
                 "#,
                 params![
@@ -818,7 +818,7 @@ impl AIRepository {
                     config.binary_path,
                     config.is_enabled as i32,
                     auth_mode_str,
-                    config.api_key_service_id,
+                    config.api_key_provider_id,
                     config.created_at.to_rfc3339(),
                     now,
                 ],
@@ -978,8 +978,8 @@ impl AIRepository {
     }
 }
 
-/// Internal row structure for AI services
-struct AIServiceRow {
+/// Internal row structure for AI providers
+struct AIProviderRow {
     id: String,
     name: String,
     provider: String,
@@ -991,8 +991,8 @@ struct AIServiceRow {
     updated_at: String,
 }
 
-impl AIServiceRow {
-    fn into_service(self) -> Result<AIServiceConfig, String> {
+impl AIProviderRow {
+    fn into_provider(self) -> Result<AIProviderConfig, String> {
         use chrono::DateTime;
 
         let provider = match self.provider.as_str() {
@@ -1012,7 +1012,7 @@ impl AIServiceRow {
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
 
-        Ok(AIServiceConfig {
+        Ok(AIProviderConfig {
             id: self.id,
             name: self.name,
             provider,
@@ -1124,7 +1124,7 @@ struct CLIToolRow {
     binary_path: Option<String>,
     is_enabled: i32,
     auth_mode: String,
-    api_key_service_id: Option<String>,
+    api_key_provider_id: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -1152,7 +1152,7 @@ impl CLIToolRow {
             binary_path: self.binary_path,
             is_enabled: self.is_enabled != 0,
             auth_mode,
-            api_key_service_id: self.api_key_service_id,
+            api_key_provider_id: self.api_key_provider_id,
             created_at,
             updated_at,
         })

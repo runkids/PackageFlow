@@ -1,6 +1,7 @@
 // Repository Layer
 // Provides data access abstractions for SQLite database
 
+pub mod ai_conversation_repo;
 pub mod ai_repo;
 pub mod deploy_repo;
 pub mod execution_repo;
@@ -14,6 +15,7 @@ pub mod template_repo;
 pub mod workflow_repo;
 
 // Re-export commonly used repositories
+pub use ai_conversation_repo::AIConversationRepository;
 pub use ai_repo::AIRepository;
 pub use deploy_repo::DeployRepository;
 pub use execution_repo::ExecutionRepository;

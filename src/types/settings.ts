@@ -8,7 +8,7 @@ export type SettingsSection =
   | 'appearance'
   | 'notifications'
   | 'shortcuts'
-  | 'ai-services'
+  | 'ai-providers'
   | 'prompts'
   | 'mcp'
   | 'toolchain'
@@ -50,7 +50,7 @@ export const SETTINGS_SECTIONS: SettingsSidebarSection[] = [
     id: 'ai',
     label: 'AI',
     items: [
-      { id: 'ai-services', label: 'AI Services', icon: 'Bot' },
+      { id: 'ai-providers', label: 'AI Providers', icon: 'Bot' },
       { id: 'prompts', label: 'Prompt Templates', icon: 'FileText' },
     ],
   },

@@ -88,14 +88,14 @@ export interface UseAISecurityAnalysisResult {
   /** Generate analysis for a single vulnerability */
   generateAnalysis: (
     vulnerability: VulnItem,
-    options?: { serviceId?: string; templateId?: string; useCli?: boolean }
+    options?: { providerId?: string; templateId?: string; useCli?: boolean }
   ) => Promise<string | null>;
 
   /** Generate summary for all vulnerabilities */
   generateSummary: (
     vulnerabilities: VulnItem[],
     summary: VulnSummary,
-    options?: { serviceId?: string; templateId?: string; useCli?: boolean }
+    options?: { providerId?: string; templateId?: string; useCli?: boolean }
   ) => Promise<string | null>;
 
   /** Whether any generation is in progress */
@@ -156,7 +156,7 @@ export function useAISecurityAnalysis(
   const generateAnalysis = useCallback(
     async (
       vulnerability: VulnItem,
-      genOptions?: { serviceId?: string; templateId?: string; useCli?: boolean }
+      genOptions?: { providerId?: string; templateId?: string; useCli?: boolean }
     ): Promise<string | null> => {
       // Check mutual exclusion
       if (isGenerating) {
@@ -218,7 +218,7 @@ Be specific and actionable in your recommendations.`;
           projectName,
           packageManager,
           vulnerability,
-          serviceId: genOptions?.serviceId,
+          providerId: genOptions?.providerId,
           templateId: genOptions?.templateId,
         };
 
@@ -255,7 +255,7 @@ Be specific and actionable in your recommendations.`;
     async (
       vulnerabilities: VulnItem[],
       summary: VulnSummary,
-      genOptions?: { serviceId?: string; templateId?: string; useCli?: boolean }
+      genOptions?: { providerId?: string; templateId?: string; useCli?: boolean }
     ): Promise<string | null> => {
       console.log('[useAISecurityAnalysis] generateSummary called', {
         vulnCount: vulnerabilities.length,
@@ -341,7 +341,7 @@ Be specific and actionable in your recommendations.`;
           packageManager,
           vulnerabilities,
           summary,
-          serviceId: genOptions?.serviceId,
+          providerId: genOptions?.providerId,
           templateId: genOptions?.templateId,
         };
 

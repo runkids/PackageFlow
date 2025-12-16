@@ -12,18 +12,19 @@ use std::time::Instant;
 
 use super::{AIError, AIProvider, AIResult};
 use crate::models::ai::{
-    AIServiceConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
+    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, ChatToolCall, ChatFunctionCall,
+    FinishReason, ModelInfo,
 };
 
 /// OpenAI Provider
 pub struct OpenAIProvider {
-    config: AIServiceConfig,
+    config: AIProviderConfig,
     client: Client,
     api_key: String,
 }
 
 impl OpenAIProvider {
-    pub fn new(config: AIServiceConfig, api_key: String) -> Self {
+    pub fn new(config: AIProviderConfig, api_key: String) -> Self {
         Self {
             config,
             client: Client::new(),
@@ -59,13 +60,48 @@ struct OpenAIChatRequest {
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OpenAITool>>,
     stream: bool,
 }
 
 #[derive(Debug, Serialize)]
 struct OpenAIMessage {
     role: String,
-    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OpenAIToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OpenAITool {
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: OpenAIFunction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OpenAIFunction {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OpenAIToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: OpenAIFunctionCall,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OpenAIFunctionCall {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +120,8 @@ struct OpenAIChoice {
 #[derive(Debug, Deserialize)]
 struct OpenAIResponseMessage {
     content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<OpenAIToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,7 +169,7 @@ impl AIProvider for OpenAIProvider {
         "OpenAI"
     }
 
-    fn config(&self) -> &AIServiceConfig {
+    fn config(&self) -> &AIProviderConfig {
         &self.config
     }
 
@@ -156,13 +194,37 @@ impl AIProvider for OpenAIProvider {
     ) -> AIResult<ChatResponse> {
         let url = self.api_url("/chat/completions");
 
+        // Convert messages to OpenAI format
         let openai_messages: Vec<OpenAIMessage> = messages
             .into_iter()
             .map(|m| OpenAIMessage {
                 role: m.role,
                 content: m.content,
+                tool_calls: m.tool_calls.map(|calls| {
+                    calls.into_iter().map(|tc| OpenAIToolCall {
+                        id: tc.id,
+                        tool_type: tc.tool_type,
+                        function: OpenAIFunctionCall {
+                            name: tc.function.name,
+                            arguments: tc.function.arguments,
+                        },
+                    }).collect()
+                }),
+                tool_call_id: m.tool_call_id,
             })
             .collect();
+
+        // Convert tools to OpenAI format
+        let openai_tools = options.tools.map(|tools| {
+            tools.into_iter().map(|t| OpenAITool {
+                tool_type: t.tool_type,
+                function: OpenAIFunction {
+                    name: t.function.name,
+                    description: t.function.description,
+                    parameters: t.function.parameters,
+                },
+            }).collect()
+        });
 
         let request = OpenAIChatRequest {
             model: self.config.model.clone(),
@@ -170,6 +232,7 @@ impl AIProvider for OpenAIProvider {
             temperature: options.temperature,
             max_tokens: options.max_tokens,
             top_p: options.top_p,
+            tools: openai_tools,
             stream: false,
         };
 
@@ -239,11 +302,26 @@ impl AIProvider for OpenAIProvider {
                 _ => FinishReason::Unknown,
             });
 
+        // Convert tool_calls to our format
+        let tool_calls = first_choice
+            .and_then(|c| c.message.tool_calls.clone())
+            .map(|calls| {
+                calls.into_iter().map(|tc| ChatToolCall {
+                    id: tc.id,
+                    tool_type: tc.tool_type,
+                    function: ChatFunctionCall {
+                        name: tc.function.name,
+                        arguments: tc.function.arguments,
+                    },
+                }).collect()
+            });
+
         Ok(ChatResponse {
             content,
             tokens_used,
             model: openai_response.model,
             finish_reason,
+            tool_calls,
         })
     }
 
@@ -297,8 +375,8 @@ mod tests {
     use super::*;
     use crate::models::ai::AIProvider as AIProviderEnum;
 
-    fn create_test_config() -> AIServiceConfig {
-        AIServiceConfig::new(
+    fn create_test_config() -> AIProviderConfig {
+        AIProviderConfig::new(
             "Test OpenAI".to_string(),
             AIProviderEnum::OpenAI,
             "https://api.openai.com/v1".to_string(),

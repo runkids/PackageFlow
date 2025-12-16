@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::models::ai::{
-    AIProvider, AIServiceConfig, AddServiceRequest, AddTemplateRequest, ChatMessage, ChatOptions,
+    AIProvider, AIProviderConfig, AddProviderRequest, AddTemplateRequest, ChatMessage, ChatOptions,
     FinishReason, GenerateCodeReviewRequest, GenerateCodeReviewResult, GenerateCommitMessageRequest,
     GenerateResult, GenerateStagedReviewRequest, GenerateSecurityAnalysisRequest,
     GenerateSecurityAnalysisResult, GenerateSecuritySummaryRequest, ModelInfo, PromptTemplate,
     ProjectAISettings, TemplateCategory, TestConnectionResult, UpdateProjectSettingsRequest,
-    UpdateServiceRequest, UpdateTemplateRequest,
+    UpdateProviderRequest, UpdateTemplateRequest,
 };
 use crate::repositories::AIRepository;
 use crate::services::ai::{
@@ -75,11 +75,11 @@ impl<T> ApiResponse<T> {
 
 /// List all AI service configurations
 #[tauri::command]
-pub async fn ai_list_services(
+pub async fn ai_list_providers(
     app: AppHandle,
-) -> Result<ApiResponse<Vec<AIServiceConfig>>, String> {
+) -> Result<ApiResponse<Vec<AIProviderConfig>>, String> {
     let repo = get_ai_repo(&app);
-    match repo.list_services() {
+    match repo.list_providers() {
         Ok(services) => Ok(ApiResponse::success(services)),
         Err(e) => Ok(ApiResponse::error(e)),
     }
@@ -89,18 +89,18 @@ pub async fn ai_list_services(
 #[tauri::command]
 pub async fn ai_add_service(
     app: AppHandle,
-    config: AddServiceRequest,
-) -> Result<ApiResponse<AIServiceConfig>, String> {
+    config: AddProviderRequest,
+) -> Result<ApiResponse<AIProviderConfig>, String> {
     let repo = get_ai_repo(&app);
     let keychain = AIKeychain::new(app.clone());
 
     // Check for duplicate name
-    if repo.service_name_exists(&config.name, None).unwrap_or(false) {
+    if repo.provider_name_exists(&config.name, None).unwrap_or(false) {
         return Ok(ApiResponse::error(format!("Service name '{}' already exists", config.name)));
     }
 
     // Create service config
-    let service = AIServiceConfig::new(
+    let service = AIProviderConfig::new(
         config.name,
         config.provider.clone(),
         config.endpoint,
@@ -108,7 +108,7 @@ pub async fn ai_add_service(
     );
 
     // Save service config first (required for API key foreign key constraint)
-    if let Err(e) = repo.save_service(&service) {
+    if let Err(e) = repo.save_provider(&service) {
         return Ok(ApiResponse::error(e));
     }
 
@@ -117,7 +117,7 @@ pub async fn ai_add_service(
         if !api_key.is_empty() {
             if let Err(e) = keychain.store_api_key(&service.id, api_key) {
                 // Rollback: delete the service if API key storage fails
-                let _ = repo.delete_service(&service.id);
+                let _ = repo.delete_provider(&service.id);
                 return Ok(ApiResponse::error(format!("Failed to store API key: {}", e)));
             }
         }
@@ -132,13 +132,13 @@ pub async fn ai_add_service(
 #[tauri::command]
 pub async fn ai_update_service(
     app: AppHandle,
-    config: UpdateServiceRequest,
-) -> Result<ApiResponse<AIServiceConfig>, String> {
+    config: UpdateProviderRequest,
+) -> Result<ApiResponse<AIProviderConfig>, String> {
     let repo = get_ai_repo(&app);
     let keychain = AIKeychain::new(app.clone());
 
     // Get existing service
-    let existing = match repo.get_service(&config.id) {
+    let existing = match repo.get_provider(&config.id) {
         Ok(Some(s)) => s,
         Ok(None) => return Ok(ApiResponse::error(format!("Service not found: {}", config.id))),
         Err(e) => return Ok(ApiResponse::error(e)),
@@ -146,13 +146,13 @@ pub async fn ai_update_service(
 
     // Check for duplicate name (excluding self)
     if let Some(ref name) = config.name {
-        if repo.service_name_exists(name, Some(&config.id)).unwrap_or(false) {
+        if repo.provider_name_exists(name, Some(&config.id)).unwrap_or(false) {
             return Ok(ApiResponse::error(format!("Service name '{}' already exists", name)));
         }
     }
 
     // Update fields
-    let updated = AIServiceConfig {
+    let updated = AIProviderConfig {
         id: existing.id,
         name: config.name.unwrap_or(existing.name),
         provider: existing.provider,
@@ -174,7 +174,7 @@ pub async fn ai_update_service(
     }
 
     // Save updated config
-    match repo.save_service(&updated) {
+    match repo.save_provider(&updated) {
         Ok(()) => {
             let _ = app.emit("ai:services-updated", ());
             Ok(ApiResponse::success(updated))
@@ -185,7 +185,7 @@ pub async fn ai_update_service(
 
 /// Delete an AI service configuration
 #[tauri::command]
-pub async fn ai_delete_service(
+pub async fn ai_delete_provider(
     app: AppHandle,
     id: String,
 ) -> Result<ApiResponse<()>, String> {
@@ -196,7 +196,7 @@ pub async fn ai_delete_service(
     let _ = keychain.delete_api_key(&id);
 
     // Delete service config
-    match repo.delete_service(&id) {
+    match repo.delete_provider(&id) {
         Ok(_) => {
             let _ = app.emit("ai:services-updated", ());
             Ok(ApiResponse::success(()))
@@ -207,12 +207,12 @@ pub async fn ai_delete_service(
 
 /// Set a service as the default
 #[tauri::command]
-pub async fn ai_set_default_service(
+pub async fn ai_set_default_provider(
     app: AppHandle,
     id: String,
 ) -> Result<ApiResponse<()>, String> {
     let repo = get_ai_repo(&app);
-    match repo.set_default_service(&id) {
+    match repo.set_default_provider(&id) {
         Ok(()) => {
             let _ = app.emit("ai:services-updated", ());
             Ok(ApiResponse::success(()))
@@ -231,7 +231,7 @@ pub async fn ai_test_connection(
     let keychain = AIKeychain::new(app);
 
     // Get service config
-    let service = match repo.get_service(&id) {
+    let service = match repo.get_provider(&id) {
         Ok(Some(s)) => s,
         Ok(None) => return Ok(ApiResponse::error(format!("Service not found: {}", id))),
         Err(e) => return Ok(ApiResponse::error(e)),
@@ -301,23 +301,23 @@ pub async fn ai_test_connection(
 #[tauri::command]
 pub async fn ai_list_models(
     app: AppHandle,
-    service_id: String,
+    provider_id: String,
 ) -> Result<ApiResponse<Vec<ModelInfo>>, String> {
     let repo = get_ai_repo(&app);
     let keychain = AIKeychain::new(app);
 
     // Get service config
-    let service = match repo.get_service(&service_id) {
+    let service = match repo.get_provider(&provider_id) {
         Ok(Some(s)) => s,
-        Ok(None) => return Ok(ApiResponse::error(format!("Service not found: {}", service_id))),
+        Ok(None) => return Ok(ApiResponse::error(format!("Service not found: {}", provider_id))),
         Err(e) => return Ok(ApiResponse::error(e)),
     };
 
     // Get API key if needed
-    let api_key = match keychain.get_api_key(&service_id) {
+    let api_key = match keychain.get_api_key(&provider_id) {
         Ok(key) => key,
         Err(e) => {
-            log::error!("Failed to get API key for service {}: {}", service_id, e);
+            log::error!("Failed to get API key for service {}: {}", provider_id, e);
             return Ok(ApiResponse::error(format!("Failed to retrieve API key: {}", e)));
         }
     };
@@ -353,7 +353,7 @@ pub async fn ai_probe_models(
     request: ProbeModelsRequest,
 ) -> Result<ApiResponse<Vec<ModelInfo>>, String> {
     // Build a temporary config to reuse provider implementations
-    let config = AIServiceConfig::new(
+    let config = AIProviderConfig::new(
         "Temporary".to_string(),
         request.provider.clone(),
         request.endpoint,
@@ -557,7 +557,7 @@ pub async fn ai_update_project_settings(
 
     let project_settings = ProjectAISettings {
         project_path: settings.project_path,
-        preferred_service_id: settings.preferred_service_id,
+        preferred_provider_id: settings.preferred_provider_id,
         preferred_template_id: settings.preferred_template_id,
     };
 
@@ -594,18 +594,18 @@ pub async fn ai_generate_commit_message(
         .unwrap_or_default();
 
     // Determine which service to use
-    let service_id = request.service_id
-        .or(project_settings.preferred_service_id);
+    let provider_id = request.provider_id
+        .or(project_settings.preferred_provider_id);
 
-    let service = if let Some(id) = service_id {
-        match repo.get_service(&id) {
+    let service = if let Some(id) = provider_id {
+        match repo.get_provider(&id) {
             Ok(Some(s)) if s.is_enabled => s,
             Ok(Some(_)) => return Ok(ApiResponse::error("The specified AI service is disabled")),
             Ok(None) => return Ok(ApiResponse::error(format!("AI service not found: {}", id))),
             Err(e) => return Ok(ApiResponse::error(e)),
         }
     } else {
-        match repo.get_default_service() {
+        match repo.get_default_provider() {
             Ok(Some(s)) => s,
             Ok(None) => return Ok(ApiResponse::error("No default AI service configured")),
             Err(e) => return Ok(ApiResponse::error(e)),
@@ -655,6 +655,7 @@ pub async fn ai_generate_commit_message(
         temperature: Some(0.3), // Lower temperature for more consistent output
         max_tokens: Some(500),  // Commit messages should be concise
         top_p: None,
+        tools: None,
     };
 
     match provider.chat_completion(messages, options).await {
@@ -763,18 +764,18 @@ pub async fn ai_generate_code_review(
         .unwrap_or_default();
 
     // Determine which service to use
-    let service_id = request.service_id
-        .or(project_settings.preferred_service_id);
+    let provider_id = request.provider_id
+        .or(project_settings.preferred_provider_id);
 
-    let service = if let Some(id) = service_id {
-        match repo.get_service(&id) {
+    let service = if let Some(id) = provider_id {
+        match repo.get_provider(&id) {
             Ok(Some(s)) if s.is_enabled => s,
             Ok(Some(_)) => return Ok(ApiResponse::error("The specified AI service is disabled")),
             Ok(None) => return Ok(ApiResponse::error(format!("AI service not found: {}", id))),
             Err(e) => return Ok(ApiResponse::error(e)),
         }
     } else {
-        match repo.get_default_service() {
+        match repo.get_default_provider() {
             Ok(Some(s)) => s,
             Ok(None) => return Ok(ApiResponse::error("No default AI service configured")),
             Err(e) => return Ok(ApiResponse::error(e)),
@@ -831,6 +832,7 @@ pub async fn ai_generate_code_review(
         temperature: Some(0.5),
         max_tokens: Some(max_tokens),
         top_p: None,
+        tools: None,
     };
 
     match provider.chat_completion(messages, options).await {
@@ -874,18 +876,18 @@ pub async fn ai_generate_staged_review(
         .unwrap_or_default();
 
     // Determine which service to use
-    let service_id = request.service_id
-        .or(project_settings.preferred_service_id);
+    let provider_id = request.provider_id
+        .or(project_settings.preferred_provider_id);
 
-    let service = if let Some(id) = service_id {
-        match repo.get_service(&id) {
+    let service = if let Some(id) = provider_id {
+        match repo.get_provider(&id) {
             Ok(Some(s)) if s.is_enabled => s,
             Ok(Some(_)) => return Ok(ApiResponse::error("The specified AI service is disabled")),
             Ok(None) => return Ok(ApiResponse::error(format!("AI service not found: {}", id))),
             Err(e) => return Ok(ApiResponse::error(e)),
         }
     } else {
-        match repo.get_default_service() {
+        match repo.get_default_provider() {
             Ok(Some(s)) => s,
             Ok(None) => return Ok(ApiResponse::error("No default AI service configured")),
             Err(e) => return Ok(ApiResponse::error(e)),
@@ -949,6 +951,7 @@ pub async fn ai_generate_staged_review(
         temperature: Some(0.5),
         max_tokens: Some(max_tokens),
         top_p: None,
+        tools: None,
     };
 
     match provider.chat_completion(messages, options).await {
@@ -987,18 +990,18 @@ pub async fn ai_generate_security_analysis(
         .unwrap_or_default();
 
     // Determine which service to use
-    let service_id = request.service_id
-        .or(project_settings.preferred_service_id);
+    let provider_id = request.provider_id
+        .or(project_settings.preferred_provider_id);
 
-    let service = if let Some(id) = service_id {
-        match repo.get_service(&id) {
+    let service = if let Some(id) = provider_id {
+        match repo.get_provider(&id) {
             Ok(Some(s)) if s.is_enabled => s,
             Ok(Some(_)) => return Ok(ApiResponse::error("The specified AI service is disabled")),
             Ok(None) => return Ok(ApiResponse::error(format!("AI service not found: {}", id))),
             Err(e) => return Ok(ApiResponse::error(e)),
         }
     } else {
-        match repo.get_default_service() {
+        match repo.get_default_provider() {
             Ok(Some(s)) => s,
             Ok(None) => return Ok(ApiResponse::error("No default AI service configured")),
             Err(e) => return Ok(ApiResponse::error(e)),
@@ -1070,6 +1073,7 @@ pub async fn ai_generate_security_analysis(
         temperature: Some(0.5),
         max_tokens: Some(max_tokens),
         top_p: None,
+        tools: None,
     };
 
     match provider.chat_completion(messages, options).await {
@@ -1107,18 +1111,18 @@ pub async fn ai_generate_security_summary(
         .unwrap_or_default();
 
     // Determine which service to use
-    let service_id = request.service_id
-        .or(project_settings.preferred_service_id);
+    let provider_id = request.provider_id
+        .or(project_settings.preferred_provider_id);
 
-    let service = if let Some(id) = service_id {
-        match repo.get_service(&id) {
+    let service = if let Some(id) = provider_id {
+        match repo.get_provider(&id) {
             Ok(Some(s)) if s.is_enabled => s,
             Ok(Some(_)) => return Ok(ApiResponse::error("The specified AI service is disabled")),
             Ok(None) => return Ok(ApiResponse::error(format!("AI service not found: {}", id))),
             Err(e) => return Ok(ApiResponse::error(e)),
         }
     } else {
-        match repo.get_default_service() {
+        match repo.get_default_provider() {
             Ok(Some(s)) => s,
             Ok(None) => return Ok(ApiResponse::error("No default AI service configured")),
             Err(e) => return Ok(ApiResponse::error(e)),
@@ -1202,6 +1206,7 @@ pub async fn ai_generate_security_summary(
         temperature: Some(0.5),
         max_tokens: Some(max_tokens),
         top_p: None,
+        tools: None,
     };
 
     match provider.chat_completion(messages, options).await {
@@ -1228,7 +1233,7 @@ pub async fn ai_generate_security_summary(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyStatus {
-    pub service_id: String,
+    pub provider_id: String,
     pub exists_in_db: bool,
     pub can_decrypt: bool,
     pub key_prefix: Option<String>,
@@ -1239,12 +1244,12 @@ pub struct ApiKeyStatus {
 #[tauri::command]
 pub async fn ai_store_api_key(
     app: AppHandle,
-    service_id: String,
+    provider_id: String,
     api_key: String,
 ) -> Result<ApiResponse<String>, String> {
     let keychain = AIKeychain::new(app);
 
-    match keychain.store_api_key(&service_id, &api_key) {
+    match keychain.store_api_key(&provider_id, &api_key) {
         Ok(()) => Ok(ApiResponse::success("API key stored successfully".to_string())),
         Err(e) => Ok(ApiResponse::error(format!("Failed to store API key: {}", e))),
     }
@@ -1254,17 +1259,17 @@ pub async fn ai_store_api_key(
 #[tauri::command]
 pub async fn ai_check_api_key_status(
     app: AppHandle,
-    service_id: String,
+    provider_id: String,
 ) -> Result<ApiResponse<ApiKeyStatus>, String> {
     let repo = get_ai_repo(&app);
     let keychain = AIKeychain::new(app);
 
     // Check if key exists in database
-    let exists_in_db = repo.has_api_key(&service_id).unwrap_or(false);
+    let exists_in_db = repo.has_api_key(&provider_id).unwrap_or(false);
 
     if !exists_in_db {
         return Ok(ApiResponse::success(ApiKeyStatus {
-            service_id,
+            provider_id,
             exists_in_db: false,
             can_decrypt: false,
             key_prefix: None,
@@ -1273,7 +1278,7 @@ pub async fn ai_check_api_key_status(
     }
 
     // Try to decrypt
-    match keychain.get_api_key(&service_id) {
+    match keychain.get_api_key(&provider_id) {
         Ok(Some(key)) => {
             // Show first 4 chars of key for verification
             let prefix = if key.len() >= 4 {
@@ -1282,7 +1287,7 @@ pub async fn ai_check_api_key_status(
                 Some("****".to_string())
             };
             Ok(ApiResponse::success(ApiKeyStatus {
-                service_id,
+                provider_id,
                 exists_in_db: true,
                 can_decrypt: true,
                 key_prefix: prefix,
@@ -1290,14 +1295,14 @@ pub async fn ai_check_api_key_status(
             }))
         }
         Ok(None) => Ok(ApiResponse::success(ApiKeyStatus {
-            service_id,
+            provider_id,
             exists_in_db: true,
             can_decrypt: false,
             key_prefix: None,
             error: Some("Key exists but could not be retrieved".to_string()),
         })),
         Err(e) => Ok(ApiResponse::success(ApiKeyStatus {
-            service_id,
+            provider_id,
             exists_in_db: true,
             can_decrypt: false,
             key_prefix: None,

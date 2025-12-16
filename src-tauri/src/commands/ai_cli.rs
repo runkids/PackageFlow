@@ -186,10 +186,10 @@ pub async fn ai_cli_execute(
     {
         // Get API key from keychain via linked service
         if let Some(ref cfg) = config {
-            if let Some(ref service_id) = cfg.api_key_service_id {
+            if let Some(ref provider_id) = cfg.api_key_provider_id {
                 let keychain = AIKeychain::new(app.clone());
                 keychain
-                    .get_api_key(service_id)
+                    .get_api_key(provider_id)
                     .ok()
                     .flatten()
             } else {

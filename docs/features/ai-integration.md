@@ -68,6 +68,124 @@ Choose different models for different tasks:
 - Commit messages: Faster model (GPT-4o-mini)
 - Code review: More capable model (GPT-4o, Claude 3 Sonnet)
 
+## AI Assistant Tab
+
+The AI Assistant provides an interactive chat interface for working with your projects.
+
+### Overview
+
+Access the AI Assistant from the sidebar to:
+
+- Chat with AI about your code and projects
+- Execute MCP operations through natural language
+- Get contextual suggestions based on your current work
+- Manage conversation history
+
+### Starting a Conversation
+
+1. Click the **AI Assistant** tab in the sidebar
+2. Type your message in the input area
+3. Press **Enter** or click **Send**
+4. AI responses stream in real-time
+
+### Quick Actions
+
+Quick action chips appear based on your project context:
+
+| Context | Actions Available |
+|---------|------------------|
+| Git repository | Generate commit, Review changes |
+| Node.js project | Run tests, Build project |
+| Any project | Help, Explain this |
+
+Click a chip to send that prompt instantly.
+
+### MCP Operations
+
+The AI can execute PackageFlow operations with your approval:
+
+1. Ask the AI to perform an action (e.g., "run the test script")
+2. AI proposes the action with details
+3. Click **Approve** to execute or **Deny** to cancel
+4. See execution results inline
+
+### Conversation History
+
+Access previous conversations from the sidebar:
+
+- **New Chat**: Start a fresh conversation
+- **History**: View past conversations
+- **Rename**: Double-click or use menu to rename
+- **Delete**: Remove conversations via menu
+
+### Project Context
+
+The AI is aware of your current project:
+
+- Project name and type
+- Available scripts
+- Package manager
+- Git status (if applicable)
+
+This context helps provide relevant suggestions and accurate responses.
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Cmd/Ctrl+B | Toggle sidebar |
+| Cmd/Ctrl+N | New chat |
+| Cmd/Ctrl+[ | Previous conversation |
+| Cmd/Ctrl+] | Next conversation |
+| Enter | Send message |
+| Shift+Enter | New line |
+| Escape | Stop generation / Clear input |
+
+### Sidebar Features
+
+The sidebar provides powerful conversation management:
+
+- **Collapsible**: Toggle with Cmd/Ctrl+B or click the collapse button
+- **Search**: Filter conversations by title or content
+- **Date Groups**: Conversations organized by Today, Yesterday, This Week, etc.
+- **Hover Preview**: In collapsed mode, hover over icons to see conversation details
+
+### Model Selection
+
+Choose different AI models per conversation:
+
+1. Click the model selector in the conversation header
+2. Select from your configured AI services
+3. The model is saved with the conversation
+
+### Token Usage
+
+Track token usage in real-time:
+
+- Token count shown in the conversation header
+- Progress bar indicates usage level
+- Warnings at 75% and 90% usage
+
+### Language Support
+
+The AI Assistant responds in the same language as your message. Write in English, Chinese, or any other language, and the AI will reply accordingly.
+
+### Tool Use Requirements
+
+For the AI to execute MCP tools (run scripts, workflows, etc.), you need an AI model that supports function calling:
+
+**Recommended Cloud Models:**
+- OpenAI GPT-4o, GPT-4o-mini
+- Anthropic Claude 3 Sonnet, Claude 3.5 Haiku
+- Google Gemini 2.0 Flash, Gemini 1.5 Pro
+
+**Recommended Local Models (Ollama/LM Studio):**
+- Llama 3.1 or newer (7B+)
+- Qwen 2.5 or newer (7B+)
+- Mistral 7B (with function calling support)
+
+Models without function calling support can still answer questions but cannot execute tools.
+
 ## AI Features
 
 ### Commit Message Generation

@@ -37,7 +37,7 @@ import { AIProviderIcon, getProviderColorScheme } from '../../ui/AIProviderIcon'
 import { CLIToolIcon, getCLIToolColorScheme } from '../../ui/CLIToolIcon';
 import type {
   AIProvider,
-  AIServiceConfig,
+  AIProviderConfig,
   AddServiceRequest,
   TestConnectionResult,
   ModelInfo,
@@ -85,7 +85,7 @@ interface AIStatusCardProps {
   totalServices: number;
   localServices: number;
   cloudServices: number;
-  defaultService: AIServiceConfig | undefined;
+  defaultService: AIProviderConfig | undefined;
   hasEnabledServices: boolean;
   className?: string;
 }
@@ -126,7 +126,7 @@ const AIStatusCard: React.FC<AIStatusCardProps> = ({
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-foreground">AI Services</span>
+          <span className="font-semibold text-foreground">AI Providers</span>
           <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
             {totalServices} configured
           </span>
@@ -319,7 +319,7 @@ const ProviderSelector: React.FC<ProviderSelectorProps> = ({
 // ============================================================================
 
 interface ServiceCardProps {
-  service: AIServiceConfig;
+  service: AIProviderConfig;
   testResult?: TestConnectionResult;
   isTesting: boolean;
   isLoadingModels: boolean;
@@ -517,10 +517,10 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
 // ============================================================================
 
 interface OverviewTabProps {
-  services: AIServiceConfig[];
-  localServices: AIServiceConfig[];
-  cloudServices: AIServiceConfig[];
-  defaultService: AIServiceConfig | undefined;
+  services: AIProviderConfig[];
+  localServices: AIProviderConfig[];
+  cloudServices: AIProviderConfig[];
+  defaultService: AIProviderConfig | undefined;
   defaultCliTool: CLIToolType | null;
   executionMode: AIExecutionMode;
   onExecutionModeChange: (mode: AIExecutionMode) => void;
@@ -998,17 +998,17 @@ const CLIToolsTab: React.FC<CLIToolsTabProps> = ({
 // ============================================================================
 
 interface ServicesTabProps {
-  localServices: AIServiceConfig[];
-  cloudServices: AIServiceConfig[];
+  localServices: AIProviderConfig[];
+  cloudServices: AIProviderConfig[];
   testResult: Record<string, TestConnectionResult>;
   testingServiceId: string | null;
   loadingModels: string | null;
   availableModels: Record<string, ModelInfo[]>;
-  onEdit: (service: AIServiceConfig) => void;
-  onDelete: (service: AIServiceConfig) => void;
-  onSetDefault: (serviceId: string) => void;
-  onTest: (service: AIServiceConfig) => void;
-  onLoadModels: (service: AIServiceConfig) => void;
+  onEdit: (service: AIProviderConfig) => void;
+  onDelete: (service: AIProviderConfig) => void;
+  onSetDefault: (providerId: string) => void;
+  onTest: (service: AIProviderConfig) => void;
+  onLoadModels: (service: AIProviderConfig) => void;
 }
 
 const ServicesTab: React.FC<ServicesTabProps> = ({
@@ -1106,7 +1106,7 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
 // ============================================================================
 
 interface AddServiceTabProps {
-  editingService: AIServiceConfig | null;
+  editingService: AIProviderConfig | null;
   formData: AddServiceRequest;
   formError: string | null;
   isSubmitting: boolean;
@@ -1380,7 +1380,7 @@ const AddServiceTab: React.FC<AddServiceTabProps> = ({
 // Main Component
 // ============================================================================
 
-export function AIServiceSettingsPanel() {
+export function AIProviderSettingsPanel() {
   const {
     services,
     isLoadingServices,
@@ -1424,7 +1424,7 @@ export function AIServiceSettingsPanel() {
   }, []);
 
   // UI state
-  const [editingService, setEditingService] = useState<AIServiceConfig | null>(null);
+  const [editingService, setEditingService] = useState<AIProviderConfig | null>(null);
   const [testingServiceId, setTestingServiceId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, TestConnectionResult>>({});
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
@@ -1434,7 +1434,7 @@ export function AIServiceSettingsPanel() {
   const [probeError, setProbeError] = useState<string | null>(null);
 
   // Delete confirmation state
-  const [deleteTarget, setDeleteTarget] = useState<AIServiceConfig | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AIProviderConfig | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Form state
@@ -1533,7 +1533,7 @@ export function AIServiceSettingsPanel() {
   }, []);
 
   // Start editing service
-  const handleStartEdit = useCallback((service: AIServiceConfig) => {
+  const handleStartEdit = useCallback((service: AIProviderConfig) => {
     setEditingService(service);
     setFormError(null);
     setShowApiKey(false);
@@ -1605,7 +1605,7 @@ export function AIServiceSettingsPanel() {
   }, [formData, editingService, addService, updateService, resetForm]);
 
   // Test connection
-  const handleTestConnection = useCallback(async (service: AIServiceConfig) => {
+  const handleTestConnection = useCallback(async (service: AIProviderConfig) => {
     setTestingServiceId(service.id);
     try {
       const result = await testConnection(service.id);
@@ -1620,7 +1620,7 @@ export function AIServiceSettingsPanel() {
   }, [testConnection]);
 
   // Load models
-  const handleLoadModels = useCallback(async (service: AIServiceConfig) => {
+  const handleLoadModels = useCallback(async (service: AIProviderConfig) => {
     setLoadingModels(service.id);
     try {
       const models = await listModels(service.id);
@@ -1688,7 +1688,7 @@ export function AIServiceSettingsPanel() {
         <div>
           <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <Bot className="w-5 h-5" />
-            AI Services
+            AI Providers
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Configure AI providers for code review, commit messages, and more
@@ -1705,7 +1705,7 @@ export function AIServiceSettingsPanel() {
         <div>
           <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <Bot className="w-5 h-5" />
-            AI Services
+            AI Providers
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Configure AI providers for code review, commit messages, and more
@@ -1722,7 +1722,7 @@ export function AIServiceSettingsPanel() {
       <div>
         <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
           <Bot className="w-5 h-5" />
-          AI Services
+          AI Providers
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Configure AI providers for code review, commit messages, and more

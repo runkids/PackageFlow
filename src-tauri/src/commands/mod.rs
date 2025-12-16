@@ -2,6 +2,7 @@
 // Each submodule contains commands for a specific feature
 
 pub mod ai;
+pub mod ai_assistant;
 pub mod ai_cli;
 pub mod apk;
 pub mod mcp;

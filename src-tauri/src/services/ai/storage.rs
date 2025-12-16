@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 use super::{AIError, AIResult};
 use crate::models::ai::{
-    AIServiceConfig, ProjectAISettings, PromptTemplate, TemplateCategory,
+    AIProviderConfig, ProjectAISettings, PromptTemplate, TemplateCategory,
 };
 
 const STORE_FILENAME: &str = "packageflow.json";
@@ -24,7 +24,7 @@ const KEY_PROJECT_AI_SETTINGS: &str = "project_ai_settings";
 pub struct AIStorage {
     app_handle: AppHandle<Wry>,
     /// In-memory cache of services
-    services_cache: Arc<RwLock<Option<Vec<AIServiceConfig>>>>,
+    services_cache: Arc<RwLock<Option<Vec<AIProviderConfig>>>>,
     /// In-memory cache of templates
     templates_cache: Arc<RwLock<Option<Vec<PromptTemplate>>>>,
 }
@@ -43,7 +43,7 @@ impl AIStorage {
     // =========================================================================
 
     /// List all AI service configurations
-    pub async fn list_services(&self) -> AIResult<Vec<AIServiceConfig>> {
+    pub async fn list_providers(&self) -> AIResult<Vec<AIProviderConfig>> {
         // Check cache first
         {
             let cache = self.services_cache.read().await;
@@ -57,7 +57,7 @@ impl AIStorage {
             .store(STORE_FILENAME)
             .map_err(|e| AIError::StorageError(e.to_string()))?;
 
-        let services: Vec<AIServiceConfig> = store
+        let services: Vec<AIProviderConfig> = store
             .get(KEY_AI_SERVICES)
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
@@ -72,20 +72,20 @@ impl AIStorage {
     }
 
     /// Get a specific AI service by ID
-    pub async fn get_service(&self, id: &str) -> AIResult<Option<AIServiceConfig>> {
-        let services = self.list_services().await?;
+    pub async fn get_service(&self, id: &str) -> AIResult<Option<AIProviderConfig>> {
+        let services = self.list_providers().await?;
         Ok(services.into_iter().find(|s| s.id == id))
     }
 
     /// Get the default AI service
-    pub async fn get_default_service(&self) -> AIResult<Option<AIServiceConfig>> {
-        let services = self.list_services().await?;
+    pub async fn get_default_provider(&self) -> AIResult<Option<AIProviderConfig>> {
+        let services = self.list_providers().await?;
         Ok(services.into_iter().find(|s| s.is_default && s.is_enabled))
     }
 
     /// Add a new AI service configuration
-    pub async fn add_service(&self, service: AIServiceConfig) -> AIResult<AIServiceConfig> {
-        let mut services = self.list_services().await?;
+    pub async fn add_service(&self, service: AIProviderConfig) -> AIResult<AIProviderConfig> {
+        let mut services = self.list_providers().await?;
 
         // Check for duplicate name
         if services.iter().any(|s| s.name == service.name) {
@@ -93,14 +93,14 @@ impl AIStorage {
         }
 
         services.push(service.clone());
-        self.save_services(&services).await?;
+        self.save_providers(&services).await?;
 
         Ok(service)
     }
 
     /// Update an existing AI service configuration
-    pub async fn update_service(&self, updated: AIServiceConfig) -> AIResult<AIServiceConfig> {
-        let mut services = self.list_services().await?;
+    pub async fn update_service(&self, updated: AIProviderConfig) -> AIResult<AIProviderConfig> {
+        let mut services = self.list_providers().await?;
 
         let index = services
             .iter()
@@ -113,14 +113,14 @@ impl AIStorage {
         }
 
         services[index] = updated.clone();
-        self.save_services(&services).await?;
+        self.save_providers(&services).await?;
 
         Ok(updated)
     }
 
     /// Delete an AI service configuration
-    pub async fn delete_service(&self, id: &str) -> AIResult<()> {
-        let mut services = self.list_services().await?;
+    pub async fn delete_provider(&self, id: &str) -> AIResult<()> {
+        let mut services = self.list_providers().await?;
 
         let index = services
             .iter()
@@ -128,14 +128,14 @@ impl AIStorage {
             .ok_or_else(|| AIError::ServiceNotFound(id.to_string()))?;
 
         services.remove(index);
-        self.save_services(&services).await?;
+        self.save_providers(&services).await?;
 
         Ok(())
     }
 
     /// Set a service as the default
-    pub async fn set_default_service(&self, id: &str) -> AIResult<()> {
-        let mut services = self.list_services().await?;
+    pub async fn set_default_provider(&self, id: &str) -> AIResult<()> {
+        let mut services = self.list_providers().await?;
 
         // Verify service exists
         if !services.iter().any(|s| s.id == id) {
@@ -147,12 +147,12 @@ impl AIStorage {
             service.is_default = service.id == id;
         }
 
-        self.save_services(&services).await?;
+        self.save_providers(&services).await?;
 
         Ok(())
     }
 
-    async fn save_services(&self, services: &[AIServiceConfig]) -> AIResult<()> {
+    async fn save_providers(&self, services: &[AIProviderConfig]) -> AIResult<()> {
         let store = self.app_handle
             .store(STORE_FILENAME)
             .map_err(|e| AIError::StorageError(e.to_string()))?;
@@ -366,7 +366,7 @@ impl AIStorage {
         Ok(settings_map.get(project_path).cloned().unwrap_or_else(|| {
             ProjectAISettings {
                 project_path: project_path.to_string(),
-                preferred_service_id: None,
+                preferred_provider_id: None,
                 preferred_template_id: None,
             }
         }))

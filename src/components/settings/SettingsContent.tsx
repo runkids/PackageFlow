@@ -20,8 +20,8 @@ const AppearanceSettingsPanel = lazy(() =>
 const ShortcutsSettingsPanel = lazy(() =>
   import('./panels/ShortcutsSettingsPanel').then((m) => ({ default: m.ShortcutsSettingsPanel }))
 );
-const AIServiceSettingsPanel = lazy(() =>
-  import('./panels/AIServiceSettingsPanel').then((m) => ({ default: m.AIServiceSettingsPanel }))
+const AIProviderSettingsPanel = lazy(() =>
+  import('./panels/AIProviderSettingsPanel').then((m) => ({ default: m.AIProviderSettingsPanel }))
 );
 const PromptTemplatePanel = lazy(() =>
   import('./panels/PromptTemplatePanel').then((m) => ({ default: m.PromptTemplatePanel }))
@@ -60,7 +60,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
       {section === 'deploy-accounts' && <DeployAccountsPanel />}
       {section === 'appearance' && <AppearanceSettingsPanel />}
       {section === 'shortcuts' && <ShortcutsSettingsPanel />}
-      {section === 'ai-services' && <AIServiceSettingsPanel />}
+      {section === 'ai-providers' && <AIProviderSettingsPanel />}
       {section === 'prompts' && <PromptTemplatePanel />}
       {section === 'mcp' && <McpSettingsFullPanel />}
       {section === 'toolchain' && <ToolchainPreferencesPanel />}

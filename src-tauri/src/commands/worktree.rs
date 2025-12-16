@@ -821,9 +821,11 @@ fn get_last_commit_info(path: &Path) -> Result<(Option<String>, Option<String>),
     let message = exec_git(path, &["log", "-1", "--format=%s", "HEAD"])
         .ok()
         .map(|s| {
-            // Truncate message if too long
-            if s.len() > 50 {
-                format!("{}...", &s[..47])
+            // Truncate message if too long (handle UTF-8)
+            let char_count = s.chars().count();
+            if char_count > 50 {
+                let truncated: String = s.chars().take(47).collect();
+                format!("{}...", truncated)
             } else {
                 s
             }

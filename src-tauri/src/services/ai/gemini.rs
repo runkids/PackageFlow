@@ -12,18 +12,18 @@ use std::time::Instant;
 
 use super::{AIError, AIProvider, AIResult};
 use crate::models::ai::{
-    AIServiceConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
+    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
 };
 
 /// Gemini Provider
 pub struct GeminiProvider {
-    config: AIServiceConfig,
+    config: AIProviderConfig,
     client: Client,
     api_key: String,
 }
 
 impl GeminiProvider {
-    pub fn new(config: AIServiceConfig, api_key: String) -> Self {
+    pub fn new(config: AIProviderConfig, api_key: String) -> Self {
         Self {
             config,
             client: Client::new(),
@@ -138,7 +138,7 @@ impl AIProvider for GeminiProvider {
         "Gemini"
     }
 
-    fn config(&self) -> &AIServiceConfig {
+    fn config(&self) -> &AIProviderConfig {
         &self.config
     }
 
@@ -168,15 +168,16 @@ impl AIProvider for GeminiProvider {
         let mut system_prefix = String::new();
 
         for msg in messages {
+            let msg_content = msg.content.unwrap_or_default();
             if msg.role == "system" {
-                system_prefix = format!("{}\n\n", msg.content);
+                system_prefix = format!("{}\n\n", msg_content);
             } else {
                 let content = if !system_prefix.is_empty() && msg.role == "user" {
-                    let full_content = format!("{}{}", system_prefix, msg.content);
+                    let full_content = format!("{}{}", system_prefix, msg_content);
                     system_prefix.clear();
                     full_content
                 } else {
-                    msg.content
+                    msg_content
                 };
 
                 contents.push(GeminiContent {
@@ -273,6 +274,7 @@ impl AIProvider for GeminiProvider {
             tokens_used,
             model: self.config.model.clone(),
             finish_reason,
+            tool_calls: None, // Gemini tool calling not yet implemented
         })
     }
 
@@ -327,8 +329,8 @@ mod tests {
     use super::*;
     use crate::models::ai::AIProvider as AIProviderEnum;
 
-    fn create_test_config() -> AIServiceConfig {
-        AIServiceConfig::new(
+    fn create_test_config() -> AIProviderConfig {
+        AIProviderConfig::new(
             "Test Gemini".to_string(),
             AIProviderEnum::Gemini,
             "https://generativelanguage.googleapis.com/v1beta".to_string(),

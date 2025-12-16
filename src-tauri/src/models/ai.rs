@@ -140,14 +140,14 @@ pub enum CommitFormat {
     Custom,
 }
 
-/// AI Service configuration
-/// Stores user-configured AI service connection information
+/// AI Provider configuration
+/// Stores user-configured AI provider connection information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AIServiceConfig {
+pub struct AIProviderConfig {
     /// Unique identifier (UUID v4)
     pub id: String,
-    /// User-defined name for this service
+    /// User-defined name for this provider
     pub name: String,
     /// AI provider type
     pub provider: AIProvider,
@@ -155,15 +155,15 @@ pub struct AIServiceConfig {
     pub endpoint: String,
     /// Selected model name
     pub model: String,
-    /// Whether this is the default service
+    /// Whether this is the default provider
     #[serde(default)]
     pub is_default: bool,
-    /// Whether this service is enabled
+    /// Whether this provider is enabled
     #[serde(default = "default_true")]
     pub is_enabled: bool,
-    /// When this service was created
+    /// When this provider was created
     pub created_at: DateTime<Utc>,
-    /// When this service was last updated
+    /// When this provider was last updated
     pub updated_at: DateTime<Utc>,
 }
 
@@ -171,8 +171,8 @@ fn default_true() -> bool {
     true
 }
 
-impl AIServiceConfig {
-    /// Create a new AI service configuration
+impl AIProviderConfig {
+    /// Create a new AI provider configuration
     pub fn new(name: String, provider: AIProvider, endpoint: String, model: String) -> Self {
         let now = Utc::now();
         Self {
@@ -511,41 +511,134 @@ Be specific, actionable, and prioritize by severity. Use markdown formatting."#.
 pub struct ProjectAISettings {
     /// Project path (used as key)
     pub project_path: String,
-    /// Preferred AI service ID for this project
-    pub preferred_service_id: Option<String>,
+    /// Preferred AI provider ID for this project
+    pub preferred_provider_id: Option<String>,
     /// Preferred prompt template ID for this project
     pub preferred_template_id: Option<String>,
+}
+
+/// Tool definition for function calling
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatToolDefinition {
+    /// Tool type (always "function" for now)
+    #[serde(rename = "type")]
+    pub tool_type: String,
+    /// Function definition
+    pub function: ChatFunctionDefinition,
+}
+
+/// Function definition within a tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatFunctionDefinition {
+    /// Function name
+    pub name: String,
+    /// Description of what the function does
+    pub description: String,
+    /// JSON Schema for parameters
+    pub parameters: serde_json::Value,
+}
+
+impl ChatToolDefinition {
+    /// Create a new function tool definition
+    pub fn function(name: impl Into<String>, description: impl Into<String>, parameters: serde_json::Value) -> Self {
+        Self {
+            tool_type: "function".to_string(),
+            function: ChatFunctionDefinition {
+                name: name.into(),
+                description: description.into(),
+                parameters,
+            },
+        }
+    }
+}
+
+/// Tool call made by the AI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatToolCall {
+    /// Unique ID for this tool call
+    pub id: String,
+    /// Type of tool (always "function" for now)
+    #[serde(rename = "type")]
+    pub tool_type: String,
+    /// Function call details
+    pub function: ChatFunctionCall,
+}
+
+/// Function call within a tool call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatFunctionCall {
+    /// Function name
+    pub name: String,
+    /// JSON string of arguments
+    pub arguments: String,
 }
 
 /// Chat message for AI completion
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
-    /// Role: "system", "user", or "assistant"
+    /// Role: "system", "user", "assistant", or "tool"
     pub role: String,
-    /// Message content
-    pub content: String,
+    /// Message content (can be null for assistant messages with tool_calls)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    /// Tool calls made by assistant (for assistant messages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ChatToolCall>>,
+    /// Tool call ID this message is responding to (for tool messages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
         Self {
             role: "system".to_string(),
-            content: content.into(),
+            content: Some(content.into()),
+            tool_calls: None,
+            tool_call_id: None,
         }
     }
 
     pub fn user(content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
-            content: content.into(),
+            content: Some(content.into()),
+            tool_calls: None,
+            tool_call_id: None,
         }
     }
 
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: content.into(),
+            content: Some(content.into()),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Create an assistant message with tool calls (content may be empty)
+    pub fn assistant_with_tool_calls(content: Option<String>, tool_calls: Vec<ChatToolCall>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content,
+            tool_calls: Some(tool_calls),
+            tool_call_id: None,
+        }
+    }
+
+    /// Create a tool result message
+    pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: Some(content.into()),
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.into()),
         }
     }
 }
@@ -560,6 +653,9 @@ pub struct ChatOptions {
     pub max_tokens: Option<u32>,
     /// Top-p sampling
     pub top_p: Option<f32>,
+    /// Tool definitions for function calling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<ChatToolDefinition>>,
 }
 
 /// Reason why the AI stopped generating
@@ -582,7 +678,7 @@ pub enum FinishReason {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatResponse {
-    /// Generated content
+    /// Generated content (may be empty if tool_calls present)
     pub content: String,
     /// Tokens used (if available)
     pub tokens_used: Option<u32>,
@@ -591,6 +687,9 @@ pub struct ChatResponse {
     /// Why the model stopped generating
     #[serde(default)]
     pub finish_reason: Option<FinishReason>,
+    /// Tool calls requested by the AI
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ChatToolCall>>,
 }
 
 /// Result from AI commit message generation
@@ -629,10 +728,10 @@ pub struct ModelInfo {
     pub modified_at: Option<String>,
 }
 
-/// Request to add a new AI service
+/// Request to add a new AI provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AddServiceRequest {
+pub struct AddProviderRequest {
     pub name: String,
     pub provider: AIProvider,
     pub endpoint: String,
@@ -641,10 +740,10 @@ pub struct AddServiceRequest {
     pub api_key: Option<String>,
 }
 
-/// Request to update an AI service
+/// Request to update an AI provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateServiceRequest {
+pub struct UpdateProviderRequest {
     pub id: String,
     pub name: Option<String>,
     pub endpoint: Option<String>,
@@ -682,8 +781,8 @@ pub struct UpdateTemplateRequest {
 #[serde(rename_all = "camelCase")]
 pub struct GenerateCommitMessageRequest {
     pub project_path: String,
-    /// Service ID (if not specified, use default)
-    pub service_id: Option<String>,
+    /// Provider ID (if not specified, use default)
+    pub provider_id: Option<String>,
     /// Template ID (if not specified, use default)
     pub template_id: Option<String>,
 }
@@ -697,8 +796,8 @@ pub struct GenerateCodeReviewRequest {
     pub file_path: String,
     /// Whether to review staged or unstaged diff
     pub staged: bool,
-    /// Service ID (if not specified, use default)
-    pub service_id: Option<String>,
+    /// Provider ID (if not specified, use default)
+    pub provider_id: Option<String>,
     /// Template ID (if not specified, use default code review template)
     pub template_id: Option<String>,
 }
@@ -721,8 +820,8 @@ pub struct GenerateCodeReviewResult {
 #[serde(rename_all = "camelCase")]
 pub struct GenerateStagedReviewRequest {
     pub project_path: String,
-    /// Service ID (if not specified, use default)
-    pub service_id: Option<String>,
+    /// Provider ID (if not specified, use default)
+    pub provider_id: Option<String>,
     /// Template ID (if not specified, use default code review template)
     pub template_id: Option<String>,
 }
@@ -732,8 +831,8 @@ pub struct GenerateStagedReviewRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProjectSettingsRequest {
     pub project_path: String,
-    /// Preferred service ID (null to clear)
-    pub preferred_service_id: Option<String>,
+    /// Preferred provider ID (null to clear)
+    pub preferred_provider_id: Option<String>,
     /// Preferred template ID (null to clear)
     pub preferred_template_id: Option<String>,
 }
@@ -750,8 +849,8 @@ pub struct GenerateSecurityAnalysisRequest {
     pub package_manager: String,
     /// Vulnerability data as JSON
     pub vulnerability: serde_json::Value,
-    /// Service ID (if not specified, use default)
-    pub service_id: Option<String>,
+    /// Provider ID (if not specified, use default)
+    pub provider_id: Option<String>,
     /// Template ID (if not specified, use default security advisory template)
     pub template_id: Option<String>,
 }
@@ -770,8 +869,8 @@ pub struct GenerateSecuritySummaryRequest {
     pub vulnerabilities: Vec<serde_json::Value>,
     /// Vulnerability summary counts
     pub summary: serde_json::Value,
-    /// Service ID (if not specified, use default)
-    pub service_id: Option<String>,
+    /// Provider ID (if not specified, use default)
+    pub provider_id: Option<String>,
     /// Template ID (if not specified, use default security advisory template)
     pub template_id: Option<String>,
 }

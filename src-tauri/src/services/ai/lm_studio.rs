@@ -12,17 +12,17 @@ use std::time::Instant;
 
 use super::{AIError, AIProvider, AIResult};
 use crate::models::ai::{
-    AIServiceConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
+    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
 };
 
 /// LM Studio Provider
 pub struct LMStudioProvider {
-    config: AIServiceConfig,
+    config: AIProviderConfig,
     client: Client,
 }
 
 impl LMStudioProvider {
-    pub fn new(config: AIServiceConfig) -> Self {
+    pub fn new(config: AIProviderConfig) -> Self {
         Self {
             config,
             client: Client::new(),
@@ -96,7 +96,7 @@ impl AIProvider for LMStudioProvider {
         "LM Studio"
     }
 
-    fn config(&self) -> &AIServiceConfig {
+    fn config(&self) -> &AIProviderConfig {
         &self.config
     }
 
@@ -138,7 +138,7 @@ impl AIProvider for LMStudioProvider {
             .into_iter()
             .map(|m| OpenAIMessage {
                 role: m.role,
-                content: m.content,
+                content: m.content.unwrap_or_default(),
             })
             .collect();
 
@@ -200,6 +200,7 @@ impl AIProvider for LMStudioProvider {
             tokens_used,
             model: openai_response.model,
             finish_reason,
+            tool_calls: None, // LM Studio tool calling not yet implemented
         })
     }
 
@@ -244,8 +245,8 @@ mod tests {
     use super::*;
     use crate::models::ai::AIProvider as AIProviderEnum;
 
-    fn create_test_config() -> AIServiceConfig {
-        AIServiceConfig::new(
+    fn create_test_config() -> AIProviderConfig {
+        AIProviderConfig::new(
             "Test LM Studio".to_string(),
             AIProviderEnum::LMStudio,
             "http://127.0.0.1:1234/v1".to_string(),

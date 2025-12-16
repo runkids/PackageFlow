@@ -12,17 +12,17 @@ use std::time::Instant;
 
 use super::{AIError, AIProvider, AIResult};
 use crate::models::ai::{
-    AIServiceConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
+    AIProviderConfig, ChatMessage, ChatOptions, ChatResponse, FinishReason, ModelInfo,
 };
 
 /// Ollama Provider
 pub struct OllamaProvider {
-    config: AIServiceConfig,
+    config: AIProviderConfig,
     client: Client,
 }
 
 impl OllamaProvider {
-    pub fn new(config: AIServiceConfig) -> Self {
+    pub fn new(config: AIProviderConfig) -> Self {
         Self {
             config,
             client: Client::new(),
@@ -93,7 +93,7 @@ impl AIProvider for OllamaProvider {
         "Ollama"
     }
 
-    fn config(&self) -> &AIServiceConfig {
+    fn config(&self) -> &AIProviderConfig {
         &self.config
     }
 
@@ -135,7 +135,7 @@ impl AIProvider for OllamaProvider {
             .into_iter()
             .map(|m| OllamaMessage {
                 role: m.role,
-                content: m.content,
+                content: m.content.unwrap_or_default(),
             })
             .collect();
 
@@ -195,6 +195,7 @@ impl AIProvider for OllamaProvider {
             tokens_used: ollama_response.eval_count,
             model: self.config.model.clone(),
             finish_reason,
+            tool_calls: None, // Ollama tool calling not yet implemented
         })
     }
 
@@ -239,8 +240,8 @@ mod tests {
     use super::*;
     use crate::models::ai::AIProvider as AIProviderEnum;
 
-    fn create_test_config() -> AIServiceConfig {
-        AIServiceConfig::new(
+    fn create_test_config() -> AIProviderConfig {
+        AIProviderConfig::new(
             "Test Ollama".to_string(),
             AIProviderEnum::Ollama,
             "http://127.0.0.1:11434".to_string(),

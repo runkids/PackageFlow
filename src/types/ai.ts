@@ -77,7 +77,7 @@ export function getCategoryInfo(categoryId: TemplateCategory): CategoryInfo | un
 }
 
 /** AI Service configuration */
-export interface AIServiceConfig {
+export interface AIProviderConfig {
   /** Unique identifier (UUID v4) */
   id: string;
   /** User-defined name for this service */
@@ -127,7 +127,7 @@ export interface ProjectAISettings {
   /** Project path (used as key) */
   projectPath: string;
   /** Preferred AI service ID for this project */
-  preferredServiceId?: string;
+  preferredProviderId?: string;
   /** Preferred prompt template ID for this project */
   preferredTemplateId?: string;
 }
@@ -234,7 +234,7 @@ export interface UpdateTemplateRequest {
 export interface GenerateCommitMessageRequest {
   projectPath: string;
   /** Service ID (if not specified, use default) */
-  serviceId?: string;
+  providerId?: string;
   /** Template ID (if not specified, use default) */
   templateId?: string;
 }
@@ -247,7 +247,7 @@ export interface GenerateCodeReviewRequest {
   /** Whether to review staged or unstaged diff */
   staged: boolean;
   /** Service ID (if not specified, use default) */
-  serviceId?: string;
+  providerId?: string;
   /** Template ID (if not specified, use default code review template) */
   templateId?: string;
 }
@@ -266,7 +266,7 @@ export interface GenerateCodeReviewResult {
 export interface GenerateStagedReviewRequest {
   projectPath: string;
   /** Service ID (if not specified, use default) */
-  serviceId?: string;
+  providerId?: string;
   /** Template ID (if not specified, use default code review template) */
   templateId?: string;
 }
@@ -275,7 +275,7 @@ export interface GenerateStagedReviewRequest {
 export interface UpdateProjectSettingsRequest {
   projectPath: string;
   /** Preferred service ID (null to clear) */
-  preferredServiceId?: string | null;
+  preferredProviderId?: string | null;
   /** Preferred template ID (null to clear) */
   preferredTemplateId?: string | null;
 }
@@ -369,7 +369,7 @@ export interface GenerateSecurityAnalysisRequest {
   packageManager: string;
   vulnerability: unknown; // VulnItem from security.ts - use unknown to avoid circular dependency
   /** Service ID (if not specified, use default) */
-  serviceId?: string;
+  providerId?: string;
   /** Template ID (if not specified, use default security_advisory template) */
   templateId?: string;
 }
@@ -382,7 +382,7 @@ export interface GenerateSecuritySummaryRequest {
   vulnerabilities: unknown[]; // VulnItem[] from security.ts
   summary: unknown; // VulnSummary from security.ts
   /** Service ID (if not specified, use default) */
-  serviceId?: string;
+  providerId?: string;
   /** Template ID (if not specified, use default security_advisory template) */
   templateId?: string;
 }

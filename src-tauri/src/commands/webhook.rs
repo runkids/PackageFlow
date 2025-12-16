@@ -56,11 +56,13 @@ pub async fn test_webhook(
             let status_code = response.status().as_u16();
             let success = response.status().is_success();
 
-            // Get response body (truncated to 1000 chars)
+            // Get response body (truncated to 1000 chars, handle UTF-8)
             let body = match response.text().await {
                 Ok(text) => {
-                    if text.len() > 1000 {
-                        Some(format!("{}...", &text[..1000]))
+                    let char_count = text.chars().count();
+                    if char_count > 1000 {
+                        let truncated: String = text.chars().take(1000).collect();
+                        Some(format!("{}...", truncated))
                     } else {
                         Some(text)
                     }

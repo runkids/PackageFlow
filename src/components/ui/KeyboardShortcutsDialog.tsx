@@ -630,7 +630,7 @@ export function KeyboardShortcutsFloatingButton({
         'transition-all duration-200 group',
         'opacity-80 hover:opacity-100',
         'focus:outline-none focus:ring-2 focus:ring-cyan-500/50',
-        position === 'bottom-left' ? 'left-4' : 'right-4'
+        position === 'bottom-left' ? 'left-4' : 'right-4 translate-y-9'
       )}
       title="Show keyboard shortcuts (Cmd+/)"
       aria-label="Show keyboard shortcuts"
