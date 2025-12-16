@@ -9,7 +9,6 @@ pub mod keychain;
 pub mod lm_studio;
 pub mod ollama;
 pub mod openai;
-pub mod storage;
 
 use async_trait::async_trait;
 
@@ -20,7 +19,6 @@ pub use keychain::AIKeychain;
 pub use lm_studio::LMStudioProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
-pub use storage::AIStorage;
 
 use crate::models::ai::{
     AIProvider as AIProviderType, AIProviderConfig, ChatMessage, ChatOptions, ChatResponse,

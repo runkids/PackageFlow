@@ -232,9 +232,6 @@ pub struct AppSettings {
     /// Workflow order for custom sorting (array of workflow IDs)
     #[serde(default)]
     pub workflow_order: Vec<String>,
-    /// Custom store path for packageflow.json (None = use default app data directory)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_store_path: Option<String>,
     /// Keyboard shortcuts settings
     #[serde(default)]
     pub keyboard_shortcuts: KeyboardShortcutsSettings,
@@ -261,7 +258,6 @@ impl Default for AppSettings {
             webhook_notifications_enabled: default_webhook_notifications_enabled(),
             workflow_sort_mode: default_workflow_sort_mode(),
             workflow_order: Vec::new(),
-            custom_store_path: None,
             keyboard_shortcuts: KeyboardShortcutsSettings::default(),
             path_display_format: default_path_display_format(),
             reduce_motion: default_reduce_motion(),
@@ -301,7 +297,3 @@ impl Default for StoreData {
         }
     }
 }
-
-/// Store file name
-/// Note: Must match frontend store file in src/lib/workflow-storage.ts
-pub const STORE_FILE: &str = "packageflow.json";

@@ -6,21 +6,34 @@
 // - Tool call execution via MCP action service
 // - Permission validation
 // - Result formatting
+// - Security: Path validation against registered projects
 
-use std::path::Path;
 use crate::models::ai_assistant::{ToolCall, ToolResult, ToolDefinition, AvailableTools};
 use crate::models::ai::ChatToolDefinition;
 use crate::utils::path_resolver;
+use crate::utils::database::Database;
+
+use super::security::{PathSecurityValidator, ToolPermissionChecker, OutputSanitizer};
 
 /// Handles tool calls from AI responses
 pub struct MCPToolHandler {
-    // Tool handler will be extended in US2
+    /// Path security validator for project boundary enforcement
+    path_validator: Option<PathSecurityValidator>,
 }
 
 impl MCPToolHandler {
-    /// Create a new MCPToolHandler
+    /// Create a new MCPToolHandler without database (for testing/basic use)
     pub fn new() -> Self {
-        Self {}
+        Self {
+            path_validator: None,
+        }
+    }
+
+    /// Create a new MCPToolHandler with database for security validation
+    pub fn with_database(db: Database) -> Self {
+        Self {
+            path_validator: Some(PathSecurityValidator::new(db)),
+        }
     }
 
     /// Convert our tool definitions to ChatToolDefinition format for AI providers
@@ -150,13 +163,41 @@ impl MCPToolHandler {
 
     /// Execute a tool call
     /// Returns a ToolResult with the execution outcome
+    ///
+    /// Security checks performed:
+    /// 1. Tool permission validation (blocked tools are rejected)
+    /// 2. Path validation against registered projects
+    /// 3. Output sanitization to remove sensitive data
     pub async fn execute_tool_call(&self, tool_call: &ToolCall) -> ToolResult {
-        match tool_call.name.as_str() {
+        // Security check 1: Validate tool is allowed
+        if let Err(e) = ToolPermissionChecker::validate_tool_call(&tool_call.name) {
+            return ToolResult::failure(
+                tool_call.id.clone(),
+                format!("Security error: {}", e),
+            );
+        }
+
+        // Security check 2: Validate confirmation requirements
+        if ToolPermissionChecker::requires_confirmation(&tool_call.name) {
+            // Check if this is a confirmation-required tool being auto-executed
+            match tool_call.name.as_str() {
+                "run_script" | "run_workflow" | "trigger_webhook" => {
+                    return ToolResult::failure(
+                        tool_call.id.clone(),
+                        "This action requires user confirmation before execution.".to_string(),
+                    );
+                }
+                _ => {} // Unknown tools will also require confirmation but may proceed to validation
+            }
+        }
+
+        // Execute the appropriate tool
+        let result = match tool_call.name.as_str() {
             "get_git_status" => self.execute_get_git_status(tool_call).await,
             "get_staged_diff" => self.execute_get_staged_diff(tool_call).await,
             "list_project_scripts" => self.execute_list_project_scripts(tool_call).await,
             "list_workflows" => self.execute_list_workflows(tool_call).await,
-            // Tools requiring confirmation - not auto-executed
+            // Tools requiring confirmation - handled above, but fallback just in case
             "run_script" | "run_workflow" | "trigger_webhook" => {
                 ToolResult::failure(
                     tool_call.id.clone(),
@@ -167,6 +208,41 @@ impl MCPToolHandler {
                 tool_call.id.clone(),
                 format!("Unknown tool: {}", tool_call.name),
             ),
+        };
+
+        // Security check 3: Sanitize output before returning
+        if result.success {
+            ToolResult {
+                tool_call_id: result.tool_call_id,
+                success: result.success,
+                output: OutputSanitizer::sanitize_output(&result.output),
+                error: result.error,
+                requires_confirmation: result.requires_confirmation,
+            }
+        } else {
+            result
+        }
+    }
+
+    /// Validate a project path against registered projects
+    /// Returns the validated canonical path or an error message
+    fn validate_project_path(&self, path: &str) -> Result<std::path::PathBuf, String> {
+        match &self.path_validator {
+            Some(validator) => {
+                validator.sanitize_tool_path(path)
+                    .map_err(|e| format!("Security validation failed: {}", e))
+            }
+            None => {
+                // No validator available - just check if path exists
+                // This is less secure but allows basic functionality
+                let p = std::path::Path::new(path);
+                if p.exists() {
+                    std::fs::canonicalize(p)
+                        .map_err(|e| format!("Invalid path: {}", e))
+                } else {
+                    Err(format!("Path does not exist: {}", path))
+                }
+            }
         }
     }
 
@@ -180,9 +256,15 @@ impl MCPToolHandler {
             ),
         };
 
+        // Security: Validate path is within a registered project
+        let validated_path = match self.validate_project_path(project_path) {
+            Ok(p) => p,
+            Err(e) => return ToolResult::failure(tool_call.id.clone(), e),
+        };
+
         let output = path_resolver::create_command("git")
             .args(["status", "--porcelain", "-b"])
-            .current_dir(project_path)
+            .current_dir(&validated_path)
             .output();
 
         match output {
@@ -220,9 +302,15 @@ impl MCPToolHandler {
             ),
         };
 
+        // Security: Validate path is within a registered project
+        let validated_path = match self.validate_project_path(project_path) {
+            Ok(p) => p,
+            Err(e) => return ToolResult::failure(tool_call.id.clone(), e),
+        };
+
         let output = path_resolver::create_command("git")
             .args(["diff", "--staged", "--stat"])
-            .current_dir(project_path)
+            .current_dir(&validated_path)
             .output();
 
         match output {
@@ -232,7 +320,7 @@ impl MCPToolHandler {
                 // Also get the actual diff (limited)
                 let diff_output = path_resolver::create_command("git")
                     .args(["diff", "--staged"])
-                    .current_dir(project_path)
+                    .current_dir(&validated_path)
                     .output();
 
                 let diff_content = diff_output
@@ -295,7 +383,13 @@ impl MCPToolHandler {
             ),
         };
 
-        let package_json_path = Path::new(project_path).join("package.json");
+        // Security: Validate path is within a registered project
+        let validated_path = match self.validate_project_path(project_path) {
+            Ok(p) => p,
+            Err(e) => return ToolResult::failure(tool_call.id.clone(), e),
+        };
+
+        let package_json_path = validated_path.join("package.json");
 
         match std::fs::read_to_string(&package_json_path) {
             Ok(content) => {

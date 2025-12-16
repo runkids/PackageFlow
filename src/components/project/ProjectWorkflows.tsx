@@ -31,6 +31,7 @@ import {
 import { Dialog, DialogContent, DialogClose } from '../ui/Dialog';
 import { Button } from '../ui/Button';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '../ui/ContextMenu';
+import { CompactEmptyState } from '../ui/EmptyState';
 import { cn } from '../../lib/utils';
 import { useWorkflowExecutionContext } from '../../contexts/WorkflowExecutionContext';
 import {
@@ -383,32 +384,17 @@ export function ProjectWorkflows({
 
       {/* Workflow list */}
       {workflows.length === 0 ? (
-        /* Empty state - matching ListSidebarEmpty style */
-        <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-          <div
-            className={cn(
-              'w-14 h-14 rounded-2xl mb-4',
-              'bg-muted/50',
-              'flex items-center justify-center',
-              'border border-border'
-            )}
-          >
-            <WorkflowIcon className="w-7 h-7 text-muted-foreground/60" />
-          </div>
-          <h3 className="text-sm font-semibold text-foreground">No workflows yet</h3>
-          <p className="mt-2 text-xs text-muted-foreground max-w-[200px] leading-relaxed">
-            Create a project-specific workflow to automate tasks
-          </p>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleAddClick}
-            className="mt-4"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Create Workflow
-          </Button>
-        </div>
+        <CompactEmptyState
+          icon={WorkflowIcon}
+          title="No Workflows Yet"
+          description="Create a project-specific workflow to automate repetitive tasks"
+          variant="blue"
+          action={{
+            label: 'Create Workflow',
+            icon: Plus,
+            onClick: handleAddClick,
+          }}
+        />
       ) : (
         <ul className="space-y-2">
           {workflows.map(workflow => {

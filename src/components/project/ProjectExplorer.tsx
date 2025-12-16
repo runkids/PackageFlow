@@ -35,6 +35,7 @@ import { useToolchainStrategy } from '../../hooks/useToolchainStrategy';
 import { ToolchainConflictDialog } from './ToolchainConflictDialog';
 import type { ToolchainStrategy } from '../../types/toolchain';
 import { Button } from '../ui/Button';
+import { EmptyState } from '../ui/EmptyState';
 
 type TabType = 'scripts' | 'workspaces' | 'workflows' | 'builds' | 'security' | 'git' | 'deploy';
 
@@ -403,13 +404,18 @@ export function ProjectExplorer({
 
   if (!project) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <div className="text-center text-muted-foreground">
-          <Folder className="w-16 h-16 mx-auto mb-4 opacity-50" />
-          <p className="text-lg">Select or add a project</p>
-          <p className="text-sm mt-2">Pick a project on the left or click + to add one</p>
-        </div>
-      </div>
+      <EmptyState
+        icon={Folder}
+        title="No Project Selected"
+        description="Select an existing project from the sidebar, or add a new one to start managing your packages and scripts."
+        variant="blue"
+        showBackgroundPattern
+        shortcuts={[
+          { key: 'Shift+Cmd+O', label: 'Add project' },
+          { key: 'Cmd+K', label: 'Quick switch' },
+        ]}
+        className="flex-1"
+      />
     );
   }
 
