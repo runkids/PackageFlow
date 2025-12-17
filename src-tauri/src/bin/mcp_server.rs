@@ -6,6 +6,9 @@
 //
 // This server uses SQLite database for data storage with WAL mode for concurrent access.
 
+// MCP server modules (extracted for maintainability)
+mod mcp;
+
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -36,6 +39,9 @@ use packageflow_lib::utils::database::Database;
 use packageflow_lib::repositories::{
     ProjectRepository, WorkflowRepository, SettingsRepository,
     TemplateRepository, MCPRepository, McpLogEntry, MCPActionRepository,
+    // New repositories for enhanced MCP tools
+    AIRepository, AIConversationRepository, NotificationRepository,
+    NotificationListResponse, SecurityRepository, DeployRepository,
 };
 
 // Import MCP action models and services
@@ -690,12 +696,22 @@ fn get_tool_category(tool_name: &str) -> ToolCategory {
         "list_actions" | "get_action" | "list_action_executions" | "get_execution_status" |
         "get_action_permissions" |
         // Background process read-only tools
-        "get_background_process_output" | "list_background_processes" => ToolCategory::ReadOnly,
+        "get_background_process_output" | "list_background_processes" |
+        // Enhanced MCP tools - Read-only
+        "get_environment_info" | "list_ai_providers" | "check_file_exists" |
+        "list_conversations" | "get_notifications" |
+        "get_security_scan_results" | "list_deployments" |
+        "get_project_dependencies" | "get_workflow_execution_details" |
+        "search_project_files" | "read_project_file" => ToolCategory::ReadOnly,
         // Write tools
-        "create_workflow" | "add_workflow_step" | "create_step_template" => ToolCategory::Write,
+        "create_workflow" | "add_workflow_step" | "create_step_template" |
+        // Enhanced MCP tools - Write
+        "update_workflow" | "delete_workflow_step" | "mark_notifications_read" => ToolCategory::Write,
         // Execute tools (including MCP action execution and background process control)
         "run_workflow" | "run_script" | "trigger_webhook" | "run_mcp_workflow" | "run_npm_script" |
-        "stop_background_process" => ToolCategory::Execute,
+        "stop_background_process" |
+        // Enhanced MCP tools - Execute
+        "run_security_scan" => ToolCategory::Execute,
         // Unknown tools default to Execute (most restrictive)
         _ => ToolCategory::Execute,
     }
@@ -1567,6 +1583,228 @@ pub struct GetActionPermissionsParams {
     /// Optional action ID to get specific permission
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_id: Option<String>,
+}
+
+// ============================================================================
+// New Tool Parameters (Enhanced MCP Tools)
+// ============================================================================
+
+/// Parameters for get_environment_info tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetEnvironmentInfoParams {
+    /// Include PATH environment details (default: false)
+    #[serde(default)]
+    pub include_paths: bool,
+    /// Optional project path to check project-specific toolchain
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+}
+
+/// Parameters for list_ai_providers tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListAIProvidersParams {
+    /// Only return enabled providers (default: true)
+    #[serde(default = "default_true")]
+    pub enabled_only: bool,
+}
+
+/// Parameters for check_file_exists tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckFileExistsParams {
+    /// Base project path - must be a registered project
+    pub project_path: String,
+    /// Relative paths to check (e.g., ['package.json', 'src/index.ts'])
+    pub paths: Vec<String>,
+}
+
+/// Parameters for list_conversations tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListConversationsParams {
+    /// Filter by project path
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    /// Maximum number of conversations to return (default: 20, max: 100)
+    #[serde(default = "default_limit_20")]
+    pub limit: i64,
+    /// Search in conversation titles
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_query: Option<String>,
+}
+
+fn default_limit_20() -> i64 {
+    20
+}
+
+/// Parameters for get_notifications tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetNotificationsParams {
+    /// Filter by notification category
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Only return unread notifications (default: false)
+    #[serde(default)]
+    pub unread_only: bool,
+    /// Maximum notifications to return (default: 20)
+    #[serde(default = "default_limit_20")]
+    pub limit: i64,
+}
+
+/// Parameters for mark_notifications_read tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkNotificationsReadParams {
+    /// List of notification IDs to mark as read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_ids: Option<Vec<String>>,
+    /// Mark all notifications as read (default: false)
+    #[serde(default)]
+    pub mark_all: bool,
+}
+
+/// Parameters for get_security_scan_results tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSecurityScanResultsParams {
+    /// Path to the project - use actual path from list_projects
+    pub project_path: String,
+}
+
+/// Parameters for run_security_scan tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RunSecurityScanParams {
+    /// Path to the project - must be a registered project
+    pub project_path: String,
+    /// Attempt to auto-fix vulnerabilities (default: false)
+    #[serde(default)]
+    pub fix: bool,
+}
+
+/// Parameters for list_deployments tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListDeploymentsParams {
+    /// Path to the project
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    /// Filter by deployment platform (github_pages, netlify, cloudflare_pages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    /// Filter by deployment status (pending, building, success, failed, cancelled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Maximum deployments to return (default: 10)
+    #[serde(default = "default_limit_10")]
+    pub limit: i64,
+}
+
+fn default_limit_10() -> i64 {
+    10
+}
+
+/// Parameters for get_project_dependencies tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetProjectDependenciesParams {
+    /// Path to the project
+    pub project_path: String,
+    /// Include devDependencies (default: true)
+    #[serde(default = "default_true")]
+    pub include_dev: bool,
+    /// Include peerDependencies (default: false)
+    #[serde(default)]
+    pub include_peer: bool,
+}
+
+/// Parameters for update_workflow tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateWorkflowParams {
+    /// The workflow ID - use actual ID from list_workflows
+    pub workflow_id: String,
+    /// New workflow name (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// New workflow description (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Parameters for delete_workflow_step tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteWorkflowStepParams {
+    /// The workflow ID
+    pub workflow_id: String,
+    /// The step/node ID to remove - use actual ID from get_workflow
+    pub step_id: String,
+}
+
+/// Parameters for get_workflow_execution_details tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetWorkflowExecutionDetailsParams {
+    /// The execution ID from list_action_executions
+    pub execution_id: String,
+    /// Include full stdout/stderr output (default: true)
+    #[serde(default = "default_true")]
+    pub include_output: bool,
+    /// Max characters per step output (default: 5000)
+    #[serde(default = "default_output_limit")]
+    pub truncate_output: usize,
+}
+
+fn default_output_limit() -> usize {
+    5000
+}
+
+/// Parameters for search_project_files tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchProjectFilesParams {
+    /// Base project path - must be a registered project
+    pub project_path: String,
+    /// File name pattern (glob syntax, e.g., '*.ts', 'src/**/*.tsx')
+    pub pattern: String,
+    /// Maximum files to return (default: 50)
+    #[serde(default = "default_limit_50")]
+    pub max_results: usize,
+    /// Include directory matches (default: false)
+    #[serde(default)]
+    pub include_directories: bool,
+}
+
+fn default_limit_50() -> usize {
+    50
+}
+
+/// Parameters for read_project_file tool
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadProjectFileParams {
+    /// Base project path - must be a registered project
+    pub project_path: String,
+    /// Relative path to the file within the project
+    pub file_path: String,
+    /// Maximum lines to read (default: 500)
+    #[serde(default = "default_max_lines")]
+    pub max_lines: usize,
+    /// Line to start reading from (1-based, default: 1)
+    #[serde(default = "default_start_line")]
+    pub start_line: usize,
+}
+
+fn default_max_lines() -> usize {
+    500
+}
+
+fn default_start_line() -> usize {
+    1
 }
 
 // ============================================================================
@@ -3642,6 +3880,843 @@ impl PackageFlowMcp {
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
+
+    // ========================================================================
+    // Enhanced MCP Tools (New)
+    // ========================================================================
+
+    /// Get system environment information for troubleshooting
+    #[tool(description = "Get system environment information including detected tools, versions, and paths. Useful for troubleshooting build/execution issues.")]
+    async fn get_environment_info(
+        &self,
+        Parameters(params): Parameters<GetEnvironmentInfoParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut info = serde_json::json!({});
+
+        // Get tool versions using path_resolver
+        let node_version = path_resolver::create_command("node")
+            .args(&["--version"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+        let npm_version = path_resolver::create_command("npm")
+            .args(&["--version"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+        let pnpm_version = path_resolver::create_command("pnpm")
+            .args(&["--version"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+        let yarn_version = path_resolver::create_command("yarn")
+            .args(&["--version"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+        let git_version = path_resolver::create_command("git")
+            .args(&["--version"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+        let rust_version = path_resolver::create_command("rustc")
+            .args(&["--version"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+        // Check for tool managers
+        let volta_installed = path_resolver::create_command("volta")
+            .args(&["--version"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        let homebrew_installed = path_resolver::create_command("brew")
+            .args(&["--version"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        info["nodeVersion"] = serde_json::json!(node_version);
+        info["npmVersion"] = serde_json::json!(npm_version);
+        info["pnpmVersion"] = serde_json::json!(pnpm_version);
+        info["yarnVersion"] = serde_json::json!(yarn_version);
+        info["gitVersion"] = serde_json::json!(git_version);
+        info["rustVersion"] = serde_json::json!(rust_version);
+        info["voltaInstalled"] = serde_json::json!(volta_installed);
+        info["homebrewInstalled"] = serde_json::json!(homebrew_installed);
+
+        // Include PATH if requested
+        if params.include_paths {
+            let path_env = std::env::var("PATH").unwrap_or_default();
+            let paths: Vec<&str> = path_env.split(':').collect();
+            info["pathEntries"] = serde_json::json!(paths);
+        }
+
+        // Check project-specific toolchain if provided
+        if let Some(project_path) = params.project_path {
+            let path = PathBuf::from(&project_path);
+            if path.exists() {
+                let node_version_file = Self::get_node_version(&path);
+                info["projectToolchain"] = serde_json::json!({
+                    "nodeVersionFile": node_version_file,
+                    "path": project_path,
+                });
+            }
+        }
+
+        let json = serde_json::to_string_pretty(&info)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// List configured AI providers
+    #[tool(description = "List all configured AI providers including their status, default model, and whether they are enabled. Use this to help users select or switch providers.")]
+    async fn list_ai_providers(
+        &self,
+        Parameters(params): Parameters<ListAIProvidersParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = AIRepository::new(db);
+
+        let providers = repo.list_providers()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let filtered: Vec<_> = if params.enabled_only {
+            providers.into_iter().filter(|p| p.is_enabled).collect()
+        } else {
+            providers
+        };
+
+        // Find default provider
+        let default_id = filtered.iter()
+            .find(|p| p.is_default)
+            .map(|p| p.id.clone());
+
+        let provider_list: Vec<serde_json::Value> = filtered.iter().map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "name": p.name,
+                "provider": p.provider.to_string(),
+                "model": p.model,
+                "isDefault": p.is_default,
+                "isEnabled": p.is_enabled,
+            })
+        }).collect();
+
+        let response = serde_json::json!({
+            "providers": provider_list,
+            "defaultProviderId": default_id,
+            "total": provider_list.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Check if files exist within a project
+    #[tool(description = "Check if specified files or directories exist within a registered project. Use this to verify project structure before suggesting commands. IMPORTANT: Only works within registered projects for security.")]
+    async fn check_file_exists(
+        &self,
+        Parameters(params): Parameters<CheckFileExistsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let base_path = PathBuf::from(&params.project_path);
+
+        if !base_path.exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Project path does not exist: {}", params.project_path)
+            )]));
+        }
+
+        // Validate against registered projects
+        let store_data = read_store_data()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let is_registered = store_data.projects.iter()
+            .any(|p| p.path == params.project_path);
+
+        if !is_registered {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Project path is not registered in PackageFlow. Register the project first."
+            )]));
+        }
+
+        let mut results = serde_json::Map::new();
+        for relative_path in &params.paths {
+            // Prevent path traversal
+            if relative_path.contains("..") {
+                results.insert(relative_path.clone(), serde_json::json!({
+                    "exists": false,
+                    "error": "Path traversal not allowed"
+                }));
+                continue;
+            }
+
+            let full_path = base_path.join(relative_path);
+            if full_path.exists() {
+                let is_file = full_path.is_file();
+                let is_dir = full_path.is_dir();
+                results.insert(relative_path.clone(), serde_json::json!({
+                    "exists": true,
+                    "isFile": is_file,
+                    "isDirectory": is_dir
+                }));
+            } else {
+                results.insert(relative_path.clone(), serde_json::json!({
+                    "exists": false
+                }));
+            }
+        }
+
+        let response = serde_json::json!({
+            "projectPath": params.project_path,
+            "results": results
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// List past AI conversations
+    #[tool(description = "List past AI assistant conversations. Use this to help users find and resume previous conversations or to understand conversation history.")]
+    async fn list_conversations(
+        &self,
+        Parameters(params): Parameters<ListConversationsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = AIConversationRepository::new(db);
+
+        let limit = params.limit.min(100);
+        let response = repo.list_conversations(
+            params.project_path.as_deref(),
+            limit,
+            0,
+            "updated",
+        ).map_err(|e| McpError::internal_error(e, None))?;
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get recent notifications
+    #[tool(description = "Get recent notifications from PackageFlow including workflow executions, security alerts, and deployment status. Use this to provide users with updates on recent activity.")]
+    async fn get_notifications(
+        &self,
+        Parameters(params): Parameters<GetNotificationsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = NotificationRepository::new(db);
+
+        let limit = (params.limit as usize).min(100);
+        let response = repo.get_recent(limit, 0)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Filter by category if specified
+        let filtered_notifications: Vec<_> = if let Some(ref category) = params.category {
+            response.notifications.into_iter()
+                .filter(|n| n.category == *category)
+                .collect()
+        } else if params.unread_only {
+            response.notifications.into_iter()
+                .filter(|n| !n.is_read)
+                .collect()
+        } else {
+            response.notifications
+        };
+
+        let result = serde_json::json!({
+            "notifications": filtered_notifications,
+            "totalCount": response.total_count,
+            "unreadCount": response.unread_count
+        });
+
+        let json = serde_json::to_string_pretty(&result)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Mark notifications as read
+    #[tool(description = "Mark one or more notifications as read. Use this after presenting notifications to the user.")]
+    async fn mark_notifications_read(
+        &self,
+        Parameters(params): Parameters<MarkNotificationsReadParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = NotificationRepository::new(db);
+
+        let marked_count = if params.mark_all {
+            repo.mark_all_as_read()
+                .map_err(|e| McpError::internal_error(e, None))?
+        } else if let Some(ids) = params.notification_ids {
+            let mut count = 0u32;
+            for id in ids {
+                if repo.mark_as_read(&id).map_err(|e| McpError::internal_error(e, None))? {
+                    count += 1;
+                }
+            }
+            count
+        } else {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Provide either notification_ids or set mark_all to true"
+            )]));
+        };
+
+        let response = serde_json::json!({
+            "success": true,
+            "markedCount": marked_count
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get security scan results for a project
+    #[tool(description = "Get the latest security scan results for a project including vulnerability counts and severity levels. Use this to help users understand security status.")]
+    async fn get_security_scan_results(
+        &self,
+        Parameters(params): Parameters<GetSecurityScanResultsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // Verify project exists
+        let store_data = read_store_data()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let project = store_data.projects.iter()
+            .find(|p| p.path == params.project_path);
+
+        let project_id = match project {
+            Some(p) => p.id.clone(),
+            None => {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    format!("Project not found for path: {}. Register the project first.", params.project_path)
+                )]));
+            }
+        };
+
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = SecurityRepository::new(db);
+
+        let scan_data = repo.get(&project_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        match scan_data {
+            Some(data) => {
+                let response = serde_json::json!({
+                    "projectPath": params.project_path,
+                    "packageManager": format!("{:?}", data.package_manager).to_lowercase(),
+                    "lastScan": data.last_scan,
+                    "snoozeUntil": data.snooze_until,
+                    "scanHistory": data.scan_history.len()
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            None => {
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({
+                        "projectPath": params.project_path,
+                        "message": "No security scans found for this project",
+                        "lastScan": null
+                    }).to_string()
+                )]))
+            }
+        }
+    }
+
+    /// Run a security scan
+    #[tool(description = "Run a security vulnerability scan (npm audit / yarn audit / pnpm audit) for a project. Returns vulnerability summary. May take 10-30 seconds.")]
+    async fn run_security_scan(
+        &self,
+        Parameters(params): Parameters<RunSecurityScanParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let project_path = PathBuf::from(&params.project_path);
+
+        if !project_path.exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Project path does not exist: {}", params.project_path)
+            )]));
+        }
+
+        // Detect package manager using read_package_json
+        let (pm, _, _) = Self::read_package_json(&project_path);
+        let package_manager = pm.unwrap_or_else(|| "npm".to_string());
+
+        // Build audit command
+        let command = match package_manager.as_str() {
+            "pnpm" => if params.fix { "pnpm audit --fix" } else { "pnpm audit --json" },
+            "yarn" => if params.fix { "yarn audit --fix" } else { "yarn audit --json" },
+            _ => if params.fix { "npm audit fix" } else { "npm audit --json" },
+        };
+
+        // Use shell_command_async with 30 second timeout
+        let result = Self::shell_command_async(
+            &params.project_path,
+            command,
+            Some(30_000),
+        ).await;
+
+        match result {
+            Ok((exit_code, stdout, stderr)) => {
+                let output = if !stdout.is_empty() { stdout } else { stderr };
+                // Truncate output if too long
+                let truncated_output = if output.len() > 10000 {
+                    format!("{}...[truncated]", &output[..10000])
+                } else {
+                    output
+                };
+                let response = serde_json::json!({
+                    "success": exit_code == 0,
+                    "packageManager": package_manager,
+                    "fixAttempted": params.fix,
+                    "exitCode": exit_code,
+                    "output": truncated_output,
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => {
+                // Command failed to execute
+                let response = serde_json::json!({
+                    "success": false,
+                    "packageManager": package_manager,
+                    "error": sanitize_error(&e),
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+        }
+    }
+
+    /// List deployment history
+    #[tool(description = "List deployment history for a project including status, platform, and timestamps. Use this to help users track deployment status and history.")]
+    async fn list_deployments(
+        &self,
+        Parameters(params): Parameters<ListDeploymentsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = DeployRepository::new(db);
+
+        // Get project ID from path if provided
+        let project_id = if let Some(ref path) = params.project_path {
+            let store_data = read_store_data()
+                .map_err(|e| McpError::internal_error(e, None))?;
+
+            store_data.projects.iter()
+                .find(|p| p.path == *path)
+                .map(|p| p.id.clone())
+        } else {
+            None
+        };
+
+        let deployments = if let Some(ref id) = project_id {
+            repo.list_deployments(id)
+                .map_err(|e| McpError::internal_error(e, None))?
+        } else {
+            // If no project specified, return empty (or could list all)
+            Vec::new()
+        };
+
+        // Apply filters
+        let filtered: Vec<_> = deployments.into_iter()
+            .filter(|d| {
+                if let Some(ref platform) = params.platform {
+                    let d_platform = format!("{:?}", d.platform).to_lowercase();
+                    if !d_platform.contains(&platform.to_lowercase()) {
+                        return false;
+                    }
+                }
+                if let Some(ref status) = params.status {
+                    let d_status = format!("{:?}", d.status).to_lowercase();
+                    if !d_status.contains(&status.to_lowercase()) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .take(params.limit as usize)
+            .collect();
+
+        let response = serde_json::json!({
+            "deployments": filtered,
+            "total": filtered.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get project dependencies
+    #[tool(description = "Get project dependencies from package.json including versions and types. Use this to understand project requirements.")]
+    async fn get_project_dependencies(
+        &self,
+        Parameters(params): Parameters<GetProjectDependenciesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let project_path = PathBuf::from(&params.project_path);
+        let package_json_path = project_path.join("package.json");
+
+        if !package_json_path.exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("No package.json found at: {}", params.project_path)
+            )]));
+        }
+
+        let content = std::fs::read_to_string(&package_json_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to read package.json: {}", e), None))?;
+
+        let pkg: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| McpError::internal_error(format!("Failed to parse package.json: {}", e), None))?;
+
+        let mut response = serde_json::json!({
+            "projectPath": params.project_path,
+        });
+
+        if let Some(deps) = pkg.get("dependencies") {
+            response["dependencies"] = deps.clone();
+        }
+
+        if params.include_dev {
+            if let Some(dev_deps) = pkg.get("devDependencies") {
+                response["devDependencies"] = dev_deps.clone();
+            }
+        }
+
+        if params.include_peer {
+            if let Some(peer_deps) = pkg.get("peerDependencies") {
+                response["peerDependencies"] = peer_deps.clone();
+            }
+        }
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Update workflow properties
+    #[tool(description = "Update a workflow's name or description. Use list_workflows first to get the workflow_id. Does NOT modify workflow steps.")]
+    async fn update_workflow(
+        &self,
+        Parameters(params): Parameters<UpdateWorkflowParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut store_data = read_store_data()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Find workflow index to avoid borrow issues
+        let workflow_idx = store_data.workflows.iter()
+            .position(|w| w.id == params.workflow_id);
+
+        match workflow_idx {
+            Some(idx) => {
+                // Update workflow
+                if let Some(name) = params.name.clone() {
+                    store_data.workflows[idx].name = name;
+                }
+                if let Some(desc) = params.description.clone() {
+                    store_data.workflows[idx].description = Some(desc);
+                }
+                let updated_at = chrono::Utc::now().to_rfc3339();
+                store_data.workflows[idx].updated_at = updated_at.clone();
+
+                // Get values for response before write
+                let name = store_data.workflows[idx].name.clone();
+                let description = store_data.workflows[idx].description.clone();
+
+                write_store_data(&store_data)
+                    .map_err(|e| McpError::internal_error(e, None))?;
+
+                let response = serde_json::json!({
+                    "success": true,
+                    "workflowId": params.workflow_id,
+                    "name": name,
+                    "description": description,
+                    "updatedAt": updated_at
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            None => {
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Workflow not found: {}", params.workflow_id)
+                )]))
+            }
+        }
+    }
+
+    /// Delete a step from a workflow
+    #[tool(description = "Remove a step from a workflow. Use get_workflow first to see step IDs. This is a destructive operation.")]
+    async fn delete_workflow_step(
+        &self,
+        Parameters(params): Parameters<DeleteWorkflowStepParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut store_data = read_store_data()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Find workflow index to avoid borrow issues
+        let workflow_idx = store_data.workflows.iter()
+            .position(|w| w.id == params.workflow_id);
+
+        match workflow_idx {
+            Some(idx) => {
+                let original_len = store_data.workflows[idx].nodes.len();
+                store_data.workflows[idx].nodes.retain(|n| n.id != params.step_id);
+
+                if store_data.workflows[idx].nodes.len() == original_len {
+                    return Ok(CallToolResult::error(vec![Content::text(
+                        format!("Step not found: {} in workflow {}", params.step_id, params.workflow_id)
+                    )]));
+                }
+
+                store_data.workflows[idx].updated_at = chrono::Utc::now().to_rfc3339();
+
+                // Get remaining steps count before write
+                let remaining_steps = store_data.workflows[idx].nodes.len();
+
+                write_store_data(&store_data)
+                    .map_err(|e| McpError::internal_error(e, None))?;
+
+                let response = serde_json::json!({
+                    "success": true,
+                    "workflowId": params.workflow_id,
+                    "deletedStepId": params.step_id,
+                    "remainingSteps": remaining_steps
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            None => {
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Workflow not found: {}", params.workflow_id)
+                )]))
+            }
+        }
+    }
+
+    /// Get detailed execution logs for a workflow run
+    #[tool(description = "Get detailed execution logs for a specific workflow run including step-by-step output and timing. Use list_action_executions first to find execution IDs.")]
+    async fn get_workflow_execution_details(
+        &self,
+        Parameters(params): Parameters<GetWorkflowExecutionDetailsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = open_database()
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let repo = MCPActionRepository::new(db);
+
+        let execution = repo.get_execution(&params.execution_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        match execution {
+            Some(exec) => {
+                let mut response = serde_json::json!({
+                    "executionId": exec.id,
+                    "actionId": exec.action_id,
+                    "actionName": exec.action_name,
+                    "actionType": exec.action_type.to_string(),
+                    "status": exec.status.to_string(),
+                    "startedAt": exec.started_at,
+                    "completedAt": exec.completed_at,
+                    "durationMs": exec.duration_ms,
+                });
+
+                if params.include_output {
+                    if let Some(result) = exec.result {
+                        let result_str = serde_json::to_string(&result).unwrap_or_default();
+                        let truncated = if result_str.len() > params.truncate_output {
+                            format!("{}...[truncated]", &result_str[..params.truncate_output])
+                        } else {
+                            result_str
+                        };
+                        response["result"] = serde_json::json!(truncated);
+                    }
+                }
+
+                if let Some(err) = exec.error_message {
+                    response["error"] = serde_json::json!(sanitize_error(&err));
+                }
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            None => {
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Execution not found: {}", params.execution_id)
+                )]))
+            }
+        }
+    }
+
+    /// Search for files within a project
+    #[tool(description = "Search for files within a registered project by name pattern. Useful for finding configuration files or source files. Respects .gitignore patterns.")]
+    async fn search_project_files(
+        &self,
+        Parameters(params): Parameters<SearchProjectFilesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let base_path = PathBuf::from(&params.project_path);
+
+        if !base_path.exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Project path does not exist: {}", params.project_path)
+            )]));
+        }
+
+        // Verify project is registered
+        let store_data = read_store_data()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let is_registered = store_data.projects.iter()
+            .any(|p| p.path == params.project_path);
+
+        if !is_registered {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Project path is not registered in PackageFlow."
+            )]));
+        }
+
+        // Use glob to find files
+        let glob_pattern = format!("{}/{}", params.project_path, params.pattern);
+        let matches: Vec<String> = glob::glob(&glob_pattern)
+            .map_err(|e| McpError::internal_error(format!("Invalid pattern: {}", e), None))?
+            .filter_map(|r| r.ok())
+            .filter(|p| {
+                if params.include_directories {
+                    true
+                } else {
+                    p.is_file()
+                }
+            })
+            .take(params.max_results)
+            .filter_map(|p| p.strip_prefix(&base_path).ok().map(|r| r.to_string_lossy().to_string()))
+            .collect();
+
+        let response = serde_json::json!({
+            "projectPath": params.project_path,
+            "pattern": params.pattern,
+            "matches": matches,
+            "totalFound": matches.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Read file content from a project
+    #[tool(description = "Read the content of a file within a registered project. Limited to common configuration and source files. SECURITY: Excludes sensitive files (.env, credentials).")]
+    async fn read_project_file(
+        &self,
+        Parameters(params): Parameters<ReadProjectFileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // Prevent path traversal
+        if params.file_path.contains("..") {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Path traversal not allowed"
+            )]));
+        }
+
+        // Block sensitive files
+        let blocklist = [".env", "credentials", "secrets", ".key", ".pem", ".p12"];
+        let file_lower = params.file_path.to_lowercase();
+        for blocked in blocklist {
+            if file_lower.contains(blocked) {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    format!("Access to sensitive file blocked: {}", params.file_path)
+                )]));
+            }
+        }
+
+        let base_path = PathBuf::from(&params.project_path);
+        let full_path = base_path.join(&params.file_path);
+
+        if !full_path.exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("File not found: {}", params.file_path)
+            )]));
+        }
+
+        if !full_path.is_file() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Not a file: {}", params.file_path)
+            )]));
+        }
+
+        // Verify project is registered
+        let store_data = read_store_data()
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let is_registered = store_data.projects.iter()
+            .any(|p| p.path == params.project_path);
+
+        if !is_registered {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Project path is not registered in PackageFlow."
+            )]));
+        }
+
+        // Check file size (max 1MB)
+        let metadata = std::fs::metadata(&full_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to read metadata: {}", e), None))?;
+
+        if metadata.len() > 1_000_000 {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "File too large (max 1MB)"
+            )]));
+        }
+
+        // Read file content
+        let content = std::fs::read_to_string(&full_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to read file: {}", e), None))?;
+
+        // Apply line limits
+        let lines: Vec<&str> = content.lines().collect();
+        let start_idx = (params.start_line.saturating_sub(1)).min(lines.len());
+        let end_idx = (start_idx + params.max_lines).min(lines.len());
+        let selected_lines: Vec<&str> = lines[start_idx..end_idx].to_vec();
+
+        let response = serde_json::json!({
+            "projectPath": params.project_path,
+            "filePath": params.file_path,
+            "content": selected_lines.join("\n"),
+            "startLine": start_idx + 1,
+            "endLine": end_idx,
+            "totalLines": lines.len(),
+            "hasMore": end_idx < lines.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 }
 
 // Implement ServerHandler trait for the MCP server
@@ -3873,6 +4948,7 @@ MCP TOOLS:
   📁 PROJECT MANAGEMENT
     list_projects       List all registered projects with detailed info
     get_project         Get project details (scripts, workflows, git info)
+    get_project_dependencies Get dependencies from package.json
 
   🌳 GIT WORKTREE
     list_worktrees      List all git worktrees for a project
@@ -3884,7 +4960,10 @@ MCP TOOLS:
     get_workflow        Get detailed workflow info with all steps
     create_workflow     Create a new workflow
     add_workflow_step   Add a script step to a workflow
+    update_workflow     Update workflow name/description
+    delete_workflow_step Remove a step from a workflow
     run_workflow        Execute a workflow synchronously
+    get_workflow_execution_details Get execution logs
 
   📝 TEMPLATES
     list_step_templates List available step templates
@@ -3907,6 +4986,29 @@ MCP TOOLS:
     get_execution_status Get action execution status
     list_action_executions List recent action executions
     get_action_permissions Get permission configuration
+
+  🤖 AI ASSISTANT
+    list_ai_providers   List configured AI providers
+    list_conversations  List past AI conversations
+
+  🔔 NOTIFICATIONS
+    get_notifications   Get recent notifications
+    mark_notifications_read Mark notifications as read
+
+  🔒 SECURITY
+    get_security_scan_results Get vulnerability scan results
+    run_security_scan   Run npm/yarn/pnpm audit
+
+  🚀 DEPLOYMENTS
+    list_deployments    List deployment history
+
+  📂 FILE OPERATIONS
+    check_file_exists   Check if files exist in project
+    search_project_files Search files by pattern
+    read_project_file   Read file content (security-limited)
+
+  🛠️ SYSTEM
+    get_environment_info Get system tool versions and paths
 
 PERMISSION MODES:
     read_only           Only read operations allowed (default)
@@ -3937,18 +5039,27 @@ fn print_version() {
 fn list_tools_simple() {
     println!("PackageFlow MCP Tools:\n");
     let tools = [
+        // Project management
         ("list_projects", "List all registered projects with detailed info"),
         ("get_project", "Get project details (scripts, workflows, git info)"),
+        ("get_project_dependencies", "Get dependencies from package.json"),
+        // Git worktree
         ("list_worktrees", "List all git worktrees for a project"),
         ("get_worktree_status", "Get git status (branch, staged, modified, untracked)"),
         ("get_git_diff", "Get staged changes diff for commit messages"),
+        // Workflows
         ("list_workflows", "List all workflows, filter by project"),
         ("get_workflow", "Get detailed workflow info with all steps"),
         ("create_workflow", "Create a new workflow"),
         ("add_workflow_step", "Add a script step to a workflow"),
+        ("update_workflow", "Update workflow name/description"),
+        ("delete_workflow_step", "Remove a step from a workflow"),
         ("run_workflow", "Execute a workflow synchronously"),
+        ("get_workflow_execution_details", "Get execution logs"),
+        // Templates
         ("list_step_templates", "List available step templates"),
         ("create_step_template", "Create a reusable step template"),
+        // NPM scripts
         ("run_npm_script", "Run npm/yarn/pnpm scripts (supports background mode)"),
         // Background process tools
         ("get_background_process_output", "Get output from a background process"),
@@ -3962,6 +5073,23 @@ fn list_tools_simple() {
         ("get_execution_status", "Get action execution status"),
         ("list_action_executions", "List recent executions"),
         ("get_action_permissions", "Get permission configuration"),
+        // AI Assistant tools
+        ("list_ai_providers", "List configured AI providers"),
+        ("list_conversations", "List past AI conversations"),
+        // Notification tools
+        ("get_notifications", "Get recent notifications"),
+        ("mark_notifications_read", "Mark notifications as read"),
+        // Security tools
+        ("get_security_scan_results", "Get vulnerability scan results"),
+        ("run_security_scan", "Run npm/yarn/pnpm audit"),
+        // Deployment tools
+        ("list_deployments", "List deployment history"),
+        // File operation tools
+        ("check_file_exists", "Check if files exist in project"),
+        ("search_project_files", "Search files by pattern"),
+        ("read_project_file", "Read file content (security-limited)"),
+        // System tools
+        ("get_environment_info", "Get system tool versions and paths"),
     ];
 
     for (name, desc) in tools {
