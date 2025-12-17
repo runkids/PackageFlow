@@ -5,6 +5,7 @@ pub mod ai;
 pub mod ai_assistant;
 pub mod ai_cli;
 pub mod crypto;
+pub mod deploy;
 pub mod file_watcher;
 pub mod incoming_webhook;
 pub mod mcp_action;

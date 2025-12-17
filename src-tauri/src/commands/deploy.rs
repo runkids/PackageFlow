@@ -12,6 +12,7 @@ use crate::models::deploy::{
 use crate::repositories::DeployRepository;
 use crate::services::crypto;
 use crate::services::crypto::EncryptedData;
+use crate::services::deploy::{self as deploy_service, DeploymentProvider};
 use crate::services::notification::{send_notification, NotificationType};
 use crate::utils::database::Database;
 use crate::DatabaseState;
@@ -909,8 +910,36 @@ async fn execute_deployment(
             deploy_to_netlify(app, deployment_id, access_token, config, &full_build_path).await
         }
         PlatformType::CloudflarePages => {
-            deploy_to_cloudflare_pages(app, deployment_id, access_token, config, &full_build_path)
+            // Use the new CloudflareProvider from services::deploy
+            let internal_account_id = config
+                .account_id
+                .as_ref()
+                .ok_or("No deploy account is bound to this project")?;
+
+            let account = find_account_by_id_from_store(app, internal_account_id)?
+                .ok_or("Bound deploy account not found")?;
+
+            // Create provider with account's platform_user_id (Cloudflare Account ID)
+            let provider = deploy_service::create_provider(
+                PlatformType::CloudflarePages,
+                access_token.to_string(),
+                Some(account.platform_user_id.clone()),
+            )
+            .map_err(|e| e.to_string())?;
+
+            // Execute deployment
+            let result = provider
+                .deploy(app, deployment_id, config, &full_build_path)
                 .await
+                .map_err(|e| e.to_string())?;
+
+            Ok(DeployResult {
+                url: result.url,
+                deploy_id: result.provider_deploy_id.unwrap_or_default(),
+                site_name: Some(config.cloudflare_project_name.clone().unwrap_or_default()),
+                preview_url: result.alias_url,
+                ..Default::default()
+            })
         }
     }
 }
@@ -2536,445 +2565,9 @@ pub async fn add_cloudflare_account(
     Ok(new_account.sanitized())
 }
 
-/// Deploy to Cloudflare Pages using Direct Upload API
-/// This follows the multi-step process:
-/// 1. Create/verify project exists
-/// 2. Get JWT upload token
-/// 3. Check which files are missing
-/// 4. Upload missing files
-/// 5. Upsert all hashes
-/// 6. Create deployment with manifest
-async fn deploy_to_cloudflare_pages(
-    app: &AppHandle,
-    deployment_id: &str,
-    access_token: &str,
-    config: &DeploymentConfig,
-    build_path: &std::path::Path,
-) -> Result<DeployResult, String> {
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-
-    let client = reqwest::Client::new();
-
-    // Get the internal account UUID from the config
-    let internal_account_id = config
-        .account_id
-        .as_ref()
-        .ok_or("No deploy account is bound to this project")?;
-
-    // Find the correct account using repository
-    let account = find_account_by_id_from_store(app, internal_account_id)?
-        .ok_or("Bound deploy account not found")?;
-
-    // Get the REAL Cloudflare Account ID (the hex string)
-    let cf_account_id = &account.platform_user_id;
-
-    // Use configured project name or generate from project ID
-    let project_name = config
-        .cloudflare_project_name
-        .clone()
-        .unwrap_or_else(|| sanitize_site_name(&config.project_id));
-
-    // Emit deploying status
-    let _ = app.emit(
-        "deployment:status",
-        DeploymentStatusEvent {
-            deployment_id: deployment_id.to_string(),
-            status: DeploymentStatus::Deploying,
-            url: None,
-            error_message: None,
-        },
-    );
-
-    // Step 1: Create or verify project exists
-    let project_url = format!(
-        "{}/accounts/{}/pages/projects/{}",
-        CLOUDFLARE_API_BASE, cf_account_id, project_name
-    );
-
-    let project_check = client
-        .get(&project_url)
-        .bearer_auth(access_token)
-        .send()
-        .await;
-
-    // Create project if it doesn't exist
-    if let Ok(response) = project_check {
-        if response.status().as_u16() == 404 {
-            // Create new project
-            let create_url = format!(
-                "{}/accounts/{}/pages/projects",
-                CLOUDFLARE_API_BASE, cf_account_id
-            );
-
-            let create_payload = serde_json::json!({
-                "name": project_name,
-                "production_branch": "main"
-            });
-
-            let create_response = client
-                .post(&create_url)
-                .bearer_auth(access_token)
-                .json(&create_payload)
-                .send()
-                .await
-                .map_err(|e| format!("Failed to create Cloudflare Pages project: {}", e))?;
-
-            if !create_response.status().is_success() {
-                let error_text = create_response.text().await.unwrap_or_default();
-                return Err(format!(
-                    "Failed to create Cloudflare Pages project: {}",
-                    error_text
-                ));
-            }
-        }
-    }
-
-    // Step 2: Collect files for upload and build manifest
-    let files = collect_files_for_upload(build_path)?;
-
-    // Build file data with hashes and content types
-    struct FileData {
-        path: String,
-        hash: String,
-        content: Vec<u8>,
-        content_type: String,
-    }
-
-    let mut file_data_list: Vec<FileData> = Vec::new();
-    let mut manifest = serde_json::Map::new();
-
-    for (path, content) in files {
-        // Calculate hash for each file (SHA-256, first 32 hex chars)
-        let hash = calculate_sha256_short(&content);
-        // Cloudflare expects paths with leading slash
-        let manifest_path = if path.starts_with('/') {
-            path.clone()
-        } else {
-            format!("/{}", path)
-        };
-
-        // Determine content type based on file extension
-        let content_type = get_mime_type(&path);
-
-        manifest.insert(
-            manifest_path.clone(),
-            serde_json::Value::String(hash.clone()),
-        );
-        file_data_list.push(FileData {
-            path: manifest_path,
-            hash,
-            content,
-            content_type,
-        });
-    }
-
-    log::info!(
-        "Cloudflare Pages: {} files to process",
-        file_data_list.len()
-    );
-
-    // Step 3: Get JWT upload token
-    let jwt_url = format!(
-        "{}/accounts/{}/pages/projects/{}/upload-token",
-        CLOUDFLARE_API_BASE, cf_account_id, project_name
-    );
-
-    let jwt_response = client
-        .get(&jwt_url)
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get upload token: {}", e))?;
-
-    if !jwt_response.status().is_success() {
-        let error_text = jwt_response.text().await.unwrap_or_default();
-        return Err(format!("Failed to get upload token: {}", error_text));
-    }
-
-    let jwt_data: serde_json::Value = jwt_response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse upload token response: {}", e))?;
-
-    let upload_jwt = jwt_data["result"]["jwt"]
-        .as_str()
-        .ok_or("No JWT in upload token response")?
-        .to_string();
-
-    log::info!("Cloudflare Pages: Got upload JWT token");
-
-    // Step 4: Check which files are missing
-    let all_hashes: Vec<String> = file_data_list.iter().map(|f| f.hash.clone()).collect();
-
-    let check_missing_url = format!("{}/pages/assets/check-missing", CLOUDFLARE_API_BASE);
-    let check_missing_response = client
-        .post(&check_missing_url)
-        .bearer_auth(&upload_jwt)
-        .json(&serde_json::json!({ "hashes": all_hashes }))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to check missing files: {}", e))?;
-
-    if !check_missing_response.status().is_success() {
-        let error_text = check_missing_response.text().await.unwrap_or_default();
-        return Err(format!("Failed to check missing files: {}", error_text));
-    }
-
-    let missing_data: serde_json::Value = check_missing_response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse check-missing response: {}", e))?;
-
-    let missing_hashes: std::collections::HashSet<String> = missing_data["result"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    log::info!(
-        "Cloudflare Pages: {} files missing, need to upload",
-        missing_hashes.len()
-    );
-
-    // Step 5: Upload missing files
-    if !missing_hashes.is_empty() {
-        let upload_url = format!("{}/pages/assets/upload", CLOUDFLARE_API_BASE);
-
-        // Upload files in batches
-        let files_to_upload: Vec<&FileData> = file_data_list
-            .iter()
-            .filter(|f| missing_hashes.contains(&f.hash))
-            .collect();
-
-        // Upload in batches of 100 files
-        for chunk in files_to_upload.chunks(100) {
-            let upload_payload: Vec<serde_json::Value> = chunk
-                .iter()
-                .map(|f| {
-                    serde_json::json!({
-                        "key": f.hash,
-                        "value": BASE64.encode(&f.content),
-                        "metadata": { "contentType": f.content_type },
-                        "base64": true
-                    })
-                })
-                .collect();
-
-            let upload_response = client
-                .post(&upload_url)
-                .bearer_auth(&upload_jwt)
-                .json(&upload_payload)
-                .send()
-                .await
-                .map_err(|e| format!("Failed to upload files: {}", e))?;
-
-            if !upload_response.status().is_success() {
-                let error_text = upload_response.text().await.unwrap_or_default();
-                return Err(format!("Failed to upload files: {}", error_text));
-            }
-
-            log::info!("Cloudflare Pages: Uploaded batch of {} files", chunk.len());
-        }
-    }
-
-    // Step 6: Upsert all hashes to register them
-    let upsert_url = format!("{}/pages/assets/upsert-hashes", CLOUDFLARE_API_BASE);
-    let upsert_response = client
-        .post(&upsert_url)
-        .bearer_auth(&upload_jwt)
-        .json(&serde_json::json!({ "hashes": all_hashes }))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to upsert hashes: {}", e))?;
-
-    if !upsert_response.status().is_success() {
-        let error_text = upsert_response.text().await.unwrap_or_default();
-        return Err(format!("Failed to upsert hashes: {}", error_text));
-    }
-
-    log::info!("Cloudflare Pages: All hashes registered");
-
-    // Step 7: Create deployment with manifest
-    let deploy_url = format!(
-        "{}/accounts/{}/pages/projects/{}/deployments",
-        CLOUDFLARE_API_BASE, cf_account_id, project_name
-    );
-
-    // Build multipart form for deployment
-    let manifest_json = serde_json::Value::Object(manifest).to_string();
-    let form = reqwest::multipart::Form::new()
-        .text("manifest", manifest_json)
-        .text("branch", "main");
-
-    let deploy_response = client
-        .post(&deploy_url)
-        .bearer_auth(access_token)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| format!("Cloudflare deployment failed: {}", e))?;
-
-    if !deploy_response.status().is_success() {
-        let error_text = deploy_response.text().await.unwrap_or_default();
-        return Err(format!("Cloudflare deployment failed: {}", error_text));
-    }
-
-    let deploy_data: serde_json::Value = deploy_response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse deployment response: {}", e))?;
-
-    // Extract deployment info
-    let cf_deploy_id = deploy_data["result"]["id"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-
-    log::info!(
-        "Cloudflare Pages: Deployment created with ID {}",
-        cf_deploy_id
-    );
-
-    // Step 8: Poll for deployment completion
-    poll_cloudflare_deployment(
-        app,
-        deployment_id,
-        access_token,
-        cf_account_id,
-        &project_name,
-        &cf_deploy_id,
-    )
-    .await
-}
-
-/// Get MIME type from file extension
-fn get_mime_type(path: &str) -> String {
-    let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
-    match ext.as_str() {
-        "html" | "htm" => "text/html",
-        "css" => "text/css",
-        "js" | "mjs" => "application/javascript",
-        "json" => "application/json",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "svg" => "image/svg+xml",
-        "ico" => "image/x-icon",
-        "woff" => "font/woff",
-        "woff2" => "font/woff2",
-        "ttf" => "font/ttf",
-        "eot" => "application/vnd.ms-fontobject",
-        "xml" => "application/xml",
-        "txt" => "text/plain",
-        "pdf" => "application/pdf",
-        "webp" => "image/webp",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "mp3" => "audio/mpeg",
-        "wav" => "audio/wav",
-        "wasm" => "application/wasm",
-        _ => "application/octet-stream",
-    }
-    .to_string()
-}
-
-/// Poll Cloudflare deployment status
-async fn poll_cloudflare_deployment(
-    app: &AppHandle,
-    deployment_id: &str,
-    access_token: &str,
-    account_id: &str,
-    project_name: &str,
-    cf_deploy_id: &str,
-) -> Result<DeployResult, String> {
-    let client = reqwest::Client::new();
-    let status_url = format!(
-        "{}/accounts/{}/pages/projects/{}/deployments/{}",
-        CLOUDFLARE_API_BASE, account_id, project_name, cf_deploy_id
-    );
-
-    for _ in 0..60 {
-        // Max 5 minutes polling
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-        let response = client
-            .get(&status_url)
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to check deployment status: {}", e))?;
-
-        if !response.status().is_success() {
-            continue;
-        }
-
-        let status: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse status response: {}", e))?;
-
-        let stage = status["result"]["latest_stage"]["name"]
-            .as_str()
-            .unwrap_or("");
-        let stage_status = status["result"]["latest_stage"]["status"]
-            .as_str()
-            .unwrap_or("");
-
-        match (stage, stage_status) {
-            (_, "success") if stage == "deploy" => {
-                // Deployment complete
-                let deploy_url = status["result"]["url"].as_str().unwrap_or("").to_string();
-
-                return Ok(DeployResult {
-                    url: deploy_url,
-                    deploy_id: cf_deploy_id.to_string(),
-                    site_name: Some(project_name.to_string()),
-                    preview_url: status["result"]["aliases"]
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    ..Default::default()
-                });
-            }
-            (_, "failure") => {
-                let message = status["result"]["latest_stage"]["message"]
-                    .as_str()
-                    .unwrap_or("Deployment failed")
-                    .to_string();
-                return Err(message);
-            }
-            ("build", _) => {
-                let _ = app.emit(
-                    "deployment:status",
-                    DeploymentStatusEvent {
-                        deployment_id: deployment_id.to_string(),
-                        status: DeploymentStatus::Building,
-                        url: None,
-                        error_message: None,
-                    },
-                );
-            }
-            ("deploy", _) => {
-                let _ = app.emit(
-                    "deployment:status",
-                    DeploymentStatusEvent {
-                        deployment_id: deployment_id.to_string(),
-                        status: DeploymentStatus::Deploying,
-                        url: None,
-                        error_message: None,
-                    },
-                );
-            }
-            _ => {}
-        }
-    }
-
-    Err("Cloudflare deployment timed out".to_string())
-}
+// Legacy Cloudflare deployment functions removed (2024-12)
+// Now using services::deploy::cloudflare::CloudflareProvider
+// Removed: deploy_to_cloudflare_pages, get_mime_type, poll_cloudflare_deployment
 
 /// Check if an account is in use by any projects
 #[tauri::command]
