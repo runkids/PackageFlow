@@ -220,4 +220,5 @@ export type {
   FrequentUpdater,
   HealthFactor,
   DependencyHealth,
+  SnapshotCapturedEvent,
 } from './snapshot';

@@ -12,7 +12,9 @@ import { TriggerWorkflowPanel } from './TriggerWorkflowPanel';
 import { TemplateSelector } from './TemplateSelector';
 import { TerminalOutput } from '../terminal/TerminalOutput';
 import { ExecutionHistoryPanel } from './ExecutionHistoryPanel';
+import { TimeMachineSidePanel } from '../time-machine/TimeMachineSidePanel';
 import { useWorkflow } from '../../hooks/useWorkflow';
+import { useSnapshots } from '../../hooks/useSnapshots';
 import { useTerminal, useExecutionListener } from '../../hooks/useTerminal';
 import { useExecutionHistoryContext } from '../../contexts/ExecutionHistoryContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -411,10 +413,18 @@ export function WorkflowEditor({
   const [nodeToSaveAsTemplate, setNodeToSaveAsTemplate] = useState<string | null>(null);
   const [isWebhookDialogOpen, setIsWebhookDialogOpen] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [isTimeMachinePanelOpen, setIsTimeMachinePanelOpen] = useState(false);
 
   // Execution history
   const { getHistory, refreshHistory } = useExecutionHistoryContext();
   const historyCount = workflow ? getHistory(workflow.id).length : 0;
+
+  // Time Machine (Feature 025)
+  const { snapshots } = useSnapshots({
+    workflowId: workflow?.id,
+    autoLoad: true,
+  });
+  const snapshotCount = snapshots.length;
 
   // Track execution completion to refresh history count
   const lastFinishedAtRef = useRef<string | null>(null);
@@ -869,6 +879,9 @@ export function WorkflowEditor({
             hasIncomingWebhook={!!workflow.incomingWebhook?.enabled}
             onHistory={() => setIsHistoryPanelOpen(true)}
             historyCount={historyCount}
+            onTimeMachine={() => setIsTimeMachinePanelOpen(true)}
+            snapshotCount={snapshotCount}
+            hasProject={!!defaultCwd}
           />
         </div>
 
@@ -1000,6 +1013,14 @@ export function WorkflowEditor({
           workflowName={workflow.name}
           isOpen={isHistoryPanelOpen}
           onClose={() => setIsHistoryPanelOpen(false)}
+        />
+
+        <TimeMachineSidePanel
+          workflowId={workflow.id}
+          workflowName={workflow.name}
+          projectPath={defaultCwd}
+          isOpen={isTimeMachinePanelOpen}
+          onClose={() => setIsTimeMachinePanelOpen(false)}
         />
       </div>
     </ReactFlowProvider>

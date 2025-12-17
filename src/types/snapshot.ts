@@ -242,3 +242,18 @@ export interface DependencyHealth {
   healthScore: number;
   factors: HealthFactor[];
 }
+
+// =========================================================================
+// Event Types
+// =========================================================================
+
+export interface SnapshotCapturedEvent {
+  workflowId: string;
+  executionId: string;
+  snapshotId: string;
+  status: 'completed' | 'failed';
+  totalDependencies: number;
+  securityScore: number | null;
+  capturedAt: string;
+  errorMessage: string | null;
+}

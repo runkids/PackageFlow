@@ -14,6 +14,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
 use crate::commands::monorepo::get_volta_wrapped_command;
+use crate::models::snapshot::CreateSnapshotRequest;
 use crate::models::webhook::{
     WebhookConfig, WebhookDeliveryPayload, WebhookTrigger, DEFAULT_PAYLOAD_TEMPLATE,
 };
@@ -23,6 +24,7 @@ use crate::services::crypto;
 use crate::services::notification::{
     send_notification, send_webhook_notification, NotificationType, WebhookNotificationType,
 };
+use crate::services::snapshot::{SnapshotCaptureService, SnapshotStorage};
 use crate::utils::database::Database;
 use crate::utils::path_resolver;
 use crate::DatabaseState;
@@ -457,10 +459,12 @@ pub async fn execute_workflow_internal(
 
     // Feature 013: Create execution context with pre-loaded data
     // T043: Initialize execution_chain with the starting workflow ID
+    // Feature 025: Include database for snapshot capture
     let ctx = WorkflowExecutionContext {
         workflows: workflow_repo.list()?,
         projects: project_repo.list()?,
         execution_chain: vec![workflow_id.clone()],
+        db: db.clone(),
     };
 
     // Clone for async task
@@ -936,6 +940,19 @@ async fn execute_workflow_nodes_with_context(
                 });
             }
         }
+
+        // Feature 025: Capture snapshot after successful execution
+        // Only capture if workflow has an associated project (has lockfile)
+        if let Some(ref project_path) = default_cwd {
+            capture_execution_snapshot(
+                app.clone(),
+                ctx.db.clone(),
+                wf_id.clone(),
+                execution_id.clone(),
+                project_path.clone(),
+                duration_ms,
+            );
+        }
     }
 
     // Remove from running executions
@@ -1076,12 +1093,15 @@ async fn execute_trigger_workflow_node(
 /// Internal context for workflow execution (Feature 013)
 /// Pre-loaded data to avoid accessing store from spawned tasks
 /// Feature 013 T043: Added execution_chain for runtime cycle detection
+/// Feature 025: Added database for snapshot capture
 #[derive(Clone)]
 struct WorkflowExecutionContext {
     workflows: Vec<Workflow>,
     projects: Vec<Project>,
     /// Chain of workflow IDs being executed (for runtime cycle detection)
     execution_chain: Vec<String>,
+    /// Database for snapshot capture (Feature 025)
+    db: Database,
 }
 
 /// Internal function to execute a child workflow (Feature 013)
@@ -1727,12 +1747,15 @@ pub async fn continue_execution(
 
     // Load context from database
     // T043: Initialize execution_chain with the continuing workflow ID
-    let workflow_repo = WorkflowRepository::new(db.0.as_ref().clone());
-    let project_repo = ProjectRepository::new(db.0.as_ref().clone());
+    // Feature 025: Include database for snapshot capture
+    let db_clone = db.0.as_ref().clone();
+    let workflow_repo = WorkflowRepository::new(db_clone.clone());
+    let project_repo = ProjectRepository::new(db_clone.clone());
     let ctx = WorkflowExecutionContext {
         workflows: workflow_repo.list()?,
         projects: project_repo.list()?,
         execution_chain: vec![workflow_id],
+        db: db_clone,
     };
 
     // Get project path if workflow is associated with a project
@@ -2472,4 +2495,98 @@ pub async fn update_execution_history_settings(
     let settings_repo = SettingsRepository::new(db.0.as_ref().clone());
     settings_repo.set(EXECUTION_HISTORY_SETTINGS_KEY, &settings)?;
     Ok(())
+}
+
+// ============================================================================
+// Time Machine - Snapshot Capture (Feature 025)
+// ============================================================================
+
+/// Snapshot capture event payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotCapturedPayload {
+    pub workflow_id: String,
+    pub execution_id: String,
+    pub snapshot_id: String,
+    pub status: String,
+    pub total_dependencies: i32,
+    pub security_score: Option<i32>,
+    pub captured_at: String,
+    pub error_message: Option<String>,
+}
+
+/// Capture a snapshot after workflow execution (fire-and-forget)
+/// This function runs in the background and emits events for UI updates
+fn capture_execution_snapshot(
+    app: AppHandle,
+    db: Database,
+    workflow_id: String,
+    execution_id: String,
+    project_path: String,
+    duration_ms: u64,
+) {
+    tauri::async_runtime::spawn(async move {
+        println!(
+            "[snapshot] Capturing snapshot for workflow {} execution {}",
+            workflow_id, execution_id
+        );
+
+        // Get app data directory for snapshot storage
+        let storage_base = match app.path().app_data_dir() {
+            Ok(path) => path.join("snapshots"),
+            Err(e) => {
+                log::error!("[snapshot] Failed to get app data dir: {}", e);
+                return;
+            }
+        };
+
+        let storage = SnapshotStorage::new(storage_base);
+        let capture_service = SnapshotCaptureService::new(storage, db);
+
+        let request = CreateSnapshotRequest {
+            workflow_id: workflow_id.clone(),
+            execution_id: execution_id.clone(),
+            project_path: project_path.clone(),
+        };
+
+        match capture_service.capture_snapshot(&request, Some(duration_ms as i64)) {
+            Ok(snapshot) => {
+                println!(
+                    "[snapshot] Snapshot captured successfully: {} ({} deps, score: {:?})",
+                    snapshot.id, snapshot.total_dependencies, snapshot.security_score
+                );
+
+                let _ = app.emit(
+                    "snapshot_captured",
+                    SnapshotCapturedPayload {
+                        workflow_id,
+                        execution_id,
+                        snapshot_id: snapshot.id,
+                        status: "completed".to_string(),
+                        total_dependencies: snapshot.total_dependencies,
+                        security_score: snapshot.security_score,
+                        captured_at: snapshot.created_at,
+                        error_message: None,
+                    },
+                );
+            }
+            Err(e) => {
+                log::warn!("[snapshot] Failed to capture snapshot: {}", e);
+
+                let _ = app.emit(
+                    "snapshot_captured",
+                    SnapshotCapturedPayload {
+                        workflow_id,
+                        execution_id,
+                        snapshot_id: String::new(),
+                        status: "failed".to_string(),
+                        total_dependencies: 0,
+                        security_score: None,
+                        captured_at: Utc::now().to_rfc3339(),
+                        error_message: Some(e),
+                    },
+                );
+            }
+        }
+    });
 }
