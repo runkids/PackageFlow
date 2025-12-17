@@ -11,10 +11,11 @@
     "build:tauri": "tauri build --bundles dmg",
     "build:mcp": "cargo build --manifest-path src-tauri/Cargo.toml --bin packageflow-mcp",
     "build:mcp:release": "cargo build --manifest-path src-tauri/Cargo.toml --release --bin packageflow-mcp",
-    "prebuild:tauri": "pnpm build:mcp:release",
+    "prebuild:tauri": "pnpm test:mcp && pnpm build:mcp:release",
     "predev:tauri": "pkill -f packageflow-mcp || true; pnpm build:mcp",
     "preview": "vite preview",
     "tauri": "tauri",
+    "test:mcp": "cargo test --manifest-path src-tauri/Cargo.toml --bin packageflow-mcp mcp_tests",
     "clean": "cargo clean --manifest-path src-tauri/Cargo.toml",
     "kill": "lsof -ti:1420 | xargs kill -9"
   },

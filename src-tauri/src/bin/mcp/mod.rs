@@ -38,3 +38,7 @@ pub use background::{
     CircularBuffer, BackgroundProcessState, BACKGROUND_PROCESS_MANAGER,
     CLEANUP_INTERVAL_SECS,
 };
+
+// Test module (only compiled in test builds)
+#[cfg(test)]
+mod mcp_tests;
