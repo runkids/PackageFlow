@@ -6,7 +6,15 @@ Visual npm audit with vulnerability details and one-click fixes.
 
 PackageFlow integrates npm audit to help you identify and fix security vulnerabilities in your dependencies.
 
-<!-- TODO: Add screenshot of security audit panel -->
+<p align="center">
+  <img src="../screenshots/security.png" width="900" alt="Security audit dashboard" />
+</p>
+
+<p align="center">
+  <img src="../screenshots/security-analysis.png" width="900" alt="AI security analysis" />
+</p>
+
+<!-- TODO: Add gif of running a security scan and reviewing results. -->
 
 ## Running a Scan
 

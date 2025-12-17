@@ -6,7 +6,11 @@ Turn your npm scripts into clickable buttons with live terminal output.
 
 Every script in your `package.json` becomes a clickable card in PackageFlow. No more typing commands — just click and watch.
 
-<!-- TODO: Add screenshot of script cards -->
+<p align="center">
+  <img src="../screenshots/scripts.png" width="900" alt="Script cards" />
+</p>
+
+<!-- TODO: Add a short gif of clicking a script card and watching output. -->
 
 ## Running Scripts
 

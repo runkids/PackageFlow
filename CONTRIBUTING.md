@@ -44,8 +44,11 @@ cd PackageFlow
 # Install dependencies
 pnpm install
 
-# Start development server
-pnpm tauri dev
+# Start Vite (web UI)
+pnpm dev
+
+# Start the desktop app (Tauri)
+pnpm dev:tauri
 ```
 
 ### Project Structure

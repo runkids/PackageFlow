@@ -82,12 +82,15 @@ AI 可以無需確認執行任何操作：
 | 工具 | 說明 | 風險等級 |
 |------|------|----------|
 | `list_projects` | 列出所有專案 | 低 |
-| `get_project_details` | 取得專案資訊 | 低 |
-| `list_workflows` | 列出工作流程 | 低 |
-| `execute_workflow` | 執行工作流程 | 中 |
-| `run_script` | 執行 npm 腳本 | 中 |
-| `execute_command` | 執行 shell 指令 | 高 |
-| `trigger_webhook` | 觸發 webhook | 中 |
+| `get_project` | 取得專案詳情（scripts、workflows、git） | 低 |
+| `read_project_file` | 讀取檔案內容（有安全限制） | 中 |
+| `run_npm_script` | 執行 package.json script | 中 |
+| `run_workflow` | 執行工作流程 | 中 |
+| `run_package_manager_command` | 安裝/更新/稽核/新增/移除依賴 | 中 |
+| `run_security_scan` | 執行安全稽核（可選擇自動修復） | 中 |
+| `trigger_webhook` | 觸發已設定的 webhook action | 中 |
+
+> 提醒：PackageFlow 的 MCP 設計上會避免「任意 shell 執行」的預設暴露，建議優先使用 `run_npm_script` / `run_workflow` / `run_package_manager_command` 等高階工具。
 
 ### 自訂工具存取
 
@@ -136,37 +139,19 @@ PackageFlow 偵測並整合：
 
 ## MCP 工具參考
 
-### 專案工具
+PackageFlow 透過 `packageflow-mcp` 提供多個工具給 AI 呼叫。工具清單會隨版本調整，建議以 App 內的 **Settings → MCP → Tool Permissions** 為準。
 
-| 工具 | 參數 | 回傳 |
-|------|------|------|
-| `list_projects` | 無 | 專案陣列 |
-| `get_project_details` | `project_id` | 專案詳情 |
-| `scan_project` | `path` | 新專案 |
+常見工具（節錄）：
 
-### 工作流程工具
+| 工具 | 用途 |
+|------|------|
+| `list_projects` | 列出已註冊的專案 |
+| `get_project` | 取得專案詳情（scripts、workflows、git） |
+| `run_npm_script` | 執行 npm/yarn/pnpm script |
+| `run_workflow` | 執行工作流程 |
+| `read_project_file` | 讀取檔案內容（有安全限制） |
 
-| 工具 | 參數 | 回傳 |
-|------|------|------|
-| `list_workflows` | 無 | 工作流程陣列 |
-| `execute_workflow` | `workflow_id` | 執行結果 |
-| `get_workflow_status` | `execution_id` | 狀態 |
-
-### 腳本工具
-
-| 工具 | 參數 | 回傳 |
-|------|------|------|
-| `list_scripts` | `project_id` | 腳本陣列 |
-| `run_script` | `project_id`、`script_name` | 執行結果 |
-| `stop_script` | `execution_id` | 成功狀態 |
-
-### 部署工具
-
-| 工具 | 參數 | 回傳 |
-|------|------|------|
-| `list_deploy_accounts` | 無 | 帳戶陣列 |
-| `deploy` | `project_id`、`account_id` | 部署結果 |
-| `get_deploy_status` | `deploy_id` | 狀態 |
+完整工具與參數請參考：`docs/features/mcp-server.md`（英文）或 App 內的工具清單。
 
 ## 日誌與監控
 

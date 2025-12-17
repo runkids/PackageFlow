@@ -12,7 +12,11 @@ The Git panel provides a complete interface for common Git operations:
 - Diff viewing
 - Stash operations
 
-<!-- TODO: Add screenshot of Git panel overview -->
+<p align="center">
+  <img src="../screenshots/git.png" width="900" alt="Git panel" />
+</p>
+
+<!-- TODO: Add a close-up screenshot showing staged/modified/untracked sections. -->
 
 ## Git Status View
 

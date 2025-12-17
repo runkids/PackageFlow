@@ -16,7 +16,11 @@ You can have multiple branches open simultaneously.
 
 PackageFlow makes worktrees visual and easy to manage:
 
-<!-- TODO: Add screenshot of worktree list -->
+<p align="center">
+  <img src="../screenshots/worktree.png" width="900" alt="Worktree list" />
+</p>
+
+<!-- TODO: Add a gif of the Cmd+K quick switcher in action. -->
 
 ## Viewing Worktrees
 

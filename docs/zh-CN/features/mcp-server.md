@@ -82,12 +82,15 @@ AI 可以无需确认运行任何操作：
 | 工具 | 说明 | 风险等级 |
 |------|------|----------|
 | `list_projects` | 列出所有项目 | 低 |
-| `get_project_details` | 获取项目信息 | 低 |
-| `list_workflows` | 列出工作流 | 低 |
-| `execute_workflow` | 运行工作流 | 中 |
-| `run_script` | 运行 npm 脚本 | 中 |
-| `execute_command` | 运行 shell 命令 | 高 |
-| `trigger_webhook` | 触发 webhook | 中 |
+| `get_project` | 获取项目详情（scripts、workflows、git） | 低 |
+| `read_project_file` | 读取文件内容（有安全限制） | 中 |
+| `run_npm_script` | 运行 package.json script | 中 |
+| `run_workflow` | 运行工作流 | 中 |
+| `run_package_manager_command` | 安装/更新/审计/新增/移除依赖 | 中 |
+| `run_security_scan` | 运行安全审计（可选自动修复） | 中 |
+| `trigger_webhook` | 触发已配置的 webhook action | 中 |
+
+> 提示：PackageFlow 的 MCP 设计上会避免默认暴露「任意 shell 执行」，建议优先使用 `run_npm_script` / `run_workflow` / `run_package_manager_command` 等高阶工具。
 
 ### 自定义工具访问
 
@@ -136,37 +139,19 @@ PackageFlow 检测并集成：
 
 ## MCP 工具参考
 
-### 项目工具
+PackageFlow 通过 `packageflow-mcp` 提供多个工具供 AI 调用。工具清单会随版本调整，建议以 App 内的 **Settings → MCP → Tool Permissions** 为准。
 
-| 工具 | 参数 | 返回 |
-|------|------|------|
-| `list_projects` | 无 | 项目数组 |
-| `get_project_details` | `project_id` | 项目详情 |
-| `scan_project` | `path` | 新项目 |
+常用工具（节选）：
 
-### 工作流工具
+| 工具 | 用途 |
+|------|------|
+| `list_projects` | 列出已注册的项目 |
+| `get_project` | 获取项目详情（scripts、workflows、git） |
+| `run_npm_script` | 运行 npm/yarn/pnpm script |
+| `run_workflow` | 运行工作流 |
+| `read_project_file` | 读取文件内容（有安全限制） |
 
-| 工具 | 参数 | 返回 |
-|------|------|------|
-| `list_workflows` | 无 | 工作流数组 |
-| `execute_workflow` | `workflow_id` | 运行结果 |
-| `get_workflow_status` | `execution_id` | 状态 |
-
-### 脚本工具
-
-| 工具 | 参数 | 返回 |
-|------|------|------|
-| `list_scripts` | `project_id` | 脚本数组 |
-| `run_script` | `project_id`、`script_name` | 运行结果 |
-| `stop_script` | `execution_id` | 成功状态 |
-
-### 部署工具
-
-| 工具 | 参数 | 返回 |
-|------|------|------|
-| `list_deploy_accounts` | 无 | 账户数组 |
-| `deploy` | `project_id`、`account_id` | 部署结果 |
-| `get_deploy_status` | `deploy_id` | 状态 |
+完整工具与参数请参考：`docs/features/mcp-server.md`（英文）或 App 内的工具清单。
 
 ## 日志与监控
 

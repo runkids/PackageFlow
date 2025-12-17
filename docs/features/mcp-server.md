@@ -33,6 +33,8 @@ The MCP server uses **stdio transport** (no network port required). PackageFlow 
 
 Tip: In the same panel, PackageFlow shows the resolved `packageflow-mcp` path and provides config snippets for common MCP clients.
 
+<!-- TODO: Add screenshot of the MCP Integration settings panel (path + JSON/TOML snippets). -->
+
 ## Client Setup (Copy/Paste)
 
 ### Claude Code / VS Code (JSON)
@@ -123,12 +125,15 @@ Fine-grained control over individual tools:
 | Tool | Description | Risk Level |
 |------|-------------|------------|
 | `list_projects` | List all projects | Low |
-| `get_project_details` | Get project info | Low |
-| `list_workflows` | List workflows | Low |
-| `execute_workflow` | Run a workflow | Medium |
-| `run_script` | Run npm script | Medium |
-| `execute_command` | Run shell command | High |
-| `trigger_webhook` | Trigger webhook | Medium |
+| `get_project` | Get project details (scripts, workflows, git info) | Low |
+| `read_project_file` | Read file content (security-limited) | Medium |
+| `run_npm_script` | Run a package.json script | Medium |
+| `run_workflow` | Run a workflow | Medium |
+| `run_package_manager_command` | Install/update/audit/add/remove deps | Medium |
+| `run_security_scan` | Run an audit scan (optional auto-fix) | Medium |
+| `trigger_webhook` | Trigger a configured webhook action | Medium |
+
+> Note: PackageFlow’s MCP server is designed to avoid “arbitrary shell execution” by default. Prefer higher-level tools like `run_npm_script`, `run_workflow`, and `run_package_manager_command`.
 
 ### Customizing Tool Access
 

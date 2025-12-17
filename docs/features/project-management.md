@@ -8,7 +8,11 @@ PackageFlow automatically detects and manages your JavaScript/TypeScript project
 
 The quickest way to add a project is to drag a folder into PackageFlow.
 
-<!-- TODO: Add gif of drag and drop import -->
+<p align="center">
+  <img src="../screenshots/screenshot001.png" width="900" alt="Projects list and script cards" />
+</p>
+
+<!-- TODO: Add gif of drag-and-drop import. -->
 
 ### Import Button
 

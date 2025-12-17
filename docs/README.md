@@ -8,6 +8,8 @@ Welcome to the PackageFlow documentation! This guide will help you get the most 
 
 - [Getting Started](./getting-started.md) - Install, import a project, run your first script
 - [MCP Server](./features/mcp-server.md) - Let AI tools control PackageFlow safely
+- [Security & Privacy](./security-and-privacy.md) - Local-first storage, encryption, permissions
+- [Troubleshooting](./troubleshooting.md) - Common issues and fixes
 - [Feature Guides](#features) - Deep dives for each feature area
 
 ## What is PackageFlow?

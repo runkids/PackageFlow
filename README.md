@@ -30,6 +30,7 @@
   <a href="https://github.com/runkids/PackageFlow/releases"><strong>📥 Download</strong></a> •
   <a href="#-features"><strong>✨ Features</strong></a> •
   <a href="#-ai--mcp-integration"><strong>🤖 AI & MCP</strong></a> •
+  <a href="#-documentation"><strong>📚 Docs</strong></a> •
   <a href="#-screenshots"><strong>📸 Screenshots</strong></a> •
   <a href="#-faq"><strong>❓ FAQ</strong></a>
 </p>
@@ -44,6 +45,8 @@
 <p align="center">
   <img src="docs/screenshots/deploy-demo.gif" width="720" alt="PackageFlow Hero" />
 </p>
+
+<!-- TODO: Add a 20–40s product demo video link (YouTube/X) and/or a thumbnail image here. -->
 
 ---
 
@@ -81,6 +84,14 @@ Or [download directly](https://github.com/runkids/PackageFlow/releases) → Drag
 2. Click a script card like `dev` / `build` / `test`
 3. Create a workflow for your repetitive tasks (dev → test → deploy)
 4. (Optional) Enable MCP so your AI tool can run actions for you
+
+### Common Use Cases
+
+- One-click “dev / build / test” across many repos
+- Worktree switching without losing context
+- Repeatable release pipelines (test → build → deploy)
+- Fast security audits with AI explanations
+- “AI as teammate” via MCP tool calls (safe + permissioned)
 
 ---
 
@@ -183,6 +194,8 @@ In PackageFlow, open **Settings → MCP → MCP Integration** and copy the gener
 
 Then your AI tool can call actions like `list_projects`, `run_npm_script`, `run_workflow`, and more.
 
+<!-- TODO: Add screenshot of Settings → MCP → MCP Integration (showing JSON/TOML copy buttons). -->
+
 ### AI CLI Integration
 
 Run AI commands directly from PackageFlow:
@@ -198,6 +211,16 @@ AI: Analyzing 3 high-severity vulnerabilities...
 - Fine-grained tool permissions
 - Complete request logging
 
+### Security & Privacy (Local-First)
+
+PackageFlow is designed to keep your projects and secrets on your machine.
+
+- Data stays local; AI features are opt-in
+- Keys/tokens encrypted at rest
+- MCP is permissioned (read → confirm → full)
+
+Read more: [Security & Privacy](./docs/security-and-privacy.md)
+
 ---
 
 ## 📚 Documentation
@@ -208,6 +231,8 @@ AI: Analyzing 3 high-severity vulnerabilities...
 | Feature | Description |
 |---------|-------------|
 | [Getting Started](./docs/getting-started.md) | Installation and first steps |
+| [Security & Privacy](./docs/security-and-privacy.md) | Local-first storage and permissions |
+| [Troubleshooting](./docs/troubleshooting.md) | Common issues and fixes |
 | [Project Management](./docs/features/project-management.md) | Import and manage projects |
 | [One-Click Scripts](./docs/features/one-click-scripts.md) | Run npm scripts with live terminal |
 | [Visual Workflow](./docs/features/visual-workflow.md) | Drag-and-drop automation |
@@ -233,6 +258,13 @@ AI: Analyzing 3 high-severity vulnerabilities...
 <summary><strong>🎯 Projects + Scripts</strong></summary>
 <br/>
 <img src="docs/screenshots/screenshot001.png" width="800" alt="Projects and Scripts" />
+</details>
+
+<details>
+<summary><strong>🌳 Worktrees</strong></summary>
+<br/>
+<img src="docs/screenshots/worktree.png" width="800" alt="Worktree Management" />
+<!-- TODO: Add a short gif of Cmd+K quick switcher for worktrees. -->
 </details>
 
 <details>

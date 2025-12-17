@@ -6,6 +6,10 @@ Complete reference for all keyboard shortcuts in PackageFlow.
 
 PackageFlow is designed for keyboard-first workflows. Learn these shortcuts to navigate faster.
 
+<p align="center">
+  <img src="../screenshots/screenshot012.png" width="900" alt="Keyboard shortcuts" />
+</p>
+
 ## Quick Reference
 
 ### Global Shortcuts

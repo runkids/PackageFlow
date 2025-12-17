@@ -11,7 +11,11 @@ PackageFlow integrates with popular hosting platforms, enabling:
 - Environment variable management
 - Multi-account support
 
-<!-- TODO: Add screenshot of deploy panel -->
+<p align="center">
+  <img src="../screenshots/deploy-demo.gif" width="900" alt="One-click deploy demo" />
+</p>
+
+<!-- TODO: Add screenshot of Deploy panel (accounts + config + logs). -->
 
 ## Supported Platforms
 

@@ -11,7 +11,11 @@ Visual Workflow lets you create multi-step automation without writing scripts. P
 - Release processes
 - Daily development routines
 
-<!-- TODO: Add screenshot of workflow editor -->
+<p align="center">
+  <img src="../screenshots/screenshot009.png" width="900" alt="Workflow editor" />
+</p>
+
+<!-- TODO: Add a short gif of dragging nodes and connecting edges. -->
 
 ## Creating a Workflow
 
