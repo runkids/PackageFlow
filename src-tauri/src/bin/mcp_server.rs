@@ -66,7 +66,7 @@ use packageflow_lib::models::mcp_action::{
 use packageflow_lib::services::mcp_action::create_executor;
 use rusqlite::params;
 
-// Import shared store utilities (for validation, rate limiting, etc.)
+// Import shared store utilities (for validation, etc.)
 use packageflow_lib::utils::shared_store::{
     // Path utilities
     get_app_data_dir,
@@ -77,12 +77,10 @@ use packageflow_lib::utils::shared_store::{
     MAX_NAME_LENGTH, MAX_DESCRIPTION_LENGTH,
     // Output sanitization
     sanitize_output,
-    // Rate limiting
-    RateLimiter,
 };
 
 // Import MCP types from models
-use packageflow_lib::models::mcp::{MCPPermissionMode, MCPServerConfig};
+use packageflow_lib::models::mcp::MCPServerConfig;
 
 // Import path_resolver for proper command execution on macOS GUI apps
 use packageflow_lib::utils::path_resolver;
