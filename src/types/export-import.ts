@@ -5,7 +5,8 @@
 
 import type { Project, Workflow, AppSettings } from './index';
 import type { WorktreeTemplate, CustomStepTemplate, McpServerConfig, DeploymentConfig } from '../lib/tauri-api';
-import type { AIProviderConfig, PromptTemplate } from './ai';
+import type { AIProviderConfig, PromptTemplate, CLIToolConfig } from './ai';
+import type { MCPAction, MCPActionPermission } from './mcp-action';
 
 export type DataType =
   | 'projects'
@@ -18,7 +19,10 @@ export type DataType =
   | 'mcpConfig'
   | 'deployAccounts'
   | 'deployPreferences'
-  | 'deploymentConfigs';
+  | 'deploymentConfigs'
+  | 'cliTools'
+  | 'mcpActions'
+  | 'mcpActionPermissions';
 
 /** Deploy account data for export (without sensitive tokens) */
 export interface ExportDeployAccount {
@@ -67,8 +71,13 @@ export interface ExportData {
     aiProviders?: AIProviderConfig[];
     aiTemplates?: PromptTemplate[];
     projectAiSettings?: ExportProjectAISettings[];
+    // AI CLI Tools (020-ai-cli-integration)
+    cliTools?: CLIToolConfig[];
     // MCP Configuration
     mcpConfig?: McpServerConfig;
+    // MCP Actions (021-mcp-actions)
+    mcpActions?: MCPAction[];
+    mcpActionPermissions?: MCPActionPermission[];
     // Deploy Integration (without tokens)
     deployAccounts?: ExportDeployAccount[];
     deployPreferences?: ExportDeployPreferences;
@@ -93,8 +102,13 @@ export interface ExportCounts {
   aiProviders: number;
   aiTemplates: number;
   projectAiSettings: number;
+  // AI CLI Tools
+  cliTools: number;
   // MCP
   hasMcpConfig: boolean;
+  // MCP Actions
+  mcpActions: number;
+  mcpActionPermissions: number;
   // Deploy
   deployAccounts: number;
   hasDeployPreferences: boolean;
@@ -157,6 +171,9 @@ export interface ImportSummaryItem {
   stepTemplates: number;
   aiProviders: number;
   aiTemplates: number;
+  cliTools: number;
+  mcpActions: number;
+  mcpActionPermissions: number;
   deployAccounts: number;
   deploymentConfigs: number;
 }

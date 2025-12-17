@@ -157,6 +157,18 @@ const ExportSuccess: React.FC<ExportSuccessProps> = ({ result }) => (
             {result.counts?.stepTemplates ?? 0}
           </span>
         </div>
+        <div className="flex items-center justify-between rounded bg-muted px-3 py-2">
+          <span className="text-sm text-foreground">CLI Tools</span>
+          <span className="text-sm font-medium text-purple-400">
+            {result.counts?.cliTools ?? 0}
+          </span>
+        </div>
+        <div className="flex items-center justify-between rounded bg-muted px-3 py-2">
+          <span className="text-sm text-foreground">MCP Actions</span>
+          <span className="text-sm font-medium text-green-400">
+            {result.counts?.mcpActions ?? 0}
+          </span>
+        </div>
         <div className="flex items-center justify-between rounded bg-muted px-3 py-2 col-span-2">
           <span className="text-sm text-foreground">Settings</span>
           <span className="text-sm font-medium text-orange-400">

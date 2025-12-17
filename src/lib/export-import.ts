@@ -15,7 +15,9 @@ import {
   incomingWebhookAPI,
   shortcutsAPI,
   aiAPI,
+  aiCLIAPI,
   mcpAPI,
+  mcpActionAPI,
   deployAPI,
 } from './tauri-api';
 import type {
@@ -46,7 +48,7 @@ import {
   STEP_FILE_EXTENSION,
 } from '../types/export-import';
 import type { Workflow, WorkflowNode } from '../types/workflow';
-import type { AIProviderConfig, PromptTemplate } from '../types/ai';
+import type { AIProviderConfig, PromptTemplate, CLIToolConfig } from '../types/ai';
 import type { DeploymentConfig } from './tauri-api';
 
 // ============================================================================
@@ -208,8 +210,13 @@ export async function exportAllData(): Promise<ExportResult> {
       // AI Integration data
       aiProvidersRes,
       aiTemplatesRes,
+      // AI CLI Tools
+      cliToolsRes,
       // MCP config
       mcpConfig,
+      // MCP Actions
+      mcpActions,
+      mcpActionPermissions,
       // Deploy data (accounts without tokens, preferences)
       deployAccounts,
       deployPreferences,
@@ -224,8 +231,13 @@ export async function exportAllData(): Promise<ExportResult> {
       // AI
       aiAPI.listServices(),
       aiAPI.listTemplates(),
+      // AI CLI Tools
+      aiCLIAPI.listTools(),
       // MCP
       mcpAPI.getConfig(),
+      // MCP Actions
+      mcpActionAPI.listActions(),
+      mcpActionAPI.listPermissions(),
       // Deploy
       deployAPI.getDeployAccounts(),
       deployAPI.getDeployPreferences(),
@@ -237,6 +249,13 @@ export async function exportAllData(): Promise<ExportResult> {
     // Extract AI data from response wrappers
     const aiProviders: AIProviderConfig[] = aiProvidersRes.data ?? [];
     const aiTemplates: PromptTemplate[] = aiTemplatesRes.data ?? [];
+
+    // Extract CLI tools from response (without api_key_provider_id references for security)
+    const cliTools: CLIToolConfig[] = (cliToolsRes.data ?? []).map((tool) => ({
+      ...tool,
+      // Don't export api_key_provider_id as it references local provider IDs
+      apiKeyProviderId: undefined,
+    }));
 
     // Load project-specific AI settings for each project
     const projectAiSettings: ExportProjectAISettings[] = [];
@@ -312,8 +331,13 @@ export async function exportAllData(): Promise<ExportResult> {
         aiProviders,
         aiTemplates,
         projectAiSettings,
+        // AI CLI Tools
+        cliTools,
         // MCP
         mcpConfig,
+        // MCP Actions
+        mcpActions,
+        mcpActionPermissions,
         // Deploy (without sensitive tokens)
         deployAccounts: exportDeployAccounts,
         deployPreferences: exportDeployPreferences,
@@ -338,7 +362,10 @@ export async function exportAllData(): Promise<ExportResult> {
       aiProviders: aiProviders.length,
       aiTemplates: aiTemplates.length,
       projectAiSettings: projectAiSettings.length,
+      cliTools: cliTools.length,
       hasMcpConfig: true,
+      mcpActions: mcpActions.length,
+      mcpActionPermissions: mcpActionPermissions.length,
       deployAccounts: exportDeployAccounts.length,
       hasDeployPreferences: true,
       deploymentConfigs: deploymentConfigs.length,
@@ -421,8 +448,13 @@ export async function selectImportFile(): Promise<ImportFileResult> {
       aiProviders: data.data.aiProviders?.length ?? 0,
       aiTemplates: data.data.aiTemplates?.length ?? 0,
       projectAiSettings: data.data.projectAiSettings?.length ?? 0,
+      // AI CLI Tools
+      cliTools: data.data.cliTools?.length ?? 0,
       // MCP
       hasMcpConfig: !!data.data.mcpConfig,
+      // MCP Actions
+      mcpActions: data.data.mcpActions?.length ?? 0,
+      mcpActionPermissions: data.data.mcpActionPermissions?.length ?? 0,
       // Deploy
       deployAccounts: data.data.deployAccounts?.length ?? 0,
       hasDeployPreferences: !!data.data.deployPreferences,
@@ -464,6 +496,9 @@ export async function executeImport(
     stepTemplates: 0,
     aiProviders: 0,
     aiTemplates: 0,
+    cliTools: 0,
+    mcpActions: 0,
+    mcpActionPermissions: 0,
     deployAccounts: 0,
     deploymentConfigs: 0,
   });
@@ -595,10 +630,62 @@ export async function executeImport(
         summary.imported.projectAiSettings = importData.data.projectAiSettings.length;
       }
 
+      // Import CLI Tools (replace mode)
+      if (importData.data.cliTools) {
+        // Delete existing CLI tools first
+        const existingToolsRes = await aiCLIAPI.listTools();
+        for (const tool of existingToolsRes.data ?? []) {
+          await aiCLIAPI.deleteTool(tool.id);
+        }
+        // Add imported tools
+        for (const tool of importData.data.cliTools) {
+          await aiCLIAPI.saveTool(tool);
+        }
+        summary.imported.cliTools = importData.data.cliTools.length;
+      }
+
       // Import MCP Config (replace mode)
       if (importData.data.mcpConfig) {
         await mcpAPI.saveConfig(importData.data.mcpConfig);
         summary.imported.mcpConfig = true;
+      }
+
+      // Import MCP Actions (replace mode)
+      if (importData.data.mcpActions) {
+        // Delete existing MCP actions first
+        const existingActions = await mcpActionAPI.listActions();
+        for (const action of existingActions) {
+          await mcpActionAPI.deleteAction(action.id);
+        }
+        // Add imported actions
+        for (const action of importData.data.mcpActions) {
+          await mcpActionAPI.createAction(
+            action.actionType,
+            action.name,
+            action.description ?? null,
+            action.config as unknown as Record<string, unknown>,
+            action.projectId
+          );
+        }
+        summary.imported.mcpActions = importData.data.mcpActions.length;
+      }
+
+      // Import MCP Action Permissions (replace mode)
+      if (importData.data.mcpActionPermissions) {
+        // Delete existing permissions first
+        const existingPermissions = await mcpActionAPI.listPermissions();
+        for (const permission of existingPermissions) {
+          await mcpActionAPI.deletePermission(permission.id);
+        }
+        // Add imported permissions
+        for (const permission of importData.data.mcpActionPermissions) {
+          await mcpActionAPI.updatePermission(
+            permission.actionId ?? null,
+            permission.actionType ?? null,
+            permission.permissionLevel
+          );
+        }
+        summary.imported.mcpActionPermissions = importData.data.mcpActionPermissions.length;
       }
 
       // Import Deploy Preferences (replace mode)
@@ -764,10 +851,65 @@ export async function executeImport(
       }
     }
 
+    // Import CLI Tools (merge mode - add new ones only)
+    if (importData.data.cliTools) {
+      const existingToolsRes = await aiCLIAPI.listTools();
+      const existingIds = new Set((existingToolsRes.data ?? []).map((t) => t.id));
+
+      for (const tool of importData.data.cliTools) {
+        if (!existingIds.has(tool.id)) {
+          await aiCLIAPI.saveTool(tool);
+          summary.imported.cliTools++;
+        } else {
+          summary.skipped.cliTools++;
+        }
+      }
+    }
+
     // Import MCP Config (merge mode - always overwrite)
     if (importData.data.mcpConfig) {
       await mcpAPI.saveConfig(importData.data.mcpConfig);
       summary.imported.mcpConfig = true;
+    }
+
+    // Import MCP Actions (merge mode - add new ones only)
+    if (importData.data.mcpActions) {
+      const existingActions = await mcpActionAPI.listActions();
+      const existingIds = new Set(existingActions.map((a) => a.id));
+
+      for (const action of importData.data.mcpActions) {
+        if (!existingIds.has(action.id)) {
+          await mcpActionAPI.createAction(
+            action.actionType,
+            action.name,
+            action.description ?? null,
+            action.config as unknown as Record<string, unknown>,
+            action.projectId
+          );
+          summary.imported.mcpActions++;
+        } else {
+          summary.skipped.mcpActions++;
+        }
+      }
+    }
+
+    // Import MCP Action Permissions (merge mode - add new ones only)
+    if (importData.data.mcpActionPermissions) {
+      const existingPermissions = await mcpActionAPI.listPermissions();
+      const existingIds = new Set(existingPermissions.map((p) => p.id));
+
+      for (const permission of importData.data.mcpActionPermissions) {
+        if (!existingIds.has(permission.id)) {
+          await mcpActionAPI.updatePermission(
+            permission.actionId ?? null,
+            permission.actionType ?? null,
+            permission.permissionLevel
+          );
+          summary.imported.mcpActionPermissions++;
+        } else {
+          summary.skipped.mcpActionPermissions++;
+        }
+      }
     }
 
     // Import Deploy Preferences (merge mode - always overwrite)

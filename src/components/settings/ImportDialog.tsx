@@ -22,6 +22,9 @@ import {
   ArrowLeft,
   Zap,
   X,
+  Terminal,
+  Play,
+  Shield,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
@@ -229,10 +232,28 @@ const PreviewStepBody: React.FC<PreviewStepBodyProps> = ({
       color: 'cyan',
     },
     {
+      label: 'CLI Tools',
+      count: preview.counts.cliTools,
+      icon: Terminal,
+      color: 'purple',
+    },
+    {
+      label: 'MCP Actions',
+      count: preview.counts.mcpActions,
+      icon: Play,
+      color: 'green',
+    },
+    {
+      label: 'MCP Permissions',
+      count: preview.counts.mcpActionPermissions,
+      icon: Shield,
+      color: 'orange',
+    },
+    {
       label: 'Settings',
       count: preview.counts.hasSettings ? 1 : 0,
       icon: Settings,
-      color: 'orange',
+      color: 'cyan',
       showAs: preview.counts.hasSettings ? 'Included' : 'Not included',
     },
   ];
