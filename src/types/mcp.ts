@@ -515,7 +515,6 @@ export const TOOL_DEFINITIONS_WITH_PERMISSIONS: ToolDefinitionWithPermissions[] 
   // MCP Actions - Execute tools (021-mcp-actions)
   { name: 'run_script', description: 'Execute a script action', category: 'execute', applicablePermissions: ['read', 'execute'] },
   { name: 'trigger_webhook', description: 'Trigger a webhook action', category: 'execute', applicablePermissions: ['read', 'execute'] },
-  { name: 'run_mcp_workflow', description: 'Execute a workflow via MCP action', category: 'execute', applicablePermissions: ['read', 'execute'] },
   { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script (supports background mode)', category: 'execute', applicablePermissions: ['read', 'execute'] },
   { name: 'run_package_manager_command', description: 'Run package manager commands (install, update, add, remove)', category: 'execute', applicablePermissions: ['read', 'execute'] },
 

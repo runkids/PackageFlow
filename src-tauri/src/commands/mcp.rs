@@ -102,6 +102,99 @@ command = "{}""#,
     })
 }
 
+/// Health check result for MCP server
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpHealthCheckResult {
+    /// Whether the health check passed
+    pub is_healthy: bool,
+    /// Server version (if available)
+    pub version: Option<String>,
+    /// Response time in milliseconds
+    pub response_time_ms: u64,
+    /// Error message (if any)
+    pub error: Option<String>,
+    /// Binary path that was tested
+    pub binary_path: String,
+    /// Environment type
+    pub env_type: String,
+}
+
+/// Test MCP server health by running --version
+///
+/// This command executes the MCP server binary with --version flag
+/// to verify it's working correctly.
+#[tauri::command]
+pub async fn test_mcp_connection(app: AppHandle) -> Result<McpHealthCheckResult, String> {
+    use std::time::Instant;
+
+    // Get server info first
+    let server_info = get_mcp_server_info(app)?;
+
+    if !server_info.is_available {
+        return Ok(McpHealthCheckResult {
+            is_healthy: false,
+            version: None,
+            response_time_ms: 0,
+            error: Some("MCP server binary not found".to_string()),
+            binary_path: server_info.binary_path,
+            env_type: server_info.env_type,
+        });
+    }
+
+    // Execute --version and measure time
+    let start = Instant::now();
+    let output = tokio::process::Command::new(&server_info.binary_path)
+        .arg("--version")
+        .output()
+        .await;
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                let version_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                // Parse version from output (format: "packageflow-mcp v0.1.0")
+                let version = version_output
+                    .split_whitespace()
+                    .last()
+                    .map(|v| v.trim_start_matches('v').to_string());
+
+                Ok(McpHealthCheckResult {
+                    is_healthy: true,
+                    version,
+                    response_time_ms: elapsed,
+                    error: None,
+                    binary_path: server_info.binary_path,
+                    env_type: server_info.env_type,
+                })
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                Ok(McpHealthCheckResult {
+                    is_healthy: false,
+                    version: None,
+                    response_time_ms: elapsed,
+                    error: Some(if stderr.is_empty() {
+                        format!("Process exited with code: {:?}", output.status.code())
+                    } else {
+                        stderr
+                    }),
+                    binary_path: server_info.binary_path,
+                    env_type: server_info.env_type,
+                })
+            }
+        }
+        Err(e) => Ok(McpHealthCheckResult {
+            is_healthy: false,
+            version: None,
+            response_time_ms: elapsed,
+            error: Some(format!("Failed to execute: {}", e)),
+            binary_path: server_info.binary_path,
+            env_type: server_info.env_type,
+        }),
+    }
+}
+
 /// Get available MCP tools (for display in UI)
 #[tauri::command]
 pub fn get_mcp_tools() -> Vec<McpToolInfo> {

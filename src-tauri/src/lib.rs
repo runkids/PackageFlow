@@ -361,6 +361,7 @@ pub fn run() {
             ai_cli::ai_cli_clear_history,
             // MCP Server Integration
             mcp::get_mcp_server_info,
+            mcp::test_mcp_connection,
             mcp::get_mcp_tools,
             mcp::get_mcp_config,
             mcp::save_mcp_config,

@@ -38,6 +38,7 @@ import {
   type McpServerInfo,
   type McpServerConfig,
   type McpLogsResponse,
+  type McpHealthCheckResult,
 } from '../../../lib/tauri-api';
 import type { DevServerMode } from '../../../types/mcp';
 import { cn } from '../../../lib/utils';
@@ -47,6 +48,7 @@ import { Progress } from '../../ui/Progress';
 import { GradientDivider } from '../../ui/GradientDivider';
 import {
   ServerStatusCard,
+  type HealthCheckStatus,
   PermissionQuickModeSelector,
   QuickSetupSection,
   MCPActionSettings,
@@ -1192,6 +1194,10 @@ export function McpSettingsFullPanel() {
   const [logsResponse, setLogsResponse] = useState<McpLogsResponse | null>(null);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
+  // Health check state
+  const [healthCheckStatus, setHealthCheckStatus] = useState<HealthCheckStatus>('idle');
+  const [healthCheckResult, setHealthCheckResult] = useState<McpHealthCheckResult | null>(null);
+
   // Build tool permission entries from matrix
   const toolEntries = useMemo<ToolPermissionEntry[]>(() => {
     return buildToolPermissionEntries(permissionMatrix);
@@ -1370,6 +1376,39 @@ export function McpSettingsFullPanel() {
     }
   }, []);
 
+  // Test MCP connection
+  const handleTestConnection = useCallback(async () => {
+    setHealthCheckStatus('testing');
+    setHealthCheckResult(null);
+
+    try {
+      const result = await mcpAPI.testConnection();
+      setHealthCheckResult(result);
+      setHealthCheckStatus(result.isHealthy ? 'success' : 'error');
+
+      // Reset to idle after 5 seconds
+      setTimeout(() => {
+        setHealthCheckStatus('idle');
+      }, 5000);
+    } catch (err) {
+      console.error('Failed to test MCP connection:', err);
+      setHealthCheckStatus('error');
+      setHealthCheckResult({
+        isHealthy: false,
+        version: null,
+        responseTimeMs: 0,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        binaryPath: serverInfo?.binary_path || '',
+        envType: serverInfo?.env_type || '',
+      });
+
+      // Reset to idle after 5 seconds
+      setTimeout(() => {
+        setHealthCheckStatus('idle');
+      }, 5000);
+    }
+  }, [serverInfo]);
+
   // Render header component for reuse
   const renderHeader = () => (
     <div>
@@ -1427,6 +1466,9 @@ export function McpSettingsFullPanel() {
             binaryPath={serverInfo.binary_path}
             onToggleEnabled={handleToggleEnabled}
             isSaving={isSaving}
+            onTestConnection={handleTestConnection}
+            healthCheckStatus={healthCheckStatus}
+            healthCheckResult={healthCheckResult}
           />
         )}
       </div>

@@ -2465,10 +2465,30 @@ export interface McpLogsResponse {
   totalCount: number;
 }
 
+/** MCP health check result */
+export interface McpHealthCheckResult {
+  /** Whether the health check passed */
+  isHealthy: boolean;
+  /** Server version (if available) */
+  version: string | null;
+  /** Response time in milliseconds */
+  responseTimeMs: number;
+  /** Error message (if any) */
+  error: string | null;
+  /** Binary path that was tested */
+  binaryPath: string;
+  /** Environment type */
+  envType: string;
+}
+
 export const mcpAPI = {
   /** Get MCP server information including binary path and config */
   getServerInfo: (): Promise<McpServerInfo> =>
     invoke<McpServerInfo>('get_mcp_server_info'),
+
+  /** Test MCP server health by running --version */
+  testConnection: (): Promise<McpHealthCheckResult> =>
+    invoke<McpHealthCheckResult>('test_mcp_connection'),
 
   /** Get available MCP tools */
   getTools: (): Promise<McpToolInfo[]> =>

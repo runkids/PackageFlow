@@ -4,9 +4,9 @@
   "version": "0.2.1",
   "identifier": "com.packageflow.PackageFlow-macOS",
   "build": {
-    "beforeDevCommand": "pnpm dev && pkill -f packageflow-mcp || true && cargo build --release --bin packageflow-mcp",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build && pkill -f packageflow-mcp || true && cargo build --release --bin packageflow-mcp",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
   "app": {

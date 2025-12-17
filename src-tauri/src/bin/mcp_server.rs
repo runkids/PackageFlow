@@ -3151,6 +3151,7 @@ impl ServerHandler for PackageFlowMcp {
             }
 
             // Validate path parameters in arguments
+            // Support both snake_case and camelCase (for tools with serde rename_all = "camelCase")
             if let Some(path) = arguments.get("path").and_then(|v| v.as_str()) {
                 if let Err(e) = validate_path(path) {
                     let error_msg = format!("Invalid path: {}", e);
@@ -3160,7 +3161,11 @@ impl ServerHandler for PackageFlowMcp {
                     return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
                 }
             }
-            if let Some(path) = arguments.get("project_path").and_then(|v| v.as_str()) {
+            // Check both snake_case (project_path) and camelCase (projectPath)
+            let project_path_value = arguments.get("project_path")
+                .or_else(|| arguments.get("projectPath"))
+                .and_then(|v| v.as_str());
+            if let Some(path) = project_path_value {
                 if let Err(e) = validate_path(path) {
                     let error_msg = format!("Invalid project_path: {}", e);
                     if config.log_requests {
@@ -3169,7 +3174,11 @@ impl ServerHandler for PackageFlowMcp {
                     return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
                 }
             }
-            if let Some(path) = arguments.get("worktree_path").and_then(|v| v.as_str()) {
+            // Check both snake_case (worktree_path) and camelCase (worktreePath)
+            let worktree_path_value = arguments.get("worktree_path")
+                .or_else(|| arguments.get("worktreePath"))
+                .and_then(|v| v.as_str());
+            if let Some(path) = worktree_path_value {
                 if let Err(e) = validate_path(path) {
                     let error_msg = format!("Invalid worktree_path: {}", e);
                     if config.log_requests {
@@ -3391,6 +3400,7 @@ fn list_tools_simple() {
         ("create_step_template", "Create a reusable step template"),
         // NPM scripts
         ("run_npm_script", "Run npm/yarn/pnpm scripts (supports background mode)"),
+        ("run_package_manager_command", "Run package manager commands (install, update, etc.)"),
         // Background process tools
         ("get_background_process_output", "Get output from a background process"),
         ("stop_background_process", "Stop/terminate a background process"),
@@ -3455,8 +3465,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Kill other packageflow-mcp instances to avoid conflicts
+    // This ensures only one instance runs at a time
+    let current_pid = std::process::id();
+    #[cfg(unix)]
+    {
+        use std::process::Command;
+        // Find and kill other instances (excluding self)
+        if let Ok(output) = Command::new("pgrep").arg("-f").arg("packageflow-mcp").output() {
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids.lines() {
+                if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                    if pid != current_pid {
+                        eprintln!("[MCP Server] Killing stale instance (PID: {})", pid);
+                        let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+                    }
+                }
+            }
+        }
+    }
+
     // Debug: Log startup info
-    eprintln!("[MCP Server] Starting PackageFlow MCP Server (PID: {})...", std::process::id());
+    eprintln!("[MCP Server] Starting PackageFlow MCP Server (PID: {})...", current_pid);
 
     // Debug: Check database at startup
     match read_store_data() {

@@ -37,7 +37,7 @@ pub fn get_tool_category(tool_name: &str) -> ToolCategory {
         // Enhanced MCP tools - Write
         "update_workflow" | "delete_workflow_step" | "mark_notifications_read" => ToolCategory::Write,
         // Execute tools (including MCP action execution and background process control)
-        "run_workflow" | "run_script" | "trigger_webhook" | "run_mcp_workflow" | "run_npm_script" |
+        "run_workflow" | "run_script" | "trigger_webhook" | "run_npm_script" |
         "run_package_manager_command" | "stop_background_process" |
         // Enhanced MCP tools - Execute
         "run_security_scan" => ToolCategory::Execute,

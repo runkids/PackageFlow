@@ -289,19 +289,6 @@ pub struct TriggerWebhookParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct RunMcpWorkflowParams {
-    /// Action ID of the workflow action to execute
-    pub action_id: String,
-    /// Parameter overrides for the workflow
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<HashMap<String, serde_json::Value>>,
-    /// Whether to wait for workflow completion
-    #[serde(default)]
-    pub wait_for_completion: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct GetExecutionStatusParams {
     /// Execution ID to check
     pub execution_id: String,

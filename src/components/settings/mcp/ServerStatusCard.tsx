@@ -6,9 +6,13 @@
  */
 
 import React from 'react';
-import { Server, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Server, CheckCircle2, XCircle, Loader2, Activity } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { Toggle } from '../../ui/Toggle';
+import type { McpHealthCheckResult } from '../../../lib/tauri-api';
+
+/** Health check status for display */
+export type HealthCheckStatus = 'idle' | 'testing' | 'success' | 'error';
 
 interface ServerStatusCardProps {
   /** Whether the server is enabled */
@@ -25,6 +29,12 @@ interface ServerStatusCardProps {
   onToggleEnabled: (enabled: boolean) => void;
   /** Whether a save operation is in progress */
   isSaving?: boolean;
+  /** Called when test connection button is clicked */
+  onTestConnection?: () => void;
+  /** Health check status */
+  healthCheckStatus?: HealthCheckStatus;
+  /** Health check result (when status is success or error) */
+  healthCheckResult?: McpHealthCheckResult | null;
   /** Additional class name */
   className?: string;
 }
@@ -37,6 +47,9 @@ export const ServerStatusCard: React.FC<ServerStatusCardProps> = ({
   binaryPath,
   onToggleEnabled,
   isSaving = false,
+  onTestConnection,
+  healthCheckStatus = 'idle',
+  healthCheckResult,
   className,
 }) => {
   // Format path for display (truncate home directory)
@@ -129,7 +142,54 @@ export const ServerStatusCard: React.FC<ServerStatusCardProps> = ({
         </div>
 
         {/* Status & Toggle */}
-        <div className="flex items-center gap-4 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Health Check Button */}
+          {isEnabled && isAvailable && onTestConnection && (
+            <button
+              onClick={onTestConnection}
+              disabled={healthCheckStatus === 'testing'}
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium',
+                'transition-all duration-200',
+                'border',
+                healthCheckStatus === 'testing' && 'bg-muted border-border text-muted-foreground cursor-wait',
+                healthCheckStatus === 'success' && 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400',
+                healthCheckStatus === 'error' && 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400',
+                healthCheckStatus === 'idle' && 'bg-muted/50 border-border hover:bg-muted hover:border-primary/30 text-muted-foreground hover:text-foreground',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1'
+              )}
+              title={
+                healthCheckResult
+                  ? healthCheckResult.isHealthy
+                    ? `Healthy (${healthCheckResult.responseTimeMs}ms)`
+                    : healthCheckResult.error || 'Health check failed'
+                  : 'Test MCP server connection'
+              }
+            >
+              {healthCheckStatus === 'testing' ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Testing...</span>
+                </>
+              ) : healthCheckStatus === 'success' ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>{healthCheckResult?.responseTimeMs}ms</span>
+                </>
+              ) : healthCheckStatus === 'error' ? (
+                <>
+                  <XCircle className="w-3 h-3" />
+                  <span>Failed</span>
+                </>
+              ) : (
+                <>
+                  <Activity className="w-3 h-3" />
+                  <span>Test</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Status badge */}
           <div
             className={cn(

@@ -3,7 +3,7 @@
  * Modular components for the MCP Integration settings panel
  */
 
-export { ServerStatusCard } from './ServerStatusCard';
+export { ServerStatusCard, type HealthCheckStatus } from './ServerStatusCard';
 export { PermissionQuickModeSelector } from './PermissionQuickModeSelector';
 export { ToolPermissionMatrix } from './ToolPermissionMatrix';
 export { QuickSetupSection } from './QuickSetupSection';
