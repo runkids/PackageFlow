@@ -12,3 +12,4 @@ export { ReplayDialog } from './ReplayDialog';
 export { SnapshotSearchPanel } from './SnapshotSearchPanel';
 export { ExecutionTimeline } from './ExecutionTimeline';
 export { AuditReportPanel } from './AuditReportPanel';
+export { AISecurityAnalysisDialog } from './AISecurityAnalysisDialog';

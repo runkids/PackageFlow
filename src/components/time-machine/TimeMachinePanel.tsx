@@ -169,14 +169,16 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
                 <button
                   onClick={toggleCompareMode}
                   className={cn(
-                    'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
+                    'group flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg',
+                    'transition-all duration-200',
+                    'border backdrop-blur-sm',
                     compareMode
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      ? 'bg-blue-500/20 dark:bg-blue-500/25 border-blue-500/50 dark:border-blue-500/60 text-blue-600 dark:text-blue-400 shadow-sm shadow-blue-500/10'
+                      : 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500/30 dark:border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 dark:hover:bg-blue-500/25 hover:border-blue-500/50 dark:hover:border-blue-500/60'
                   )}
                   title="Compare snapshots"
                 >
-                  <GitCompare size={14} />
+                  <GitCompare size={14} className="transition-transform duration-200 group-hover:scale-110" />
                   Compare
                 </button>
                 <button
@@ -239,14 +241,16 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
                 <button
                   onClick={toggleCompareMode}
                   className={cn(
-                    'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
+                    'group flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg',
+                    'transition-all duration-200',
+                    'border backdrop-blur-sm',
                     compareMode
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      ? 'bg-blue-500/20 dark:bg-blue-500/25 border-blue-500/50 dark:border-blue-500/60 text-blue-600 dark:text-blue-400 shadow-sm shadow-blue-500/10'
+                      : 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500/30 dark:border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 dark:hover:bg-blue-500/25 hover:border-blue-500/50 dark:hover:border-blue-500/60'
                   )}
                   title="Compare snapshots"
                 >
-                  <GitCompare size={14} />
+                  <GitCompare size={14} className="transition-transform duration-200 group-hover:scale-110" />
                   Compare
                 </button>
                 <button
