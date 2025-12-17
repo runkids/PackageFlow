@@ -1,7 +1,7 @@
 /**
  * MCP Settings Full Panel
- * Redesigned with tabbed navigation to reduce vertical scrolling
- * Features: Server status, tabbed content (Overview/Permissions/Setup/Logs)
+ * Redesigned with improved UX, better visual hierarchy, and reduced cognitive load
+ * Features: Server status, tabbed content (Overview/Permissions/Actions/Activity/Setup)
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -27,6 +27,11 @@ import {
   Package,
   Target,
   ChevronDown,
+  Search,
+  ChevronRight,
+  Info,
+  Sparkles,
+  Lock,
 } from 'lucide-react';
 import {
   mcpAPI,
@@ -34,9 +39,12 @@ import {
   type McpServerConfig,
   type McpLogsResponse,
 } from '../../../lib/tauri-api';
+import type { DevServerMode } from '../../../types/mcp';
 import { cn } from '../../../lib/utils';
 import { Skeleton } from '../../ui/Skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/Tabs';
+import { Progress } from '../../ui/Progress';
+import { GradientDivider } from '../../ui/GradientDivider';
 import {
   ServerStatusCard,
   PermissionQuickModeSelector,
@@ -161,12 +169,201 @@ const ToolPermissionRow: React.FC<ToolPermissionRowProps> = ({
 };
 
 // ============================================================================
+// Dev Server Mode Selector Component
+// ============================================================================
+
+interface DevServerModeSelectorProps {
+  value: DevServerMode;
+  onChange: (mode: DevServerMode) => void;
+  disabled?: boolean;
+}
+
+const DevServerModeSelector: React.FC<DevServerModeSelectorProps> = ({
+  value,
+  onChange,
+  disabled,
+}) => {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Terminal className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">Dev Server Handling</span>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Choose how MCP handles long-running dev server commands (npm run dev, pnpm dev, etc.)
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* MCP Managed Option */}
+        <button
+          type="button"
+          onClick={() => onChange('mcp_managed')}
+          disabled={disabled}
+          className={cn(
+            'relative flex flex-col items-start gap-2 p-4 rounded-xl text-left',
+            'border-2 transition-all duration-200',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            value === 'mcp_managed'
+              ? 'bg-primary/5 border-primary/40 shadow-sm'
+              : 'bg-card/50 border-border hover:border-primary/30 hover:bg-muted/30',
+            disabled && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          {/* Selection indicator */}
+          {value === 'mcp_managed' && (
+            <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-primary" />
+          )}
+
+          <div className={cn(
+            'w-10 h-10 rounded-lg flex items-center justify-center',
+            value === 'mcp_managed'
+              ? 'bg-primary/15 text-primary'
+              : 'bg-muted text-muted-foreground'
+          )}>
+            <Sparkles className="w-5 h-5" />
+          </div>
+
+          <div>
+            <span className={cn(
+              'text-sm font-semibold',
+              value === 'mcp_managed' ? 'text-primary' : 'text-foreground'
+            )}>
+              MCP Managed
+            </span>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              MCP runs dev servers as background processes independently.
+            </p>
+          </div>
+
+          <div className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium mt-1',
+            value === 'mcp_managed'
+              ? 'bg-primary/10 text-primary'
+              : 'bg-muted text-muted-foreground'
+          )}>
+            <Zap className="w-3 h-3" />
+            Default
+          </div>
+        </button>
+
+        {/* UI Integrated Option */}
+        <button
+          type="button"
+          onClick={() => onChange('ui_integrated')}
+          disabled={disabled}
+          className={cn(
+            'relative flex flex-col items-start gap-2 p-4 rounded-xl text-left',
+            'border-2 transition-all duration-200',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            value === 'ui_integrated'
+              ? 'bg-emerald-500/5 border-emerald-500/40 shadow-sm'
+              : 'bg-card/50 border-border hover:border-emerald-500/30 hover:bg-muted/30',
+            disabled && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          {/* Selection indicator */}
+          {value === 'ui_integrated' && (
+            <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-emerald-500" />
+          )}
+
+          <div className={cn(
+            'w-10 h-10 rounded-lg flex items-center justify-center',
+            value === 'ui_integrated'
+              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              : 'bg-muted text-muted-foreground'
+          )}>
+            <Eye className="w-5 h-5" />
+          </div>
+
+          <div>
+            <span className={cn(
+              'text-sm font-semibold',
+              value === 'ui_integrated' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'
+            )}>
+              UI Integrated
+            </span>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Processes are tracked in PackageFlow UI for better visibility.
+            </p>
+          </div>
+
+          <div className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium mt-1',
+            value === 'ui_integrated'
+              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+              : 'bg-muted text-muted-foreground'
+          )}>
+            <Server className="w-3 h-3" />
+            Recommended
+          </div>
+        </button>
+
+        {/* Reject with Hint Option */}
+        <button
+          type="button"
+          onClick={() => onChange('reject_with_hint')}
+          disabled={disabled}
+          className={cn(
+            'relative flex flex-col items-start gap-2 p-4 rounded-xl text-left',
+            'border-2 transition-all duration-200',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            value === 'reject_with_hint'
+              ? 'bg-amber-500/5 border-amber-500/40 shadow-sm'
+              : 'bg-card/50 border-border hover:border-amber-500/30 hover:bg-muted/30',
+            disabled && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          {/* Selection indicator */}
+          {value === 'reject_with_hint' && (
+            <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-amber-500" />
+          )}
+
+          <div className={cn(
+            'w-10 h-10 rounded-lg flex items-center justify-center',
+            value === 'reject_with_hint'
+              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+              : 'bg-muted text-muted-foreground'
+          )}>
+            <Lock className="w-5 h-5" />
+          </div>
+
+          <div>
+            <span className={cn(
+              'text-sm font-semibold',
+              value === 'reject_with_hint' ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'
+            )}>
+              Reject with Hint
+            </span>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Reject dev server commands and suggest using UI instead.
+            </p>
+          </div>
+
+          <div className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium mt-1',
+            value === 'reject_with_hint'
+              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+              : 'bg-muted text-muted-foreground'
+          )}>
+            <Shield className="w-3 h-3" />
+            Manual Only
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
 // Overview Tab Content
 // ============================================================================
 
 interface OverviewTabProps {
   quickMode: PermissionQuickMode;
   onQuickModeChange: (mode: PermissionQuickMode) => void;
+  devServerMode: DevServerMode;
+  onDevServerModeChange: (mode: DevServerMode) => void;
   isSaving: boolean;
   enabledToolCount: number;
   totalToolCount: number;
@@ -175,68 +372,109 @@ interface OverviewTabProps {
 const OverviewTab: React.FC<OverviewTabProps> = ({
   quickMode,
   onQuickModeChange,
+  devServerMode,
+  onDevServerModeChange,
   isSaving,
   enabledToolCount,
   totalToolCount,
 }) => {
+  const readToolCount = TOOL_DEFINITIONS_WITH_PERMISSIONS.filter(t => t.category === 'read').length;
+  const executeToolCount = TOOL_DEFINITIONS_WITH_PERMISSIONS.filter(t => t.category === 'execute').length;
+  const writeToolCount = TOOL_DEFINITIONS_WITH_PERMISSIONS.filter(t => t.category === 'write').length;
+
   return (
-    <div className="space-y-4">
-      {/* Quick Mode Selector */}
-      <PermissionQuickModeSelector
-        value={quickMode}
-        onChange={onQuickModeChange}
-        disabled={isSaving}
-      />
+    <div className="space-y-6">
+      {/* Permission Mode Section */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold text-foreground">Permission Mode</h3>
+        </div>
 
-      {/* Stats Card */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-1">
-            <Eye className="w-4 h-4" />
-            <span className="text-xs font-medium">Read Tools</span>
-          </div>
-          <span className="text-lg font-semibold text-foreground">
-            {TOOL_DEFINITIONS_WITH_PERMISSIONS.filter(t => t.category === 'read').length}
-          </span>
-        </div>
-        <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-1">
-            <Play className="w-4 h-4" />
-            <span className="text-xs font-medium">Execute Tools</span>
-          </div>
-          <span className="text-lg font-semibold text-foreground">
-            {TOOL_DEFINITIONS_WITH_PERMISSIONS.filter(t => t.category === 'execute').length}
-          </span>
-        </div>
-        <div className="p-3 rounded-lg bg-rose-500/5 border border-rose-500/20">
-          <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 mb-1">
-            <Shield className="w-4 h-4" />
-            <span className="text-xs font-medium">Write Tools</span>
-          </div>
-          <span className="text-lg font-semibold text-foreground">
-            {TOOL_DEFINITIONS_WITH_PERMISSIONS.filter(t => t.category === 'write').length}
-          </span>
-        </div>
-      </div>
+        <PermissionQuickModeSelector
+          value={quickMode}
+          onChange={onQuickModeChange}
+          disabled={isSaving}
+        />
+      </section>
 
-      {/* Permission Summary */}
-      <div className="p-4 rounded-lg border border-border bg-card/50">
+      {/* Gradient Divider - R/E/W theme accent */}
+      <GradientDivider opacity="medium" variant="normal" />
+
+      {/* Dev Server Mode Section */}
+      <section>
+        <DevServerModeSelector
+          value={devServerMode}
+          onChange={onDevServerModeChange}
+          disabled={isSaving}
+        />
+      </section>
+
+      {/* Gradient Divider - R/E/W theme accent */}
+      <GradientDivider opacity="medium" variant="normal" />
+
+      {/* Tool Statistics Section */}
+      <section className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Wrench className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-foreground">Active Tools</span>
+            <h3 className="text-sm font-semibold text-foreground">Tool Overview</h3>
           </div>
-          <span className="text-sm text-muted-foreground">
-            {enabledToolCount} of {totalToolCount} enabled
+          <span className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-muted">
+            {enabledToolCount} / {totalToolCount} active
           </span>
         </div>
-        <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-300"
-            style={{ width: `${(enabledToolCount / totalToolCount) * 100}%` }}
-          />
+
+        {/* Progress bar - uses R/E/W gradient theme */}
+        <Progress
+          value={enabledToolCount}
+          max={totalToolCount}
+          variant="gradient"
+          className="h-2"
+        />
+
+        {/* Category breakdown */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/15">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+              <Eye className="w-4 h-4 text-blue-500" />
+            </div>
+            <div>
+              <span className="text-lg font-bold text-foreground">{readToolCount}</span>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Read</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/15">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+              <Play className="w-4 h-4 text-amber-500" />
+            </div>
+            <div>
+              <span className="text-lg font-bold text-foreground">{executeToolCount}</span>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Execute</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-rose-500/5 border border-rose-500/15">
+            <div className="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center">
+              <Shield className="w-4 h-4 text-rose-500" />
+            </div>
+            <div>
+              <span className="text-lg font-bold text-foreground">{writeToolCount}</span>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Write</p>
+            </div>
+          </div>
         </div>
-      </div>
+
+        {/* Info note */}
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 border border-border">
+          <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Fine-tune individual tool permissions in the <span className="font-medium text-foreground">Permissions</span> tab.
+            Custom changes will switch the mode to "Custom".
+          </p>
+        </div>
+      </section>
     </div>
   );
 };
@@ -256,107 +494,190 @@ const PermissionsTab: React.FC<PermissionsTabProps> = ({
   onPermissionChange,
   isSaving,
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['read', 'execute', 'write']));
+
+  // Filter tools by search
+  const filteredEntries = useMemo(() => {
+    if (!searchQuery.trim()) return toolEntries;
+    const query = searchQuery.toLowerCase();
+    return toolEntries.filter(
+      (entry) =>
+        entry.name.toLowerCase().includes(query) ||
+        entry.description.toLowerCase().includes(query)
+    );
+  }, [toolEntries, searchQuery]);
+
   // Group by category
   const groupedTools = useMemo(() => {
     const groups: Record<string, ToolPermissionEntry[]> = { read: [], execute: [], write: [] };
-    toolEntries.forEach((entry) => {
+    filteredEntries.forEach((entry) => {
       groups[entry.category].push(entry);
     });
     return groups;
-  }, [toolEntries]);
+  }, [filteredEntries]);
+
+  const toggleCategory = (category: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
+
+  const categoryConfigs = {
+    read: {
+      icon: <Eye className="w-4 h-4" />,
+      color: 'text-blue-500 dark:text-blue-400',
+      bgColor: 'bg-blue-500/10',
+      borderColor: 'border-blue-500/20',
+      label: 'Read Tools',
+      description: 'Query and view information',
+    },
+    execute: {
+      icon: <Play className="w-4 h-4" />,
+      color: 'text-amber-500 dark:text-amber-400',
+      bgColor: 'bg-amber-500/10',
+      borderColor: 'border-amber-500/20',
+      label: 'Execute Tools',
+      description: 'Run workflows and scripts',
+    },
+    write: {
+      icon: <Shield className="w-4 h-4" />,
+      color: 'text-rose-500 dark:text-rose-400',
+      bgColor: 'bg-rose-500/10',
+      borderColor: 'border-rose-500/20',
+      label: 'Write Tools',
+      description: 'Create and modify data',
+    },
+  };
 
   return (
     <div className="space-y-4">
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search tools..."
+          className={cn(
+            'w-full pl-10 pr-4 py-2.5 text-sm rounded-lg',
+            'bg-muted/50 border border-border',
+            'text-foreground placeholder:text-muted-foreground',
+            'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent',
+            'transition-colors'
+          )}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <span className="sr-only">Clear search</span>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
       {/* Legend */}
       <div className="flex items-center justify-between px-1">
         <span className="text-xs text-muted-foreground">
-          Click permission badges to toggle
+          {filteredEntries.length} tools {searchQuery && `matching "${searchQuery}"`}
         </span>
         <div className="flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-[10px] font-bold text-blue-600 dark:text-blue-400">R</span>
-            <span className="text-muted-foreground">Read</span>
+            <span className="text-muted-foreground hidden sm:inline">Read</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-600 dark:text-amber-400">E</span>
-            <span className="text-muted-foreground">Execute</span>
+            <span className="text-muted-foreground hidden sm:inline">Execute</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-5 h-5 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-[10px] font-bold text-rose-600 dark:text-rose-400">W</span>
-            <span className="text-muted-foreground">Write</span>
+            <span className="text-muted-foreground hidden sm:inline">Write</span>
           </span>
         </div>
       </div>
 
-      {/* Tools list - Fixed height with internal scroll */}
-      <div className="border border-border rounded-lg overflow-hidden">
-        <div className="max-h-[calc(80vh-200px)] overflow-y-auto">
-          {/* Read Tools */}
-          {groupedTools.read.length > 0 && (
-            <div>
-              <div className="sticky top-0 z-10 px-3 py-2 bg-muted/80 dark:bg-muted/50 border-b border-border backdrop-blur-sm">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                  <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
-                    Read Tools ({groupedTools.read.length})
-                  </span>
-                </div>
-              </div>
-              {groupedTools.read.map((entry) => (
-                <ToolPermissionRow
-                  key={entry.name}
-                  entry={entry}
-                  onPermissionChange={(type, value) => onPermissionChange(entry.name, type, value)}
-                  disabled={isSaving}
-                />
-              ))}
-            </div>
-          )}
+      {/* Tools list - Collapsible categories */}
+      <div className="space-y-3">
+        {(['read', 'execute', 'write'] as const).map((category) => {
+          const config = categoryConfigs[category];
+          const tools = groupedTools[category];
+          const isExpanded = expandedCategories.has(category);
 
-          {/* Execute Tools */}
-          {groupedTools.execute.length > 0 && (
-            <div>
-              <div className="sticky top-0 z-10 px-3 py-2 bg-muted/80 dark:bg-muted/50 border-b border-border backdrop-blur-sm">
-                <div className="flex items-center gap-2">
-                  <Play className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                  <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
-                    Execute Tools ({groupedTools.execute.length})
-                  </span>
-                </div>
-              </div>
-              {groupedTools.execute.map((entry) => (
-                <ToolPermissionRow
-                  key={entry.name}
-                  entry={entry}
-                  onPermissionChange={(type, value) => onPermissionChange(entry.name, type, value)}
-                  disabled={isSaving}
-                />
-              ))}
-            </div>
-          )}
+          if (tools.length === 0) return null;
 
-          {/* Write Tools */}
-          {groupedTools.write.length > 0 && (
-            <div>
-              <div className="sticky top-0 z-10 px-3 py-2 bg-muted/80 dark:bg-muted/50 border-b border-border backdrop-blur-sm">
-                <div className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />
-                  <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
-                    Write Tools ({groupedTools.write.length})
-                  </span>
+          return (
+            <div
+              key={category}
+              className={cn(
+                'border rounded-lg overflow-hidden',
+                config.borderColor,
+                'bg-card/30'
+              )}
+            >
+              {/* Category Header */}
+              <button
+                type="button"
+                onClick={() => toggleCategory(category)}
+                className={cn(
+                  'w-full flex items-center gap-3 px-4 py-3',
+                  'hover:bg-muted/50 transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+                )}
+              >
+                <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', config.bgColor)}>
+                  <span className={config.color}>{config.icon}</span>
                 </div>
-              </div>
-              {groupedTools.write.map((entry) => (
-                <ToolPermissionRow
-                  key={entry.name}
-                  entry={entry}
-                  onPermissionChange={(type, value) => onPermissionChange(entry.name, type, value)}
-                  disabled={isSaving}
+                <div className="flex-1 text-left">
+                  <span className="text-sm font-medium text-foreground">{config.label}</span>
+                  <p className="text-xs text-muted-foreground">{config.description}</p>
+                </div>
+                <span className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-muted">
+                  {tools.length}
+                </span>
+                <ChevronRight
+                  className={cn(
+                    'w-4 h-4 text-muted-foreground transition-transform duration-200',
+                    isExpanded && 'rotate-90'
+                  )}
                 />
-              ))}
+              </button>
+
+              {/* Tools List */}
+              {isExpanded && (
+                <div className="border-t border-border/50">
+                  {tools.map((entry) => (
+                    <ToolPermissionRow
+                      key={entry.name}
+                      entry={entry}
+                      onPermissionChange={(type, value) => onPermissionChange(entry.name, type, value)}
+                      disabled={isSaving}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })}
+
+        {/* No results */}
+        {filteredEntries.length === 0 && (
+          <div className="py-12 text-center">
+            <Search className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">No tools found matching "{searchQuery}"</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -587,15 +908,15 @@ const AvailableToolsSection: React.FC = () => {
 
 const SetupTab: React.FC<SetupTabProps> = ({ serverInfo }) => {
   return (
-    <div className="space-y-6 max-h-[calc(100vh-300px)] overflow-y-auto pr-1 pb-8">
+    <div className="space-y-6 pb-8">
       <QuickSetupSection
         binaryPath={serverInfo.binary_path}
         configJson={serverInfo.config_json}
         configToml={serverInfo.config_toml}
       />
 
-      {/* Divider */}
-      <div className="border-t border-border" />
+      {/* Gradient Divider - R/E/W theme accent */}
+      <GradientDivider opacity="subtle" />
 
       {/* Available Tools Section */}
       <AvailableToolsSection />
@@ -865,6 +1186,7 @@ export function McpSettingsFullPanel() {
   // Permission state
   const [permissionMatrix, setPermissionMatrix] = useState<ToolPermissionMatrixType>({});
   const [quickMode, setQuickMode] = useState<PermissionQuickMode>('read_only');
+  const [devServerMode, setDevServerMode] = useState<DevServerMode>('mcp_managed');
 
   // Logs state
   const [logsResponse, setLogsResponse] = useState<McpLogsResponse | null>(null);
@@ -895,6 +1217,9 @@ export function McpSettingsFullPanel() {
 
       setServerInfo(info);
       setConfig(serverConfig);
+
+      // Initialize devServerMode from config
+      setDevServerMode(serverConfig.devServerMode || 'mcp_managed');
 
       // Initialize permission matrix from config
       if (serverConfig.allowedTools.length === 0) {
@@ -971,6 +1296,25 @@ export function McpSettingsFullPanel() {
     }
   }, [config, isSaving]);
 
+  // Handle dev server mode change
+  const handleDevServerModeChange = useCallback(async (mode: DevServerMode) => {
+    if (!config || isSaving) return;
+
+    setDevServerMode(mode);
+    setIsSaving(true);
+
+    try {
+      const updatedConfig = await mcpAPI.updateConfig({ devServerMode: mode });
+      setConfig(updatedConfig);
+    } catch (err) {
+      console.error('Failed to update dev server mode:', err);
+      // Revert on error
+      setDevServerMode(config.devServerMode || 'mcp_managed');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [config, isSaving]);
+
   // Handle individual permission change
   const handlePermissionChange = useCallback(async (
     toolName: string,
@@ -1026,137 +1370,153 @@ export function McpSettingsFullPanel() {
     }
   }, []);
 
+  // Render header component for reuse
+  const renderHeader = () => (
+    <div>
+      <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+        <Server className="w-5 h-5" />
+        MCP Integration
+      </h2>
+      <p className="text-sm text-muted-foreground mt-1">
+        Configure the Model Context Protocol server for AI tool integration
+      </p>
+    </div>
+  );
+
   // Render
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <Server className="w-5 h-5" />
-            MCP Integration
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure the Model Context Protocol server for AI tool integration
-          </p>
+      <div className="flex flex-col h-full min-h-0">
+        <div className="shrink-0 pb-4">
+          {renderHeader()}
         </div>
-        <LoadingSkeleton />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <LoadingSkeleton />
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <Server className="w-5 h-5" />
-            MCP Integration
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure the Model Context Protocol server for AI tool integration
-          </p>
+      <div className="flex flex-col h-full min-h-0">
+        <div className="shrink-0 pb-4">
+          {renderHeader()}
         </div>
-        <ErrorState message={error} onRetry={loadData} />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <ErrorState message={error} onRetry={loadData} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-          <Server className="w-5 h-5" />
-          MCP Integration
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Configure the Model Context Protocol server for AI tool integration
-        </p>
-      </div>
+    <div className="flex flex-col h-full min-h-0">
+      {/* Sticky Header Section with Gradient Theme */}
+      <div className="shrink-0 space-y-4 pb-4">
+        {/* Header with gradient accent */}
+        {renderHeader()}
 
-      {/* Server Status Card */}
-      {serverInfo && config && (
-        <ServerStatusCard
-          isEnabled={config.isEnabled}
-          isAvailable={serverInfo.is_available}
-          serverName={serverInfo.name}
-          serverVersion={serverInfo.version}
-          binaryPath={serverInfo.binary_path}
-          onToggleEnabled={handleToggleEnabled}
-          isSaving={isSaving}
-        />
-      )}
+        {/* Server Status Card */}
+        {serverInfo && config && (
+          <ServerStatusCard
+            isEnabled={config.isEnabled}
+            isAvailable={serverInfo.is_available}
+            serverName={serverInfo.name}
+            serverVersion={serverInfo.version}
+            binaryPath={serverInfo.binary_path}
+            onToggleEnabled={handleToggleEnabled}
+            isSaving={isSaving}
+          />
+        )}
+      </div>
 
       {/* Tabbed Content - only show when enabled */}
       {config?.isEnabled && serverInfo && (
-        <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList className="w-full grid grid-cols-5">
-            <TabsTrigger value="overview" className="flex items-center gap-1.5">
-              <Settings2 className="w-3.5 h-3.5" />
-              <span>Overview</span>
-            </TabsTrigger>
-            <TabsTrigger value="permissions" className="flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5" />
-              <span>Permissions</span>
-            </TabsTrigger>
-            <TabsTrigger value="actions" className="flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" />
-              <span>Actions</span>
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="flex items-center gap-1.5">
-              <History className="w-3.5 h-3.5" />
-              <span>Activity</span>
-            </TabsTrigger>
-            <TabsTrigger value="setup" className="flex items-center gap-1.5">
-              <Terminal className="w-3.5 h-3.5" />
-              <span>Setup</span>
-            </TabsTrigger>
-          </TabsList>
+        <Tabs defaultValue="overview" className="flex flex-col flex-1 min-h-0">
+          {/* Sticky TabsList */}
+          <div className="shrink-0 pb-4">
+            <TabsList className="w-full grid grid-cols-5">
+              <TabsTrigger value="overview" className="flex items-center gap-1.5">
+                <Settings2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Overview</span>
+              </TabsTrigger>
+              <TabsTrigger value="permissions" className="flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Permissions</span>
+              </TabsTrigger>
+              <TabsTrigger value="actions" className="flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Actions</span>
+              </TabsTrigger>
+              <TabsTrigger value="activity" className="flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Activity</span>
+              </TabsTrigger>
+              <TabsTrigger value="setup" className="flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Setup</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          <TabsContent value="overview">
-            <OverviewTab
-              quickMode={quickMode}
-              onQuickModeChange={handleQuickModeChange}
-              isSaving={isSaving}
-              enabledToolCount={enabledToolCount}
-              totalToolCount={toolEntries.length}
-            />
-          </TabsContent>
+          {/* Scrollable TabsContent Area */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <TabsContent value="overview" className="mt-0">
+              <OverviewTab
+                quickMode={quickMode}
+                onQuickModeChange={handleQuickModeChange}
+                devServerMode={devServerMode}
+                onDevServerModeChange={handleDevServerModeChange}
+                isSaving={isSaving}
+                enabledToolCount={enabledToolCount}
+                totalToolCount={toolEntries.length}
+              />
+            </TabsContent>
 
-          <TabsContent value="permissions">
-            <PermissionsTab
-              toolEntries={toolEntries}
-              onPermissionChange={handlePermissionChange}
-              isSaving={isSaving}
-            />
-          </TabsContent>
+            <TabsContent value="permissions" className="mt-0">
+              <PermissionsTab
+                toolEntries={toolEntries}
+                onPermissionChange={handlePermissionChange}
+                isSaving={isSaving}
+              />
+            </TabsContent>
 
-          <TabsContent value="actions">
-            <MCPActionSettings />
-          </TabsContent>
+            <TabsContent value="actions" className="mt-0">
+              <MCPActionSettings />
+            </TabsContent>
 
-          <TabsContent value="activity">
-            <ActivityTab
-              logsResponse={logsResponse}
-              isLoadingLogs={isLoadingLogs}
-              onLoadLogs={handleLoadLogs}
-              onClearLogs={handleClearLogs}
-            />
-          </TabsContent>
+            <TabsContent value="activity" className="mt-0">
+              <ActivityTab
+                logsResponse={logsResponse}
+                isLoadingLogs={isLoadingLogs}
+                onLoadLogs={handleLoadLogs}
+                onClearLogs={handleClearLogs}
+              />
+            </TabsContent>
 
-          <TabsContent value="setup">
-            <SetupTab serverInfo={serverInfo} />
-          </TabsContent>
+            <TabsContent value="setup" className="mt-0">
+              <SetupTab serverInfo={serverInfo} />
+            </TabsContent>
+          </div>
         </Tabs>
       )}
 
       {/* Disabled state message */}
       {config && !config.isEnabled && (
-        <div className="p-6 border border-border rounded-lg bg-muted/20 text-center">
-          <Server className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">
-            Enable the MCP server to configure permissions and set up AI assistant integrations.
-          </p>
+        <div className="relative p-6 rounded-xl text-center overflow-hidden">
+          {/* Subtle gradient background */}
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-amber-500/5 to-rose-500/5" />
+          <div className="absolute inset-0 border border-border/50 rounded-xl" />
+
+          <div className="relative">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gradient-to-br from-blue-500/10 via-amber-500/10 to-rose-500/10 flex items-center justify-center">
+              <Server className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Enable the MCP server to configure permissions and set up AI assistant integrations.
+            </p>
+          </div>
         </div>
       )}
     </div>

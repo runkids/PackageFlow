@@ -191,6 +191,24 @@ pub struct RunNpmScriptParams {
     pub success_timeout_ms: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RunPackageManagerCommandParams {
+    /// Project path (required - the directory containing package.json)
+    pub project_path: String,
+    /// Command to execute: "install", "update", "add", "remove", "ci", "audit", "outdated"
+    pub command: String,
+    /// Packages to add/remove (required for "add" and "remove" commands)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub packages: Option<Vec<String>>,
+    /// Additional flags (e.g., ["--save-dev", "--frozen-lockfile"])
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flags: Option<Vec<String>>,
+    /// Timeout in milliseconds (default: 5 minutes, max: 30 minutes)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+
 // ============================================================================
 // Background Process Tool Parameters
 // ============================================================================

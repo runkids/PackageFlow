@@ -4,6 +4,11 @@
  *
  * Icon sizes follow project convention:
  * - Section icon: w-4 h-4 (standard for section-level elements)
+ *
+ * Supports optional gradient accent using the R/E/W color scheme:
+ * - Blue (blue-500) - Read operations
+ * - Amber (amber-500) - Execute operations
+ * - Rose (rose-500) - Write operations
  */
 
 import React from 'react';
@@ -20,6 +25,8 @@ interface SettingSectionProps {
   children: React.ReactNode;
   /** Additional CSS classes */
   className?: string;
+  /** Optional gradient accent bar above the section */
+  gradientAccent?: boolean;
 }
 
 export const SettingSection: React.FC<SettingSectionProps> = ({
@@ -28,9 +35,15 @@ export const SettingSection: React.FC<SettingSectionProps> = ({
   icon,
   children,
   className,
+  gradientAccent = false,
 }) => {
   return (
     <section className={cn('space-y-3', className)}>
+      {/* Optional gradient accent bar */}
+      {gradientAccent && (
+        <div className="h-0.5 w-16 rounded-full bg-gradient-to-r from-blue-500 via-amber-500 to-rose-500 opacity-60" />
+      )}
+
       {/* Section Header */}
       {(title || description) && (
         <div className="space-y-1">

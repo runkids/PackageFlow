@@ -1,6 +1,11 @@
 /**
  * Tabs Component
  * A tab-based navigation component for organizing content into sections
+ *
+ * Supports an optional gradient underline variant using the R/E/W color scheme:
+ * - Blue (blue-500) - Read operations
+ * - Amber (amber-500) - Execute operations
+ * - Rose (rose-500) - Write operations
  */
 
 import React, { createContext, useContext, useState, useCallback, useId } from 'react';

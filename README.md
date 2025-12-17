@@ -5,8 +5,8 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>The AI-Powered Command Center for Your Projects</strong><br/>
-  <sub>One click to run, deploy, and automate — powered by AI and MCP.</sub>
+  <strong>The AI-Driven <code>package.json</code> Project Manager</strong><br/>
+  <sub>Turn scripts, Git, workflows, deploys, and MCP tools into one-click actions.</sub>
 </p>
 
 <p align="center">
@@ -53,7 +53,7 @@
 > **"Run tests and fix any failures."**
 > **"Switch to the main branch and start the dev server."**
 
-**PackageFlow isn't just another GUI — it's the bridge between you, your projects, and AI.**
+**PackageFlow is an AI-driven <code>package.json</code> project management tool — a single control center for how you build, ship, and automate.**
 
 | Before PackageFlow | With PackageFlow |
 |-------------------|------------------|
@@ -62,7 +62,7 @@
 | Command memorization | Visual workflows |
 | AI can't touch your tools | **MCP Server lets AI control everything** |
 
-Powered by **Tauri + Rust** — 10MB binary, instant startup, 100% local-first.
+Powered by **Tauri + Rust** — lightweight, fast startup, local-first by design.
 
 ## 🎬 Quick Start
 
@@ -74,6 +74,13 @@ brew tap runkids/tap && brew install --cask packageflow
 Or [download directly](https://github.com/runkids/PackageFlow/releases) → Drag a project folder → Start clicking.
 
 > 💡 Press <kbd>Cmd</kbd> + <kbd>K</kbd> for instant worktree switching
+
+### Try It in 60 Seconds
+
+1. Import a project (drag a folder with `package.json`)
+2. Click a script card like `dev` / `build` / `test`
+3. Create a workflow for your repetitive tasks (dev → test → deploy)
+4. (Optional) Enable MCP so your AI tool can run actions for you
 
 ---
 
@@ -128,7 +135,7 @@ Auto-detect Volta, Corepack, nvm conflicts.
 
 | Provider | Type | Use Case |
 |----------|------|----------|
-| **OpenAI** | Cloud | GPT-4 for complex analysis |
+| **OpenAI** | Cloud | Complex analysis |
 | **Anthropic** | Cloud | Claude for intelligent commits |
 | **Google** | Cloud | Gemini for fast responses |
 | **Ollama** | Local | Privacy-first, unlimited |
@@ -149,6 +156,32 @@ PackageFlow exposes a **Model Context Protocol (MCP) server** that AI assistants
 - Codex CLI
 - Gemini CLI
 - Any MCP-compatible AI tool
+
+### What AI Actually Does (MCP Tool Chains)
+
+PackageFlow is “AI-driven” because the AI can call real tools (not just generate text). Example flows:
+
+**1) Understand a project**
+- You: “List my projects and show scripts for the frontend repo”
+- Tools: `list_projects` → `get_project`
+
+**2) Run a script with context**
+- You: “Run tests for the `packages/web` project and summarize failures”
+- Tools: `get_project` → `run_npm_script`
+
+**3) Generate a commit message from staged changes**
+- You: “Write a conventional commit message for what I staged”
+- Tools: `get_git_diff` → (AI drafts message)
+
+### MCP Setup (Copy/Paste)
+
+PackageFlow ships a companion MCP server binary: `packageflow-mcp` (stdio transport).
+
+In PackageFlow, open **Settings → MCP → MCP Integration** and copy the generated config for:
+- **Claude Code / VS Code** (JSON)
+- **Codex CLI** (TOML)
+
+Then your AI tool can call actions like `list_projects`, `run_npm_script`, `run_workflow`, and more.
 
 ### AI CLI Integration
 

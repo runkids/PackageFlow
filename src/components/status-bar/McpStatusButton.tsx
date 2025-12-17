@@ -110,8 +110,7 @@ export const McpStatusButton: React.FC<McpStatusButtonProps> = ({
       >
         <McpIcon
           className={cn('w-4 h-4', !isEnabled && 'text-muted-foreground')}
-          gradient={isEnabled}
-          gradientColors={['#22c55e', '#3b82f6']}
+          rewGradient={isEnabled}
         />
         {isEnabled && (
           <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border border-card" />

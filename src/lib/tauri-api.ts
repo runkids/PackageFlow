@@ -2421,12 +2421,17 @@ export interface McpToolInfo {
 /** MCP permission mode */
 export type McpPermissionMode = 'read_only' | 'execute_with_confirm' | 'full_access';
 
+/** Dev server mode for MCP */
+export type DevServerMode = 'mcp_managed' | 'ui_integrated' | 'reject_with_hint';
+
 /** MCP Server configuration */
 export interface McpServerConfig {
   /** Whether MCP Server is enabled */
   isEnabled: boolean;
   /** Default permission mode */
   permissionMode: McpPermissionMode;
+  /** Dev server mode - controls how dev server commands are handled */
+  devServerMode: DevServerMode;
   /** List of explicitly allowed tools (empty = use permissionMode defaults) */
   allowedTools: string[];
   /** Whether to log all requests */
@@ -2481,6 +2486,7 @@ export const mcpAPI = {
   updateConfig: (options: {
     isEnabled?: boolean;
     permissionMode?: McpPermissionMode;
+    devServerMode?: DevServerMode;
     allowedTools?: string[];
     logRequests?: boolean;
   }): Promise<McpServerConfig> =>

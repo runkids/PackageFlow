@@ -4,7 +4,7 @@
 use rusqlite::{Connection, params};
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 1;
+pub const CURRENT_VERSION: i32 = 3;
 
 /// Migration struct containing version and SQL statements
 struct Migration {
@@ -395,6 +395,39 @@ const MIGRATIONS: &[Migration] = &[
                 FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation ON ai_messages(conversation_id, created_at);
+        "#,
+    },
+    Migration {
+        version: 2,
+        description: "Add dev_server_mode to mcp_config",
+        up: r#"
+            ALTER TABLE mcp_config ADD COLUMN dev_server_mode TEXT DEFAULT 'mcp_managed' CHECK(dev_server_mode IN ('mcp_managed', 'reject_with_hint'));
+        "#,
+    },
+    Migration {
+        version: 3,
+        description: "Add ui_integrated option to dev_server_mode",
+        up: r#"
+            -- SQLite requires recreating the table to modify CHECK constraints
+            -- Create new table with updated constraint
+            CREATE TABLE mcp_config_new (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                is_enabled INTEGER DEFAULT 0,
+                permission_mode TEXT DEFAULT 'read_only' CHECK(permission_mode IN ('read_only', 'execute_with_confirm', 'full_access')),
+                dev_server_mode TEXT DEFAULT 'mcp_managed' CHECK(dev_server_mode IN ('mcp_managed', 'ui_integrated', 'reject_with_hint')),
+                allowed_tools TEXT DEFAULT '[]',
+                log_requests INTEGER DEFAULT 1,
+                encrypted_secrets TEXT
+            );
+
+            -- Copy existing data
+            INSERT INTO mcp_config_new (id, is_enabled, permission_mode, dev_server_mode, allowed_tools, log_requests, encrypted_secrets)
+            SELECT id, is_enabled, permission_mode, dev_server_mode, allowed_tools, log_requests, encrypted_secrets
+            FROM mcp_config;
+
+            -- Drop old table and rename new one
+            DROP TABLE mcp_config;
+            ALTER TABLE mcp_config_new RENAME TO mcp_config;
         "#,
     },
 ];

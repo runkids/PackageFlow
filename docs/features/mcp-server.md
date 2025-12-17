@@ -14,7 +14,7 @@ to query and control PackageFlow programmatically.
 
 ## Overview
 
-When enabled, PackageFlow exposes tools that AI assistants can call:
+PackageFlow ships a companion MCP server binary, `packageflow-mcp`, and exposes tools that AI assistants can call:
 
 - List projects
 - Run scripts
@@ -22,30 +22,41 @@ When enabled, PackageFlow exposes tools that AI assistants can call:
 - Trigger deployments
 - And more
 
-<!-- TODO: Add diagram of MCP architecture -->
+The MCP server uses **stdio transport** (no network port required). PackageFlow can generate ready-to-paste client configs that point at the correct `packageflow-mcp` binary path.
 
 ## Enabling MCP Server
 
-1. Go to **Settings** → **MCP**
+1. Go to **Settings** → **MCP** → **MCP Integration**
 2. Toggle **Enable MCP Server**
 3. Configure the server settings
 4. Click **Start Server**
 
-<!-- TODO: Add screenshot of MCP settings panel -->
+Tip: In the same panel, PackageFlow shows the resolved `packageflow-mcp` path and provides config snippets for common MCP clients.
 
-## Server Configuration
+## Client Setup (Copy/Paste)
 
-### Port
+### Claude Code / VS Code (JSON)
 
-Default: `7234`
+PackageFlow generates a config like:
 
-Change if the port is already in use.
+```json
+{
+  "mcpServers": {
+    "packageflow": {
+      "command": "/Applications/PackageFlow.app/Contents/Resources/bin/packageflow-mcp"
+    }
+  }
+}
+```
 
-### Host
+### Codex CLI (TOML)
 
-Default: `localhost`
+PackageFlow also generates:
 
-For security, only local connections are allowed by default.
+```toml
+[mcp_servers.packageflow]
+command = "/Applications/PackageFlow.app/Contents/Resources/bin/packageflow-mcp"
+```
 
 ## Permission Levels
 
@@ -73,7 +84,37 @@ AI can execute anything without confirmation:
 - Use only with trusted AI tools
 - Recommended only for personal automation
 
-<!-- TODO: Add screenshot of permission level selector -->
+## Dev Server Mode
+
+Control how dev server commands (like `npm run dev`) are handled when called via MCP:
+
+### MCP Managed (Default)
+
+- Dev servers run as background processes managed by MCP independently
+- Processes can be monitored via `list_background_processes`
+- Can be stopped via `stop_background_process`
+- **Note**: These processes won't appear in PackageFlow's UI process manager
+
+### UI Integrated (Recommended)
+
+- Processes are tracked in PackageFlow UI via events
+- Best of both worlds: AI can start processes, you see them in UI
+- Provides better visibility with port tracking and process management
+- **Use this if**: You want AI automation with full UI visibility
+
+### Reject with Hint
+
+- MCP will reject dev server commands
+- Returns a helpful message suggesting to use PackageFlow UI instead
+- Use this if you want all dev servers to be managed through PackageFlow's UI manually
+
+**When to use each mode:**
+
+| Mode | AI Can Start | Visible in UI | Best For |
+|------|--------------|---------------|----------|
+| MCP Managed | Yes | No | Fully autonomous AI workflows |
+| UI Integrated | Yes | Yes | Balanced control & visibility |
+| Reject with Hint | No | N/A | Manual-only process management |
 
 ## Tool Permissions
 
@@ -97,8 +138,6 @@ Fine-grained control over individual tools:
    - **Confirm**: Requires approval
    - **Blocked**: Cannot be used
 
-<!-- TODO: Add screenshot of tool permission matrix -->
-
 ## AI CLI Integration
 
 ### Supported AI CLIs
@@ -119,8 +158,6 @@ PackageFlow detects and integrates with:
 4. Click **Run**
 
 Output is displayed in the panel.
-
-<!-- TODO: Add screenshot of AI CLI panel -->
 
 ### Examples
 
@@ -170,8 +207,20 @@ Output is displayed in the panel.
 | Tool | Parameters | Returns |
 |------|------------|---------|
 | `run_npm_script` | `projectPath`, `scriptName`, `args?`, `timeoutMs?` | Execution result |
+| `run_package_manager_command` | `projectPath`, `command`, `packages?`, `flags?`, `timeoutMs?` | Command result |
 | `list_step_templates` | `category?`, `query?` | Array of templates |
 | `create_step_template` | `name`, `command`, `category?`, `description?` | New template |
+
+**run_package_manager_command** supports these commands:
+- `install` / `i` - Install all dependencies
+- `update` / `up` - Update dependencies
+- `add` - Add packages (requires `packages` parameter)
+- `remove` - Remove packages (requires `packages` parameter)
+- `ci` - Clean install (frozen lockfile)
+- `audit` - Security audit
+- `outdated` - Check outdated packages
+- `prune` - Remove unused packages
+- `dedupe` - Deduplicate dependencies
 
 ### Background Process Tools
 
@@ -248,8 +297,6 @@ View all MCP requests:
    - Result
    - Duration
 
-<!-- TODO: Add screenshot of MCP logs -->
-
 ### Session Tracking
 
 Each AI session is tracked:
@@ -296,15 +343,15 @@ Use AI tools to manage deployments:
 
 ### Server Won't Start
 
-- Check if the port is in use
-- Try a different port
-- Ensure PackageFlow has network permissions
+- Ensure MCP is enabled in PackageFlow settings
+- Make sure the bundled `packageflow-mcp` binary is available (Settings shows the resolved path)
+- Check the MCP logs for startup errors
 
 ### AI Can't Connect
 
-- Verify the server is running
-- Check the port number
-- Ensure firewall allows local connections
+- Verify your MCP client is pointing at the `packageflow-mcp` command path
+- Start with Read Only mode to validate basic connectivity
+- Re-check the generated JSON/TOML snippet in Settings (it includes the correct path)
 
 ### Commands Failing
 

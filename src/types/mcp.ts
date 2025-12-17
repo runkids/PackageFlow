@@ -4,6 +4,9 @@
 /** MCP Server permission modes */
 export type MCPPermissionMode = 'read_only' | 'execute_with_confirm' | 'full_access';
 
+/** Dev server mode for MCP - controls how dev server commands are handled */
+export type DevServerMode = 'mcp_managed' | 'ui_integrated' | 'reject_with_hint';
+
 /** MCP request result */
 export type MCPRequestResult = 'success' | 'permission_denied' | 'user_cancelled' | 'error';
 
@@ -21,6 +24,8 @@ export interface MCPServerConfig {
   isEnabled: boolean;
   /** Default permission mode */
   permissionMode: MCPPermissionMode;
+  /** Dev server mode - controls how dev server commands are handled */
+  devServerMode: DevServerMode;
   /** List of allowed tools */
   allowedTools: string[];
   /** Whether to log all requests */
@@ -88,6 +93,7 @@ export interface MCPStatus {
 /** Request to update MCP configuration */
 export interface UpdateMCPConfigRequest {
   permissionMode?: MCPPermissionMode;
+  devServerMode?: DevServerMode;
   allowedTools?: string[];
   logRequests?: boolean;
 }
@@ -330,6 +336,7 @@ export const MCP_TOOL_DEFINITIONS: McpToolWithPermission[] = [
   // Execute tools
   { name: 'run_workflow', description: 'Execute a workflow and return results', category: 'execute' },
   { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script (supports background mode)', category: 'execute' },
+  { name: 'run_package_manager_command', description: 'Run package manager commands (install, update, add, remove)', category: 'execute' },
   { name: 'stop_background_process', description: 'Stop/terminate a background process', category: 'execute' },
   { name: 'run_security_scan', description: 'Run npm/yarn/pnpm audit', category: 'execute' },
 ];
@@ -510,6 +517,7 @@ export const TOOL_DEFINITIONS_WITH_PERMISSIONS: ToolDefinitionWithPermissions[] 
   { name: 'trigger_webhook', description: 'Trigger a webhook action', category: 'execute', applicablePermissions: ['read', 'execute'] },
   { name: 'run_mcp_workflow', description: 'Execute a workflow via MCP action', category: 'execute', applicablePermissions: ['read', 'execute'] },
   { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script (supports background mode)', category: 'execute', applicablePermissions: ['read', 'execute'] },
+  { name: 'run_package_manager_command', description: 'Run package manager commands (install, update, add, remove)', category: 'execute', applicablePermissions: ['read', 'execute'] },
 
   // Background Process tools
   { name: 'get_background_process_output', description: 'Get output from a background process', category: 'read', applicablePermissions: ['read'] },

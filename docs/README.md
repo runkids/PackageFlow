@@ -6,12 +6,13 @@ Welcome to the PackageFlow documentation! This guide will help you get the most 
 
 ## Quick Links
 
-- [Getting Started](./getting-started.md) - Installation and first steps
-- [Features](#features) - All features explained
+- [Getting Started](./getting-started.md) - Install, import a project, run your first script
+- [MCP Server](./features/mcp-server.md) - Let AI tools control PackageFlow safely
+- [Feature Guides](#features) - Deep dives for each feature area
 
 ## What is PackageFlow?
 
-PackageFlow is a **desktop app for frontend and Node.js developers** — the app you open instead of your terminal. It turns your JavaScript/TypeScript projects into a visual control center.
+PackageFlow is an **AI-driven `package.json` project management desktop app** — the app you open instead of your terminal. It turns your projects into a visual command center for scripts, Git, deployments, and MCP-powered automation.
 
 **Built for the modern frontend workflow:**
 
@@ -19,6 +20,12 @@ PackageFlow is a **desktop app for frontend and Node.js developers** — the app
 - **npm, pnpm, yarn, bun** — Automatic package manager detection
 - **Monorepos** — Nx, Turborepo, Lerna native support
 - **AI-assisted development** — Generate commits, review code, analyze security
+
+**Local-first by design:**
+
+- Project metadata and automation live on your machine
+- Secrets (tokens / API keys) are encrypted at rest (AES-256-GCM)
+- MCP access is permissioned (read-only → confirm → full access)
 
 ## Who is PackageFlow for?
 
@@ -37,6 +44,8 @@ PackageFlow is a **desktop app for frontend and Node.js developers** — the app
 | Switch between 5 terminal tabs | One unified workspace |
 
 ## Features
+
+Use the docs below based on what you’re trying to do:
 
 ### Core Features
 
@@ -96,7 +105,7 @@ Netlify, Cloudflare Pages, GitHub Pages, Vercel (coming soon)
 
 ### AI Providers
 
-OpenAI (GPT-4o), Anthropic (Claude 4), Google (Gemini 2.0), Ollama, LM Studio
+OpenAI, Anthropic, Google, Ollama, LM Studio
 
 ## System Requirements
 

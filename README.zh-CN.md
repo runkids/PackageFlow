@@ -5,8 +5,8 @@
 <h1 align="center">PackageFlow</h1>
 
 <p align="center">
-  <strong>🚀 告别终端地狱</strong><br/>
-  <sub>npm scripts、Git、Worktree、部署预览 — 全部整合在一个漂亮的 App</sub>
+  <strong>AI 驱动的 <code>package.json</code> 项目管理工具</strong><br/>
+  <sub>把 scripts、Git、Worktree、工作流、部署都变成可被 AI 操作的一键动作</sub>
 </p>
 
 <p align="center">
@@ -29,6 +29,7 @@
 <p align="center">
   <a href="https://github.com/runkids/PackageFlow/releases">📥 下载</a> •
   <a href="#-功能特色">✨ 功能</a> •
+  <a href="#-ai--mcp">🤖 AI & MCP</a> •
   <a href="#-截图展示">📸 截图</a> •
   <a href="#️-开发路线">🗺️ 路线图</a> •
   <a href="#-常见问题">❓ FAQ</a>
@@ -47,7 +48,7 @@
 
 PackageFlow 让你的 `package.json` 活起来 — 一个 App 搞定前端开发者每天都在做的事。使用 **Tauri + Rust** 打造，安装包超小、启动超快。
 
-专为 **vibe coding** 设计：少点终端混乱，多点时间写酷东西。
+专为 **vibe coding** 设计：少点终端混乱，多点时间写酷东西。更重要的是：你可以把日常操作交给 AI（通过 MCP）来帮你做。
 
 ## 🎬 快速开始
 
@@ -69,6 +70,19 @@ PackageFlow 让你的 `package.json` 活起来 — 一个 App 搞定前端开发
 | 🔧 | **工具链检测** | 自动检测 Volta/Corepack 版本冲突 |
 | 🛡️ | **安全扫描** | 可视化 npm audit，一键修复 |
 | ⚡ | **可视化工作流** | 拖拽式自动化构建器 + Webhook 触发 |
+
+## 🤖 AI & MCP
+
+PackageFlow 是「AI 驱动」的意思不是只会聊天，而是 AI 可以调用真正的工具来完成工作（MCP）。
+
+**AI 实际会做什么（MCP Tool Chain 示例）**
+- 「列出我的项目，并显示某个项目的 scripts」→ `list_projects` → `get_project`
+- 「帮我跑 `test` 并总结失败原因」→ `get_project` → `run_npm_script`
+- 「根据 staged changes 生成 Conventional Commit 信息」→ `get_git_diff` →（AI 生成 commit message）
+
+**快速设置**
+- 在 PackageFlow 打开 **Settings → MCP → MCP Integration**，复制生成的配置（JSON/TOML）到你的 AI 工具（Claude Code / Codex CLI 等）
+- MCP server 使用 stdio，不需要开 port
 
 <p align="center">
   <img src="docs/screenshots/commit-message-generated-by-AI.gif" width="720" alt="Deploy demo" />

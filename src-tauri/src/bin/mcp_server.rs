@@ -80,7 +80,7 @@ use packageflow_lib::utils::shared_store::{
 };
 
 // Import MCP types from models
-use packageflow_lib::models::mcp::MCPServerConfig;
+use packageflow_lib::models::mcp::{MCPServerConfig, DevServerMode};
 
 // Import path_resolver for proper command execution on macOS GUI apps
 use packageflow_lib::utils::path_resolver;
@@ -194,6 +194,37 @@ impl PackageFlowMcp {
                 ))
             }
         }
+    }
+
+    /// Check if a script is a dev server script (long-running process)
+    ///
+    /// Dev server scripts typically include:
+    /// - Script names: dev, start, serve, watch, preview, etc.
+    /// - Commands containing: vite, next dev, webpack serve, nuxt dev, etc.
+    fn is_dev_server_script(script_name: &str, script_command: &str) -> bool {
+        // Common dev server script names
+        let dev_script_names = [
+            "dev", "start", "serve", "watch", "preview",
+            "dev:server", "start:dev", "serve:dev",
+        ];
+
+        // Check script name
+        let name_lower = script_name.to_lowercase();
+        if dev_script_names.iter().any(|&n| name_lower == n || name_lower.starts_with(&format!("{}:", n))) {
+            return true;
+        }
+
+        // Common dev server command patterns
+        let dev_command_patterns = [
+            "vite", "next dev", "next start", "nuxt dev", "nuxt start",
+            "webpack serve", "webpack-dev-server", "parcel watch",
+            "react-scripts start", "vue-cli-service serve",
+            "nodemon", "ts-node-dev", "tsx watch",
+            "astro dev", "remix dev",
+        ];
+
+        let cmd_lower = script_command.to_lowercase();
+        dev_command_patterns.iter().any(|&p| cmd_lower.contains(p))
     }
 
 }
@@ -1224,6 +1255,50 @@ impl PackageFlowMcp {
             )]));
         }
 
+        // Check dev_server_mode for background processes
+        // Dev server scripts are long-running processes that typically include:
+        // - Script names: dev, start, serve, watch, dev:server, etc.
+        // - Commands containing: vite, next dev, webpack serve, etc.
+        if params.run_in_background {
+            let script_command = scripts
+                .and_then(|s| s.get(&params.script_name))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let is_dev_server_script = Self::is_dev_server_script(&params.script_name, script_command);
+
+            if is_dev_server_script {
+                // Read config to check dev_server_mode
+                if let Ok(store_data) = read_store_data() {
+                    match store_data.mcp_config.dev_server_mode {
+                        DevServerMode::RejectWithHint => {
+                            return Ok(CallToolResult::error(vec![Content::text(
+                                format!(
+                                    "Dev server mode is set to 'reject_with_hint'. \
+                                    Running dev servers via MCP is disabled. \
+                                    Please use PackageFlow UI to manage dev servers for better process visibility, \
+                                    port tracking, and process management. \
+                                    Script: '{}'",
+                                    params.script_name
+                                )
+                            )]));
+                        }
+                        DevServerMode::UiIntegrated => {
+                            // UI Integrated mode: Process will be tracked in PackageFlow UI
+                            // The background process manager will emit events for UI integration
+                            eprintln!(
+                                "[MCP Server] Starting dev server '{}' in UI integrated mode",
+                                params.script_name
+                            );
+                        }
+                        DevServerMode::McpManaged => {
+                            // Default behavior: MCP manages the process independently
+                        }
+                    }
+                }
+            }
+        }
+
         // Parse toolchain configuration from package.json
         let volta_config = package_json.get("volta");
         let package_manager_field = package_json.get("packageManager")
@@ -1412,6 +1487,145 @@ impl PackageFlowMcp {
                         format!("Failed to execute script '{}': {}", params.script_name, sanitized_error)
                     )]))
                 }
+            }
+        }
+    }
+
+    // ========================================================================
+    // Package Manager Commands (install, update, add, remove, etc.)
+    // ========================================================================
+
+    /// Execute a package manager command (install, update, add, remove, etc.)
+    #[tool(description = "Execute a package manager command (npm/yarn/pnpm). Supports: install, update, add, remove, ci, audit, outdated. Auto-detects package manager from lock files. Use for dependency management operations.")]
+    async fn run_package_manager_command(
+        &self,
+        Parameters(params): Parameters<RunPackageManagerCommandParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let project_path = PathBuf::from(&params.project_path);
+
+        // Validate path
+        if let Err(e) = validate_path(&params.project_path) {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Invalid project path: {}", e)
+            )]));
+        }
+
+        // Check if directory exists
+        if !project_path.exists() || !project_path.is_dir() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Directory does not exist: {}", params.project_path)
+            )]));
+        }
+
+        // Validate command
+        let valid_commands = ["install", "i", "update", "up", "upgrade", "add", "remove", "rm", "uninstall", "ci", "audit", "outdated", "prune", "dedupe"];
+        let command_lower = params.command.to_lowercase();
+        if !valid_commands.contains(&command_lower.as_str()) {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Invalid command '{}'. Supported commands: {}", params.command, valid_commands.join(", "))
+            )]));
+        }
+
+        // Check if packages are required for add/remove
+        let needs_packages = matches!(command_lower.as_str(), "add" | "remove" | "rm" | "uninstall");
+        if needs_packages && (params.packages.is_none() || params.packages.as_ref().map(|p| p.is_empty()).unwrap_or(true)) {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Command '{}' requires at least one package name", params.command)
+            )]));
+        }
+
+        // Detect package manager from lock files
+        let package_manager = if project_path.join("pnpm-lock.yaml").exists() {
+            "pnpm"
+        } else if project_path.join("yarn.lock").exists() {
+            "yarn"
+        } else if project_path.join("bun.lockb").exists() {
+            "bun"
+        } else {
+            "npm"
+        };
+
+        // Build the command
+        let mut cmd_parts: Vec<String> = vec![package_manager.to_string()];
+
+        // Normalize command names
+        let normalized_cmd = match command_lower.as_str() {
+            "i" => "install",
+            "up" | "upgrade" => "update",
+            "rm" | "uninstall" => "remove",
+            other => other,
+        };
+        cmd_parts.push(normalized_cmd.to_string());
+
+        // Add packages if provided
+        if let Some(packages) = &params.packages {
+            for pkg in packages {
+                // Validate package name (basic check)
+                if pkg.is_empty() || pkg.contains("..") || pkg.contains(";") || pkg.contains("&") || pkg.contains("|") {
+                    return Ok(CallToolResult::error(vec![Content::text(
+                        format!("Invalid package name: {}", pkg)
+                    )]));
+                }
+                cmd_parts.push(pkg.clone());
+            }
+        }
+
+        // Add flags if provided
+        if let Some(flags) = &params.flags {
+            for flag in flags {
+                // Validate flag (must start with -)
+                if !flag.starts_with('-') {
+                    return Ok(CallToolResult::error(vec![Content::text(
+                        format!("Invalid flag '{}': flags must start with '-'", flag)
+                    )]));
+                }
+                // Basic security check
+                if flag.contains(";") || flag.contains("&") || flag.contains("|") || flag.contains("`") {
+                    return Ok(CallToolResult::error(vec![Content::text(
+                        format!("Invalid flag '{}': contains forbidden characters", flag)
+                    )]));
+                }
+                cmd_parts.push(flag.clone());
+            }
+        }
+
+        let command = cmd_parts.join(" ");
+
+        // Validate and apply timeout (default 5 min, max 30 min for package operations)
+        let timeout_ms = params.timeout_ms.map(|t| t.min(1_800_000)).unwrap_or(300_000);
+
+        // Execute the command
+        match Self::shell_command_async(&params.project_path, &command, Some(timeout_ms)).await {
+            Ok((exit_code, stdout, stderr)) => {
+                let sanitized_stdout = sanitize_output(&stdout);
+                let sanitized_stderr = sanitize_output(&stderr);
+
+                let response = serde_json::json!({
+                    "success": exit_code == 0,
+                    "command": normalized_cmd,
+                    "package_manager": package_manager,
+                    "full_command": command,
+                    "exit_code": exit_code,
+                    "stdout": sanitized_stdout,
+                    "stderr": sanitized_stderr,
+                    "packages": params.packages,
+                    "flags": params.flags,
+                });
+
+                let json = serde_json::to_string_pretty(&response)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+                if exit_code == 0 {
+                    Ok(CallToolResult::success(vec![Content::text(json)]))
+                } else {
+                    Ok(CallToolResult::error(vec![Content::text(json)]))
+                }
+            }
+            Err(e) => {
+                let sanitized_error = sanitize_error(&e);
+                Ok(CallToolResult::error(vec![Content::text(
+                    format!("Failed to execute '{}': {}", command, sanitized_error)
+                )]))
             }
         }
     }

@@ -2,6 +2,8 @@
 
 This guide will help you install PackageFlow and get started with your first project.
 
+PackageFlow is an AI-driven `package.json` project manager: import a folder once, then run scripts, manage Git/worktrees, automate workflows, and (optionally) let your AI tool control actions via MCP.
+
 ## Installation
 
 ### Homebrew (Recommended)
@@ -31,8 +33,6 @@ brew upgrade --cask packageflow
 
 When you first open PackageFlow, you'll see an empty project list.
 
-<!-- TODO: Add screenshot of empty project list / welcome screen -->
-
 ## Importing Your First Project
 
 There are two ways to add a project:
@@ -40,8 +40,6 @@ There are two ways to add a project:
 ### Method 1: Drag and Drop
 
 Simply drag any folder containing a `package.json` file into the PackageFlow window.
-
-<!-- TODO: Add screenshot/gif of drag and drop import -->
 
 ### Method 2: Click to Import
 
@@ -53,14 +51,16 @@ Simply drag any folder containing a `package.json` file into the PackageFlow win
 
 Once you've imported a project, you'll see:
 
-<!-- TODO: Add screenshot of main interface with annotations -->
-
 ### Main Areas
 
 1. **Sidebar** - Project list and navigation
 2. **Script Cards** - All npm scripts as clickable buttons
 3. **Terminal Panel** - Live output from running scripts
 4. **Status Bar** - Quick actions and system status
+
+<p align="center">
+  <img src="./screenshots/scripts.png" width="900" alt="Projects and script cards" />
+</p>
 
 ## Running Your First Script
 
@@ -69,7 +69,9 @@ Once you've imported a project, you'll see:
 3. Click the script card
 4. Watch the output in the terminal panel
 
-<!-- TODO: Add gif of running a script -->
+<p align="center">
+  <img src="./screenshots/run-script.png" width="900" alt="Running an npm script with live output" />
+</p>
 
 ## Key Shortcuts
 
@@ -89,3 +91,4 @@ Now that you're set up, explore these features:
 - [Visual Workflow](./features/visual-workflow.md) - Automate multi-step tasks
 - [Git Integration](./features/git-integration.md) - Visual Git operations
 - [One-Click Deploy](./features/one-click-deploy.md) - Deploy with preview links
+- [MCP Server](./features/mcp-server.md) - Let AI tools safely run actions for you

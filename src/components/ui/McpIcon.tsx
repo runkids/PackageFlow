@@ -1,36 +1,58 @@
 import React, { useId } from 'react';
 import { cn } from '../../lib/utils';
 
+// R/E/W gradient colors (blue -> amber -> rose)
+const REW_GRADIENT_COLORS = ['#3b82f6', '#f59e0b', '#f43f5e'] as const;
+
 interface McpIconProps extends React.SVGProps<SVGSVGElement> {
   className?: string;
   /** Enable gradient fill */
   gradient?: boolean;
-  /** Custom gradient colors [start, end] */
-  gradientColors?: [string, string];
+  /** Use R/E/W theme gradient (blue -> amber -> rose) */
+  rewGradient?: boolean;
+  /** Custom gradient colors [start, middle?, end] - supports 2 or 3 colors */
+  gradientColors?: string[];
 }
 
 export const McpIcon: React.FC<McpIconProps> = ({
   className,
   gradient = false,
-  gradientColors = ['#22c55e', '#3b82f6'], // green-500 to blue-500
+  rewGradient = false,
+  gradientColors,
   ...props
 }) => {
   const gradientId = useId();
+  const useGradient = gradient || rewGradient;
+
+  // Determine colors: rewGradient > gradientColors > default
+  const colors = rewGradient
+    ? REW_GRADIENT_COLORS
+    : gradientColors ?? ['#22c55e', '#3b82f6'];
 
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      fill={gradient ? `url(#${gradientId})` : 'currentColor'}
+      fill={useGradient ? `url(#${gradientId})` : 'currentColor'}
       fillRule="evenodd"
       viewBox="0 0 24 24"
       className={cn('w-4 h-4', className)}
       {...props}
     >
-      {gradient && (
+      {useGradient && (
         <defs>
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={gradientColors[0]} />
-            <stop offset="100%" stopColor={gradientColors[1]} />
+            {colors.length === 2 ? (
+              <>
+                <stop offset="0%" stopColor={colors[0]} />
+                <stop offset="100%" stopColor={colors[1]} />
+              </>
+            ) : (
+              <>
+                <stop offset="0%" stopColor={colors[0]} />
+                <stop offset="50%" stopColor={colors[1]} />
+                <stop offset="100%" stopColor={colors[2]} />
+              </>
+            )}
           </linearGradient>
         </defs>
       )}

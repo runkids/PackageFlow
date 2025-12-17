@@ -199,6 +199,24 @@ impl Default for McpPermissionMode {
     }
 }
 
+/// Dev server mode for MCP
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DevServerMode {
+    /// MCP manages background processes independently (default)
+    McpManaged,
+    /// Processes are tracked in PackageFlow UI via events
+    UiIntegrated,
+    /// Reject dev server commands with a hint to use PackageFlow UI
+    RejectWithHint,
+}
+
+impl Default for DevServerMode {
+    fn default() -> Self {
+        DevServerMode::McpManaged
+    }
+}
+
 /// MCP Server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -209,6 +227,9 @@ pub struct McpServerConfig {
     /// Default permission mode
     #[serde(default)]
     pub permission_mode: McpPermissionMode,
+    /// Dev server mode - controls how dev server commands are handled
+    #[serde(default)]
+    pub dev_server_mode: DevServerMode,
     /// List of explicitly allowed tools (empty = use permissionMode defaults)
     #[serde(default)]
     pub allowed_tools: Vec<String>,
@@ -226,6 +247,7 @@ impl Default for McpServerConfig {
         Self {
             is_enabled: true,
             permission_mode: McpPermissionMode::ReadOnly,
+            dev_server_mode: DevServerMode::default(),
             allowed_tools: vec![],
             log_requests: false,
         }
@@ -263,6 +285,7 @@ pub fn update_mcp_config(
     db: tauri::State<'_, DatabaseState>,
     is_enabled: Option<bool>,
     permission_mode: Option<McpPermissionMode>,
+    dev_server_mode: Option<DevServerMode>,
     allowed_tools: Option<Vec<String>>,
     log_requests: Option<bool>,
 ) -> Result<McpServerConfig, String> {
@@ -274,6 +297,9 @@ pub fn update_mcp_config(
     }
     if let Some(mode) = permission_mode {
         config.permission_mode = mode;
+    }
+    if let Some(mode) = dev_server_mode {
+        config.dev_server_mode = mode;
     }
     if let Some(tools) = allowed_tools {
         config.allowed_tools = tools;

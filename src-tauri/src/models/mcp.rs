@@ -23,6 +23,34 @@ pub enum MCPPermissionMode {
     FullAccess,
 }
 
+/// Dev server mode for MCP
+///
+/// Controls how dev server commands (npm run dev, etc.) are handled:
+/// - `McpManaged`: MCP manages background processes independently (default)
+/// - `UiIntegrated`: Processes are tracked in PackageFlow UI via events
+/// - `RejectWithHint`: Reject dev server commands with a hint to use PackageFlow UI
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DevServerMode {
+    /// MCP manages background processes independently (default)
+    #[default]
+    McpManaged,
+    /// Processes are tracked in PackageFlow UI via events
+    UiIntegrated,
+    /// Reject dev server commands with a hint to use PackageFlow UI
+    RejectWithHint,
+}
+
+impl std::fmt::Display for DevServerMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DevServerMode::McpManaged => write!(f, "mcp_managed"),
+            DevServerMode::UiIntegrated => write!(f, "ui_integrated"),
+            DevServerMode::RejectWithHint => write!(f, "reject_with_hint"),
+        }
+    }
+}
+
 impl std::fmt::Display for MCPPermissionMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -63,6 +91,9 @@ pub struct MCPServerConfig {
     /// Default permission mode
     #[serde(default)]
     pub permission_mode: MCPPermissionMode,
+    /// Dev server mode - controls how dev server commands are handled
+    #[serde(default)]
+    pub dev_server_mode: DevServerMode,
     /// List of allowed tools (empty = all tools allowed based on permission mode)
     #[serde(default = "default_allowed_tools")]
     pub allowed_tools: Vec<String>,
@@ -93,6 +124,7 @@ impl Default for MCPServerConfig {
         Self {
             is_enabled: false,
             permission_mode: MCPPermissionMode::ReadOnly,
+            dev_server_mode: DevServerMode::default(),
             allowed_tools: default_allowed_tools(),
             log_requests: true,
             encrypted_secrets: MCPEncryptedSecrets::default(),
@@ -316,6 +348,7 @@ impl From<&MCPSession> for MCPSessionInfo {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMCPConfigRequest {
     pub permission_mode: Option<MCPPermissionMode>,
+    pub dev_server_mode: Option<DevServerMode>,
     pub allowed_tools: Option<Vec<String>>,
     pub log_requests: Option<bool>,
 }

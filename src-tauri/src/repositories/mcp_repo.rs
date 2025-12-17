@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
-use crate::models::mcp::{MCPEncryptedSecrets, MCPPermissionMode, MCPServerConfig};
+use crate::models::mcp::{DevServerMode, MCPEncryptedSecrets, MCPPermissionMode, MCPServerConfig};
 use crate::utils::database::Database;
 
 /// MCP request log entry
@@ -38,7 +38,7 @@ impl MCPRepository {
         self.db.with_connection(|conn| {
             let result = conn.query_row(
                 r#"
-                SELECT is_enabled, permission_mode, allowed_tools, log_requests, encrypted_secrets
+                SELECT is_enabled, permission_mode, dev_server_mode, allowed_tools, log_requests, encrypted_secrets
                 FROM mcp_config
                 WHERE id = 1
                 "#,
@@ -47,9 +47,10 @@ impl MCPRepository {
                     Ok(MCPConfigRow {
                         is_enabled: row.get(0)?,
                         permission_mode: row.get(1)?,
-                        allowed_tools: row.get(2)?,
-                        log_requests: row.get(3)?,
-                        encrypted_secrets: row.get(4)?,
+                        dev_server_mode: row.get(2)?,
+                        allowed_tools: row.get(3)?,
+                        log_requests: row.get(4)?,
+                        encrypted_secrets: row.get(5)?,
                     })
                 },
             );
@@ -76,16 +77,23 @@ impl MCPRepository {
             MCPPermissionMode::FullAccess => "full_access",
         };
 
+        let dev_server_mode_str = match config.dev_server_mode {
+            DevServerMode::McpManaged => "mcp_managed",
+            DevServerMode::UiIntegrated => "ui_integrated",
+            DevServerMode::RejectWithHint => "reject_with_hint",
+        };
+
         self.db.with_connection(|conn| {
             conn.execute(
                 r#"
                 INSERT OR REPLACE INTO mcp_config
-                (id, is_enabled, permission_mode, allowed_tools, log_requests, encrypted_secrets)
-                VALUES (1, ?1, ?2, ?3, ?4, ?5)
+                (id, is_enabled, permission_mode, dev_server_mode, allowed_tools, log_requests, encrypted_secrets)
+                VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
                 "#,
                 params![
                     config.is_enabled as i32,
                     permission_mode_str,
+                    dev_server_mode_str,
                     allowed_tools_json,
                     config.log_requests as i32,
                     encrypted_secrets_json,
@@ -257,6 +265,7 @@ impl MCPRepository {
 struct MCPConfigRow {
     is_enabled: i32,
     permission_mode: String,
+    dev_server_mode: Option<String>,
     allowed_tools: String,
     log_requests: i32,
     encrypted_secrets: Option<String>,
@@ -269,6 +278,12 @@ impl MCPConfigRow {
             "execute_with_confirm" => MCPPermissionMode::ExecuteWithConfirm,
             "full_access" => MCPPermissionMode::FullAccess,
             _ => MCPPermissionMode::ReadOnly,
+        };
+
+        let dev_server_mode = match self.dev_server_mode.as_deref() {
+            Some("ui_integrated") => DevServerMode::UiIntegrated,
+            Some("reject_with_hint") => DevServerMode::RejectWithHint,
+            _ => DevServerMode::McpManaged,
         };
 
         let allowed_tools: Vec<String> = serde_json::from_str(&self.allowed_tools)
@@ -284,6 +299,7 @@ impl MCPConfigRow {
         Ok(MCPServerConfig {
             is_enabled: self.is_enabled != 0,
             permission_mode,
+            dev_server_mode,
             allowed_tools,
             log_requests: self.log_requests != 0,
             encrypted_secrets,
