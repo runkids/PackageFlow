@@ -8,7 +8,14 @@
 
 // MCP server modules (extracted for maintainability)
 mod mcp;
-use mcp::types::*;
+use mcp::{
+    // Types
+    types::*,
+    // Security
+    ToolCategory, get_tool_category, is_tool_allowed,
+    // State
+    RATE_LIMITER, TOOL_RATE_LIMITERS, ACTION_SEMAPHORE,
+};
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -72,65 +79,10 @@ use packageflow_lib::models::mcp::{MCPPermissionMode, MCPServerConfig};
 // Import path_resolver for proper command execution on macOS GUI apps
 use packageflow_lib::utils::path_resolver;
 
-// Global rate limiters for the MCP server
-// Different limits based on tool category to prevent abuse of dangerous operations
+// Rate limiters, semaphore, and security are now imported from mcp::{state, security}
 use once_cell::sync::Lazy;
-
-/// Global rate limiter (100 requests/minute) - applies to all requests
-static RATE_LIMITER: Lazy<RateLimiter> = Lazy::new(|| RateLimiter::default());
-
-/// Tool-level rate limiters with category-specific limits
-struct ToolRateLimiters {
-    /// Read-only tools: 200 requests/minute (generous)
-    read_only: RateLimiter,
-    /// Write tools: 30 requests/minute (moderate)
-    write: RateLimiter,
-    /// Execute tools: 10 requests/minute (strict)
-    execute: RateLimiter,
-}
-
-impl Default for ToolRateLimiters {
-    fn default() -> Self {
-        Self {
-            read_only: RateLimiter::new(200, 60),   // 200/min
-            write: RateLimiter::new(30, 60),        // 30/min
-            execute: RateLimiter::new(10, 60),      // 10/min
-        }
-    }
-}
-
-impl ToolRateLimiters {
-    /// Check rate limit based on tool category
-    fn check(&self, category: ToolCategory) -> Result<(), String> {
-        match category {
-            ToolCategory::ReadOnly => self.read_only.check_and_increment(),
-            ToolCategory::Write => self.write.check_and_increment(),
-            ToolCategory::Execute => self.execute.check_and_increment(),
-        }
-    }
-
-    /// Get the limit description for error messages
-    fn get_limit_description(&self, category: ToolCategory) -> &'static str {
-        match category {
-            ToolCategory::ReadOnly => "200 requests/minute for read-only tools",
-            ToolCategory::Write => "30 requests/minute for write tools",
-            ToolCategory::Execute => "10 requests/minute for execute tools",
-        }
-    }
-}
-
-static TOOL_RATE_LIMITERS: Lazy<ToolRateLimiters> = Lazy::new(ToolRateLimiters::default);
-
-/// Concurrency limiter for action execution
-/// Limits concurrent action executions to prevent resource exhaustion
 use tokio::sync::{Semaphore, RwLock};
 use tokio::io::{AsyncBufReadExt, BufReader};
-
-/// Maximum concurrent action executions (scripts, webhooks, workflows)
-const MAX_CONCURRENT_ACTIONS: usize = 10;
-
-/// Global semaphore for action concurrency control
-static ACTION_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(MAX_CONCURRENT_ACTIONS));
 
 // ============================================================================
 // Background Process Management
@@ -673,80 +625,7 @@ impl BackgroundProcessManager {
 static BACKGROUND_PROCESS_MANAGER: Lazy<BackgroundProcessManager> =
     Lazy::new(|| BackgroundProcessManager::new());
 
-// Note: MCP permission types are now imported from packageflow_lib::models::mcp
-
-/// Tool permission category
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ToolCategory {
-    /// Read-only operations (always allowed)
-    ReadOnly,
-    /// Write operations (create, update, delete)
-    Write,
-    /// Execute operations (run commands, workflows)
-    Execute,
-}
-
-/// Get the permission category for a tool
-fn get_tool_category(tool_name: &str) -> ToolCategory {
-    match tool_name {
-        // Read-only tools
-        "list_projects" | "get_project" | "list_worktrees" | "get_worktree_status" | "get_git_diff" |
-        "list_workflows" | "get_workflow" | "list_step_templates" |
-        // MCP Action read-only tools
-        "list_actions" | "get_action" | "list_action_executions" | "get_execution_status" |
-        "get_action_permissions" |
-        // Background process read-only tools
-        "get_background_process_output" | "list_background_processes" |
-        // Enhanced MCP tools - Read-only
-        "get_environment_info" | "list_ai_providers" | "check_file_exists" |
-        "list_conversations" | "get_notifications" |
-        "get_security_scan_results" | "list_deployments" |
-        "get_project_dependencies" | "get_workflow_execution_details" |
-        "search_project_files" | "read_project_file" => ToolCategory::ReadOnly,
-        // Write tools
-        "create_workflow" | "add_workflow_step" | "create_step_template" |
-        // Enhanced MCP tools - Write
-        "update_workflow" | "delete_workflow_step" | "mark_notifications_read" => ToolCategory::Write,
-        // Execute tools (including MCP action execution and background process control)
-        "run_workflow" | "run_script" | "trigger_webhook" | "run_mcp_workflow" | "run_npm_script" |
-        "stop_background_process" |
-        // Enhanced MCP tools - Execute
-        "run_security_scan" => ToolCategory::Execute,
-        // Unknown tools default to Execute (most restrictive)
-        _ => ToolCategory::Execute,
-    }
-}
-
-/// Check if a tool is allowed based on permission mode and allowed_tools list
-fn is_tool_allowed(tool_name: &str, config: &MCPServerConfig) -> Result<(), String> {
-    // Check allowed_tools whitelist first (if non-empty)
-    if !config.allowed_tools.is_empty() && !config.allowed_tools.contains(&tool_name.to_string()) {
-        return Err(format!(
-            "Tool '{}' is not in the allowed tools list. Allowed: {:?}",
-            tool_name, config.allowed_tools
-        ));
-    }
-
-    // Check permission mode
-    let category = get_tool_category(tool_name);
-
-    match config.permission_mode {
-        MCPPermissionMode::ReadOnly => {
-            if category != ToolCategory::ReadOnly {
-                return Err(format!(
-                    "Tool '{}' requires write/execute permission, but MCP server is in read-only mode. \
-                    Change permission mode in PackageFlow settings to enable this tool.",
-                    tool_name
-                ));
-            }
-        }
-        MCPPermissionMode::ExecuteWithConfirm | MCPPermissionMode::FullAccess => {
-            // Allow all tools
-        }
-    }
-
-    Ok(())
-}
+// ToolCategory, get_tool_category, is_tool_allowed are now imported from mcp::security
 
 /// Log an MCP request to SQLite database (enhanced audit logging)
 ///

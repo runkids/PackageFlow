@@ -5,14 +5,16 @@
 
 // Enabled modules
 pub mod types;
+pub mod security;
+pub mod state;
 
 // Modules to be populated incrementally
-// pub mod state;
-// pub mod security;
 // pub mod templates;
 // pub mod utils;
 // pub mod store;
 // pub mod background;
 
-// Re-export types
+// Re-export commonly used items
 pub use types::*;
+pub use security::{ToolCategory, get_tool_category, is_tool_allowed};
+pub use state::{RATE_LIMITER, TOOL_RATE_LIMITERS, ACTION_SEMAPHORE};
