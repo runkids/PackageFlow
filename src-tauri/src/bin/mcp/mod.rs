@@ -8,10 +8,10 @@ pub mod types;
 pub mod security;
 pub mod state;
 pub mod templates;
+pub mod store;
 
 // Modules to be populated incrementally
 // pub mod utils;
-// pub mod store;
 // pub mod background;
 
 // Re-export commonly used items
@@ -19,3 +19,7 @@ pub use types::*;
 pub use security::{ToolCategory, get_tool_category, is_tool_allowed};
 pub use state::{RATE_LIMITER, TOOL_RATE_LIMITERS, ACTION_SEMAPHORE};
 pub use templates::get_builtin_templates;
+pub use store::{
+    read_store_data, write_store_data, log_request, open_database, get_database_path,
+    StoreData, Project, Workflow, WorkflowNode, NodePosition, CustomStepTemplate,
+};
