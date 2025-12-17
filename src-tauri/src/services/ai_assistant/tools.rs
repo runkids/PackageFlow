@@ -563,6 +563,33 @@ impl MCPToolHandler {
                 requires_confirmation: true,
                 category: "process".to_string(),
             },
+            // Package manager commands (not scripts from package.json)
+            ToolDefinition {
+                name: "run_package_manager_command".to_string(),
+                description: "Run a package manager command directly (e.g., audit, outdated, install). This is for built-in package manager commands, NOT scripts from package.json. Use run_script for package.json scripts.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The package manager command to run (e.g., 'audit', 'outdated', 'install', 'update')",
+                            "enum": ["audit", "outdated", "install", "update", "prune", "dedupe", "why", "list", "info"]
+                        },
+                        "project_path": {
+                            "type": "string",
+                            "description": "Path to the project directory"
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional additional arguments (e.g., ['--fix'] for audit --fix)"
+                        }
+                    },
+                    "required": ["command", "project_path"]
+                }),
+                requires_confirmation: true,
+                category: "script".to_string(),
+            },
         ];
 
         AvailableTools { tools }
@@ -681,6 +708,8 @@ impl MCPToolHandler {
             // New confirmation-required tools synced with MCP Server
             "create_step_template" => self.execute_create_step_template(tool_call).await,
             "stop_background_process" => self.execute_stop_background_process(tool_call).await,
+            // Package manager commands
+            "run_package_manager_command" => self.execute_run_package_manager_command(tool_call).await,
             _ => ToolResult::failure(
                 tool_call.id.clone(),
                 format!("Unknown tool: {}", tool_call.name),
@@ -1122,8 +1151,8 @@ impl MCPToolHandler {
             ),
         };
 
-        // Execute git worktree list
-        match std::process::Command::new("git")
+        // Execute git worktree list (use path_resolver for macOS GUI app compatibility)
+        match path_resolver::create_command("git")
             .args(["-C", project_path, "worktree", "list", "--porcelain"])
             .output()
         {
@@ -1302,16 +1331,16 @@ impl MCPToolHandler {
             ),
         };
 
-        // Get current branch
-        let branch_output = std::process::Command::new("git")
+        // Get current branch (use path_resolver for macOS GUI app compatibility)
+        let branch_output = path_resolver::create_command("git")
             .args(["-C", worktree_path, "rev-parse", "--abbrev-ref", "HEAD"])
             .output();
         let current_branch = branch_output.ok()
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
 
-        // Get status
-        let status_output = std::process::Command::new("git")
+        // Get status (use path_resolver for macOS GUI app compatibility)
+        let status_output = path_resolver::create_command("git")
             .args(["-C", worktree_path, "status", "--porcelain=v2", "--branch"])
             .output();
 
@@ -1389,12 +1418,12 @@ impl MCPToolHandler {
             ),
         };
 
-        // Get staged diff
-        let diff_output = std::process::Command::new("git")
+        // Get staged diff (use path_resolver for macOS GUI app compatibility)
+        let diff_output = path_resolver::create_command("git")
             .args(["-C", worktree_path, "diff", "--cached", "--stat"])
             .output();
 
-        let diff_content = std::process::Command::new("git")
+        let diff_content = path_resolver::create_command("git")
             .args(["-C", worktree_path, "diff", "--cached"])
             .output();
 
@@ -1990,6 +2019,184 @@ impl MCPToolHandler {
         }
     }
 
+    /// Execute run_package_manager_command tool (requires prior user confirmation)
+    /// Runs package manager commands like audit, outdated, install, etc.
+    async fn execute_run_package_manager_command(&self, tool_call: &ToolCall) -> ToolResult {
+        println!(">>> [AI Tool] execute_run_package_manager_command started: {:?}", tool_call.arguments);
+        let start_time = std::time::Instant::now();
+
+        // Extract parameters
+        let command = match tool_call.arguments.get("command").and_then(|v| v.as_str()) {
+            Some(c) => c,
+            None => return ToolResult::failure(
+                tool_call.id.clone(),
+                "Missing required parameter: command".to_string(),
+            ),
+        };
+
+        let project_path = match tool_call.arguments.get("project_path").and_then(|v| v.as_str()) {
+            Some(p) => p,
+            None => return ToolResult::failure(
+                tool_call.id.clone(),
+                "Missing required parameter: project_path".to_string(),
+            ),
+        };
+
+        // Validate command is in allowed list
+        let allowed_commands = ["audit", "outdated", "install", "update", "prune", "dedupe", "why", "list", "info"];
+        if !allowed_commands.contains(&command) {
+            return ToolResult::failure(
+                tool_call.id.clone(),
+                format!(
+                    "Command '{}' is not allowed. Allowed commands: {}",
+                    command,
+                    allowed_commands.join(", ")
+                ),
+            );
+        }
+
+        // Security: Validate path is within a registered project
+        let validated_path = match self.validate_project_path(project_path) {
+            Ok(p) => p,
+            Err(e) => return ToolResult::failure(tool_call.id.clone(), e),
+        };
+
+        // Get additional args if provided
+        let extra_args: Vec<String> = tool_call.arguments
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect())
+            .unwrap_or_default();
+
+        // Detect package manager
+        let package_manager = if validated_path.join("pnpm-lock.yaml").exists() {
+            "pnpm"
+        } else if validated_path.join("yarn.lock").exists() {
+            "yarn"
+        } else if validated_path.join("bun.lockb").exists() {
+            "bun"
+        } else {
+            "npm"
+        };
+
+        // Build command args
+        let mut args: Vec<String> = vec![command.to_string()];
+        args.extend(extra_args.clone());
+
+        let cwd = validated_path.to_string_lossy().to_string();
+        println!(">>> [AI Tool] Executing: {} {:?} in {}", package_manager, args, cwd);
+
+        // Use path_resolver::create_async_command for proper PATH handling
+        // This is the same approach used in execute_script command
+        let mut cmd = path_resolver::create_async_command(package_manager);
+        cmd.args(&args);
+        cmd.current_dir(&cwd);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        println!(">>> [AI Tool] Spawning command...");
+
+        // Spawn and wait for completion with timeout (2 minutes for most commands)
+        let timeout_duration = tokio::time::Duration::from_secs(120);
+        let output = match tokio::time::timeout(timeout_duration, cmd.output()).await {
+            Ok(Ok(output)) => output,
+            Ok(Err(e)) => {
+                println!(">>> [AI Tool] Failed to execute command: {}", e);
+                return ToolResult::failure(
+                    tool_call.id.clone(),
+                    format!("Failed to execute package command: {}", e),
+                );
+            }
+            Err(_) => {
+                println!(">>> [AI Tool] Command timed out after 2 minutes");
+                return ToolResult::failure(
+                    tool_call.id.clone(),
+                    "Command timed out after 2 minutes".to_string(),
+                );
+            }
+        };
+
+        println!(">>> [AI Tool] Command completed with status: {:?}", output.status);
+
+        let duration_ms = start_time.elapsed().as_millis() as i64;
+        let raw_stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let raw_stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        // Truncate output to avoid token explosion (max 32KB each)
+        // Use floor_char_boundary to avoid cutting UTF-8 multi-byte characters
+        const MAX_OUTPUT_LEN: usize = 32 * 1024;
+        let stdout = if raw_stdout.len() > MAX_OUTPUT_LEN {
+            // Find the last valid UTF-8 char boundary before MAX_OUTPUT_LEN
+            let truncate_at = raw_stdout
+                .char_indices()
+                .take_while(|(i, _)| *i < MAX_OUTPUT_LEN)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
+            format!(
+                "{}...\n\n[Output truncated: {} bytes total, showing first {} bytes]",
+                &raw_stdout[..truncate_at],
+                raw_stdout.len(),
+                truncate_at
+            )
+        } else {
+            raw_stdout
+        };
+        let stderr = if raw_stderr.len() > MAX_OUTPUT_LEN {
+            let truncate_at = raw_stderr
+                .char_indices()
+                .take_while(|(i, _)| *i < MAX_OUTPUT_LEN)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
+            format!(
+                "{}...\n\n[Output truncated: {} bytes total, showing first {} bytes]",
+                &raw_stderr[..truncate_at],
+                raw_stderr.len(),
+                truncate_at
+            )
+        } else {
+            raw_stderr
+        };
+
+        // For audit/outdated commands, non-zero exit code means "issues found" not "command failed"
+        // These commands return exit code 1 when they find vulnerabilities/outdated packages
+        let is_info_command = matches!(command, "audit" | "outdated" | "list" | "info" | "why");
+        let has_output = !stdout.is_empty() || !stderr.is_empty();
+        let success = output.status.success() || (is_info_command && has_output);
+
+        println!(">>> [AI Tool] stdout len: {}, stderr len: {}, success: {}", stdout.len(), stderr.len(), success);
+
+        let output_json = serde_json::json!({
+            "success": success,
+            "command": command,
+            "args": extra_args,
+            "package_manager": package_manager,
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": output.status.code(),
+        });
+
+        if success {
+            ToolResult::success(
+                tool_call.id.clone(),
+                serde_json::to_string_pretty(&output_json).unwrap_or_default(),
+                Some(duration_ms),
+            )
+        } else {
+            ToolResult {
+                call_id: tool_call.id.clone(),
+                success: false,
+                output: serde_json::to_string_pretty(&output_json).unwrap_or_default(),
+                error: Some(format!("Command '{}' failed to execute", command)),
+                duration_ms: Some(duration_ms),
+                metadata: None,
+            }
+        }
+    }
+
     /// Execute run_workflow tool (requires prior user confirmation)
     /// Note: Full workflow execution requires AppHandle which is not available here.
     /// This method returns information about how to execute the workflow.
@@ -2052,18 +2259,11 @@ impl MCPToolHandler {
     }
 
     /// Check if a tool requires user confirmation
+    /// Delegates to ToolPermissionChecker for consistent behavior across the codebase
     pub fn requires_confirmation(&self, tool_name: &str) -> bool {
-        match tool_name {
-            // Confirmation required - modifying operations
-            "run_script" | "run_workflow" | "trigger_webhook" |
-            "run_npm_script" | "create_workflow" | "add_workflow_step" => true,
-            // No confirmation - read-only operations
-            "get_git_status" | "get_staged_diff" | "list_project_scripts" |
-            "list_projects" | "get_project" | "list_workflows" | "get_workflow" |
-            "list_worktrees" | "list_actions" | "get_action" |
-            "list_action_executions" | "get_execution_status" | "list_step_templates" => false,
-            _ => true, // Default to requiring confirmation for unknown tools
-        }
+        // Use the centralized ToolPermissionChecker to ensure consistency
+        // with security.rs validation in execute_tool_call()
+        ToolPermissionChecker::requires_confirmation(tool_name)
     }
 
     /// Validate tool call arguments

@@ -234,7 +234,14 @@ impl ContextManager {
                     // Convert arguments to string for description
                     let args_str = call.arguments.to_string();
                     let description = if args_str.len() > 100 {
-                        format!("{}...", &args_str[..100])
+                        // UTF-8 safe truncation: find valid character boundary
+                        let truncate_at = args_str
+                            .char_indices()
+                            .take_while(|(i, _)| *i < 100)
+                            .last()
+                            .map(|(i, c)| i + c.len_utf8())
+                            .unwrap_or(args_str.len().min(100));
+                        format!("{}...", &args_str[..truncate_at])
                     } else {
                         args_str
                     };

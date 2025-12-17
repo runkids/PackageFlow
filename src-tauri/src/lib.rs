@@ -401,6 +401,7 @@ pub fn run() {
             ai_assistant::ai_assistant_list_conversations,
             ai_assistant::ai_assistant_update_conversation,
             ai_assistant::ai_assistant_update_conversation_service,
+            ai_assistant::ai_assistant_update_conversation_context,
             ai_assistant::ai_assistant_delete_conversation,
             ai_assistant::ai_assistant_send_message,
             ai_assistant::ai_assistant_cancel_stream,
@@ -413,6 +414,7 @@ pub fn run() {
             ai_assistant::ai_assistant_stop_tool_execution,
             ai_assistant::ai_assistant_continue_after_tool,
             ai_assistant::ai_assistant_get_suggestions,
+            ai_assistant::ai_assistant_execute_tool_direct,
             // AI Assistant - Interactive Elements (023-enhanced-ai-chat US3)
             ai_assistant::ai_assistant_parse_interactive,
             ai_assistant::ai_assistant_execute_lazy_action,

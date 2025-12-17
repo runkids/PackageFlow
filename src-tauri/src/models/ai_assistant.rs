@@ -339,15 +339,42 @@ impl ToolResult {
 // Quick Actions / Suggestions
 // ============================================================================
 
-/// Suggested quick action (ephemeral - not persisted)
+/// Quick action execution mode
+/// - Instant: Execute tool directly, display result card (no AI, zero tokens)
+/// - Smart: Execute tool, then AI summarizes/analyzes (moderate tokens)
+/// - Ai: Full AI conversation flow (AI decides tool usage)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickActionMode {
+    /// Direct execution + formatted card display (zero token)
+    Instant,
+    /// Execute tool + AI summary/analysis (moderate token)
+    Smart,
+    /// Full AI conversation flow (AI decides)
+    #[default]
+    Ai,
+}
+
+/// Tool specification for quick action
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickActionTool {
+    /// MCP tool name to execute
+    pub name: String,
+    /// Tool arguments (JSON object)
+    #[serde(default)]
+    pub args: serde_json::Value,
+}
+
+/// Suggested quick action (ephemeral - not persisted)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuggestedAction {
     /// Unique action identifier
     pub id: String,
     /// Display label
     pub label: String,
-    /// Text to send when clicked
+    /// Text to send when clicked (used for AI mode, or as fallback)
     pub prompt: String,
     /// Lucide icon name
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -358,6 +385,18 @@ pub struct SuggestedAction {
     /// Action category for grouping
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Execution mode: instant, smart, or ai
+    #[serde(default)]
+    pub mode: QuickActionMode,
+    /// Tool to execute (for instant/smart modes)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<QuickActionTool>,
+    /// Hint for AI summarization (smart mode only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary_hint: Option<String>,
+    /// Whether this action requires a project context to be available (Feature 024)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requires_project: Option<bool>,
 }
 
 // ============================================================================

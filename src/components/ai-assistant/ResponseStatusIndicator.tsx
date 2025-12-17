@@ -134,8 +134,18 @@ export function ResponseStatusIndicator({
         {phaseConfig.icon}
       </div>
 
-      {/* Status text */}
-      <span className="font-medium">{phaseConfig.label}</span>
+      {/* Status text with shimmer effect */}
+      <span
+        className={cn(
+          'font-medium',
+          // Apply shimmer effect for active phases
+          status.phase === 'thinking' && 'shimmer-purple',
+          status.phase === 'generating' && 'shimmer-blue',
+          status.phase === 'tool' && 'shimmer-amber'
+        )}
+      >
+        {phaseConfig.label}
+      </span>
 
       {/* Model badge during generating (T097) */}
       {status.phase === 'generating' && status.model && (

@@ -11,15 +11,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import {
-  Plus,
-  MessageSquare,
-  Bot,
-  Search,
-  X,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { Plus, MessageSquare, Bot, Search, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { Skeleton } from '../ui/Skeleton';

@@ -12,133 +12,71 @@
  */
 
 import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { cn } from '../../lib/utils';
 import { ChatMessage } from './ChatMessage';
-import { ChatInputArea } from './ChatInputArea';
+import { ChatInputContainer } from './chat-input';
 import { AIProviderNotConfiguredState } from './AIProviderNotConfiguredState';
-import { QuickActionChips } from './QuickActionChips';
+import { QuickActionsPopover } from './QuickActionsPopover';
 import { AIAssistantSidebar } from './AIAssistantSidebar';
 import { ConversationHeader } from './ConversationHeader';
 import { useAIChat } from '../../hooks/useAIChat';
 import { useAIQuickActions } from '../../hooks/useAIQuickActions';
 import { useConversations } from '../../hooks/useConversations';
 import {
-  Bot,
   AlertCircle,
   X,
   Sparkles,
-  Zap,
   FolderGit2,
   Workflow,
   Terminal,
   GitBranch,
+  // Feature 024: New icons for Security & System categories
+  Shield,
+  Activity,
 } from 'lucide-react';
-import type { SuggestedAction } from '../../types/ai-assistant';
+import type { SuggestedAction, ToolResult } from '../../types/ai-assistant';
+import { useScriptExecutionContext } from '../../contexts/ScriptExecutionContext';
+import { QuickActionResultCard } from './QuickActionResultCard';
+
+/** Instant action result for display */
+interface InstantResult {
+  id: string;
+  toolName: string;
+  label: string;
+  result: unknown;
+  timestamp: Date;
+}
 
 /**
- * Collapsible quick actions component - horizontal expand on hover
- * Badge always visible, chips expand horizontally to the right on hover
- * Uses overflow hidden to maintain fixed height
+ * Animated Bot Icon with blinking eyes and head wobble
+ * Custom SVG-based robot face with CSS animations
  */
-function CollapsibleQuickActions({
-  suggestions,
-  onAction,
-  disabled,
-}: {
-  suggestions: SuggestedAction[];
-  onAction: (prompt: string) => void;
-  disabled: boolean;
-}) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Delay configurations (in milliseconds)
-  const EXPAND_DELAY = 100;
-  const COLLAPSE_DELAY = 300;
-
-  // Clear all timers on unmount
-  useEffect(() => {
-    return () => {
-      if (expandTimerRef.current) {
-        clearTimeout(expandTimerRef.current);
-      }
-      if (collapseTimerRef.current) {
-        clearTimeout(collapseTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Handle mouse enter on the entire container
-  const handleMouseEnter = useCallback(() => {
-    // Cancel any pending collapse
-    if (collapseTimerRef.current) {
-      clearTimeout(collapseTimerRef.current);
-      collapseTimerRef.current = null;
-    }
-
-    // Start expand timer if not already expanded
-    if (!isExpanded && !expandTimerRef.current) {
-      expandTimerRef.current = setTimeout(() => {
-        setIsExpanded(true);
-        expandTimerRef.current = null;
-      }, EXPAND_DELAY);
-    }
-  }, [isExpanded]);
-
-  // Handle mouse leave from the entire container
-  const handleMouseLeave = useCallback(() => {
-    // Cancel any pending expand
-    if (expandTimerRef.current) {
-      clearTimeout(expandTimerRef.current);
-      expandTimerRef.current = null;
-    }
-
-    // Start collapse timer if expanded
-    if (isExpanded && !collapseTimerRef.current) {
-      collapseTimerRef.current = setTimeout(() => {
-        setIsExpanded(false);
-        collapseTimerRef.current = null;
-      }, COLLAPSE_DELAY);
-    }
-  }, [isExpanded]);
-
+function AnimatedBotIcon({ className }: { className?: string }) {
   return (
-    <div
-      className="px-4 h-9 overflow-hidden"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      {/* Horizontal flex container - badge + chips */}
-      <div className="flex items-center gap-2 h-full">
-        {/* Badge - always visible */}
-        <div
-          className={cn(
-            'flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5',
-            'text-xs text-muted-foreground',
-            'bg-muted/40 rounded-full',
-            'border border-border/50',
-            'transition-colors duration-200',
-            isExpanded && 'bg-muted/60 border-border/70'
-          )}
-        >
-          <Zap className="w-3 h-3" />
-          <span className="font-medium">Quick Actions</span>
-          <span className="text-muted-foreground/60">({suggestions.length})</span>
-        </div>
-
-        {/* Chips container - expands horizontally */}
-        <QuickActionChips
-          suggestions={suggestions}
-          onAction={(prompt) => {
-            onAction(prompt);
-            setIsExpanded(false);
-          }}
-          disabled={disabled}
-          isVisible={isExpanded}
-          horizontal
-        />
-      </div>
+    <div className="animate-bot-wobble origin-bottom">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+      >
+        {/* Antenna */}
+        <path d="M12 8V4H8" />
+        {/* Head */}
+        <rect width="16" height="12" x="4" y="8" rx="2" />
+        {/* Left ear */}
+        <path d="M4 12H2v4h2" />
+        {/* Right ear */}
+        <path d="M20 12h2v4h-2" />
+        {/* Left eye - with blink animation */}
+        <ellipse cx="9" cy="13" rx="1" ry="1.5" fill="currentColor" className="animate-blink" />
+        {/* Right eye - with blink animation */}
+        <ellipse cx="15" cy="13" rx="1" ry="1.5" fill="currentColor" className="animate-blink" />
+      </svg>
     </div>
   );
 }
@@ -146,16 +84,44 @@ function CollapsibleQuickActions({
 interface AIAssistantPageProps {
   /** Handler to open settings page */
   onOpenSettings: () => void;
+  /** Initial project path for context (Feature 024) */
+  initialProjectPath?: string;
+  /** Handler to change project context (Feature 024) */
+  onProjectContextChange?: (projectPath: string | null) => void;
+  /** Handler to clear project context (Feature 024) */
+  onClearProjectContext?: () => void;
 }
 
 /**
  * Main AI Assistant page component
  * Displays sidebar with history and chat area
  */
-export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
+export function AIAssistantPage({
+  onOpenSettings,
+  initialProjectPath,
+  onProjectContextChange: _onProjectContextChange,
+  onClearProjectContext: _onClearProjectContext,
+}: AIAssistantPageProps) {
+  // Feature 024: These handlers will be used in Stage 3 (ProjectContextSelector UI)
+  void _onProjectContextChange;
+  void _onClearProjectContext;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+
+  // Feature 024: Track current project context for quick actions
+  // Priority: conversation.projectPath > initialProjectPath
+  const [localProjectPath, setLocalProjectPath] = useState<string | undefined>(initialProjectPath);
+
+  // Update local state when initialProjectPath changes (from navigation)
+  // Always sync when initialProjectPath changes to ensure navigation context is applied
+  useEffect(() => {
+    // Only update if initialProjectPath changed and is defined
+    // This ensures navigation from project page sets the context correctly
+    if (initialProjectPath !== undefined) {
+      setLocalProjectPath(initialProjectPath);
+    }
+  }, [initialProjectPath]);
 
   // Chat state
   const {
@@ -177,7 +143,11 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
     stopToolExecution,
     isExecutingTool,
     responseStatus, // Feature 023
-  } = useAIChat({ providerId: selectedProviderId ?? undefined });
+    updateConversationContext, // Feature 024
+  } = useAIChat({
+    providerId: selectedProviderId ?? undefined,
+    projectPath: localProjectPath,
+  });
 
   // Local error state for dismissing
   const [dismissedError, setDismissedError] = useState<string | null>(null);
@@ -194,11 +164,18 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
     refresh: refreshConversations,
   } = useConversations();
 
+  // Feature 024: Determine effective project path for quick actions
+  // Priority: conversation.projectPath > localProjectPath (from navigation)
+  const effectiveProjectPath = conversation?.projectPath ?? localProjectPath;
+
   // Get quick actions based on project context
   const { suggestions } = useAIQuickActions({
     conversationId: conversation?.id,
-    projectPath: conversation?.projectPath ?? undefined,
+    projectPath: effectiveProjectPath,
   });
+
+  // Get running scripts for list_background_processes integration
+  const { runningScripts } = useScriptExecutionContext();
 
   // Track executing tool IDs
   const executingToolIds = useMemo(() => {
@@ -317,17 +294,40 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
     [conversations, conversation, loadConversation]
   );
 
-  // Handle new chat
+  // Handle new chat - Feature 024: keep or clear project context based on source
   const handleNewChat = useCallback(async () => {
     await createNewConversation();
+    // Keep localProjectPath if it was set via navigation, otherwise clear
+    // This allows users to start a new chat while keeping project context
   }, [createNewConversation]);
 
-  // Handle conversation selection
+  // Handle conversation selection - Feature 024: sync project context
   const handleSelectConversation = useCallback(
     async (conversationId: string) => {
       await loadConversation(conversationId);
+      // The effectiveProjectPath will automatically update based on conversation.projectPath
     },
     [loadConversation]
+  );
+
+  // Feature 024: Handle project context change from header selector
+  const handleProjectContextChange = useCallback(
+    async (projectPath: string | null) => {
+      setLocalProjectPath(projectPath ?? undefined);
+
+      // Update conversation's project context if one exists
+      if (conversation) {
+        try {
+          await updateConversationContext(projectPath);
+        } catch (err) {
+          console.error('[AI Assistant] Failed to update conversation context:', err);
+        }
+      }
+
+      // Also notify parent if handler is provided
+      _onProjectContextChange?.(projectPath);
+    },
+    [conversation, updateConversationContext, _onProjectContextChange]
   );
 
   // Handle send message
@@ -340,11 +340,159 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
     }
   }, [inputValue, sendMessage, setInputValue, refreshConversations]);
 
-  // Handle quick action click
+  // State for instant action results (shown as cards, not in chat)
+  const [instantResults, setInstantResults] = useState<InstantResult[]>([]);
+
+  // Handle quick action click - routes by mode
   const handleQuickAction = useCallback(
-    async (prompt: string) => {
+    async (action: SuggestedAction) => {
       setDismissedError(null);
-      await sendMessage(prompt);
+
+      // Route by mode
+      switch (action.mode) {
+        case 'ai':
+          // Full AI conversation flow - send prompt
+          await sendMessage(action.prompt);
+          await refreshConversations();
+          break;
+
+        case 'instant':
+          // Execute tool directly, show result card (no AI)
+          if (action.tool) {
+            try {
+              const result = await invoke<ToolResult>('ai_assistant_execute_tool_direct', {
+                toolName: action.tool.name,
+                toolArgs: action.tool.args,
+              });
+
+              if (result.success) {
+                // Parse result and merge PTY sessions for processes
+                let parsedResult: unknown;
+                try {
+                  parsedResult = JSON.parse(result.output);
+
+                  // Special handling: merge PTY sessions for list_background_processes
+                  if (action.tool.name === 'list_background_processes') {
+                    const backendResult = parsedResult as { processes?: unknown[] };
+                    const ptyProcesses = Array.from(runningScripts.values()).map((script) => ({
+                      execution_id: script.executionId,
+                      script_name: script.scriptName,
+                      project_path: script.projectPath,
+                      project_name: script.projectName,
+                      started_at: script.startedAt,
+                      status: script.status,
+                      port: script.port,
+                      source: 'pty_terminal',
+                    }));
+                    const allProcesses = [...(backendResult.processes || []), ...ptyProcesses];
+                    parsedResult = {
+                      ...backendResult,
+                      processes: allProcesses,
+                      count: allProcesses.length,
+                    };
+                  }
+                } catch {
+                  parsedResult = { message: result.output };
+                }
+
+                // Add to instant results (displayed as card)
+                setInstantResults((prev) => [
+                  {
+                    id: `${action.id}-${Date.now()}`,
+                    toolName: action.tool!.name,
+                    label: action.label,
+                    result: parsedResult,
+                    timestamp: new Date(),
+                  },
+                  ...prev.slice(0, 4), // Keep max 5 results
+                ]);
+              } else {
+                // Show error as card
+                setInstantResults((prev) => [
+                  {
+                    id: `${action.id}-${Date.now()}`,
+                    toolName: action.tool!.name,
+                    label: action.label,
+                    result: { error: result.error || 'Tool execution failed' },
+                    timestamp: new Date(),
+                  },
+                  ...prev.slice(0, 4),
+                ]);
+              }
+            } catch (err) {
+              console.error('[AI Assistant] Instant action failed:', err);
+              setInstantResults((prev) => [
+                {
+                  id: `${action.id}-${Date.now()}`,
+                  toolName: action.tool!.name,
+                  label: action.label,
+                  result: { error: err instanceof Error ? err.message : 'Unknown error' },
+                  timestamp: new Date(),
+                },
+                ...prev.slice(0, 4),
+              ]);
+            }
+          } else {
+            // Fallback to AI mode if no tool specified
+            await sendMessage(action.prompt);
+            await refreshConversations();
+          }
+          break;
+
+        case 'smart':
+          // Execute tool, then send result to AI for analysis
+          if (action.tool) {
+            try {
+              const result = await invoke<ToolResult>('ai_assistant_execute_tool_direct', {
+                toolName: action.tool.name,
+                toolArgs: action.tool.args,
+              });
+
+              if (result.success) {
+                // Send to AI with summary hint
+                const hint = action.summaryHint || `Please analyze this ${action.label} result.`;
+                const contextMessage = `${action.prompt}\n\n[Tool Result]\n\`\`\`json\n${result.output}\n\`\`\`\n\n${hint}`;
+                await sendMessage(contextMessage);
+                await refreshConversations();
+              } else {
+                await sendMessage(
+                  `[${action.label}] Tool execution failed: ${result.error || 'Unknown error'}`
+                );
+                await refreshConversations();
+              }
+            } catch (err) {
+              console.error('[AI Assistant] Smart action failed:', err);
+              await sendMessage(
+                `[${action.label}] Error: ${err instanceof Error ? err.message : 'Unknown error'}`
+              );
+              await refreshConversations();
+            }
+          } else {
+            // Fallback to AI mode if no tool specified
+            await sendMessage(action.prompt);
+            await refreshConversations();
+          }
+          break;
+
+        default:
+          // Fallback: send prompt to AI
+          await sendMessage(action.prompt);
+          await refreshConversations();
+      }
+    },
+    [sendMessage, refreshConversations, runningScripts]
+  );
+
+  // Dismiss an instant result card
+  const handleDismissInstantResult = useCallback((resultId: string) => {
+    setInstantResults((prev) => prev.filter((r) => r.id !== resultId));
+  }, []);
+
+  // Ask AI about an instant result
+  const handleAskAIAboutResult = useCallback(
+    async (context: string) => {
+      setDismissedError(null);
+      await sendMessage(`Please analyze this:\n\n${context}`);
       await refreshConversations();
     },
     [sendMessage, refreshConversations]
@@ -415,6 +563,8 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
           selectedProviderId={selectedProviderId}
           onProviderSelect={setSelectedProviderId}
           onServiceChange={() => conversation && loadConversation(conversation.id)}
+          currentProjectPath={effectiveProjectPath}
+          onProjectContextChange={handleProjectContextChange}
         />
 
         {/* Messages area */}
@@ -425,7 +575,11 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
           aria-label="Chat messages"
         >
           {showWelcome ? (
-            <WelcomeState onAction={handleQuickAction} />
+            <WelcomeState
+              onAction={(prompt) =>
+                handleQuickAction({ id: 'welcome-tip', label: 'Feature Tip', prompt, mode: 'ai' })
+              }
+            />
           ) : (
             <>
               {visibleMessages.map((message, index) => (
@@ -485,17 +639,37 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
           </div>
         )}
 
-        {/* Quick actions - collapsible when there are messages */}
-        {!showWelcome && suggestions.length > 0 && !isGenerating && (
-          <CollapsibleQuickActions
-            suggestions={suggestions}
-            onAction={handleQuickAction}
-            disabled={isGenerating}
-          />
+        {/* Instant action results - displayed as cards above input */}
+        {instantResults.length > 0 && (
+          <div className="flex flex-col gap-2 px-4">
+            {instantResults.map((result) => (
+              <QuickActionResultCard
+                key={result.id}
+                toolName={result.toolName}
+                label={result.label}
+                result={result.result}
+                timestamp={result.timestamp}
+                onAskAI={handleAskAIAboutResult}
+                onDismiss={() => handleDismissInstantResult(result.id)}
+              />
+            ))}
+          </div>
         )}
 
-        {/* Input area */}
-        <ChatInputArea
+        {/* Quick actions - popover with categorized menu */}
+        {!showWelcome && suggestions.length > 0 && !isGenerating && (
+          <div className="px-4 py-2">
+            <QuickActionsPopover
+              suggestions={suggestions}
+              onAction={handleQuickAction}
+              disabled={isGenerating}
+              currentProjectPath={effectiveProjectPath}
+            />
+          </div>
+        )}
+
+        {/* Input area - Enhanced with IME support and modern UI */}
+        <ChatInputContainer
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
@@ -503,6 +677,7 @@ export function AIAssistantPage({ onOpenSettings }: AIAssistantPageProps) {
           isGenerating={isGenerating}
           disabled={isLoading || !isConfigured}
           autoFocus
+          showCharCount
         />
       </div>
     </div>
@@ -556,16 +731,32 @@ const FEATURE_TIPS: FeatureTip[] = [
     prompt: 'Show me all available MCP actions',
     color: 'from-green-500/20 to-green-500/5 border-green-500/20 text-green-500',
   },
+  // Feature 024: New Feature Tips
+  {
+    icon: <Shield className="w-5 h-5" />,
+    title: 'Security & Auditing',
+    description: 'Run security scans, check vulnerabilities, audit dependencies',
+    prompt: 'Check for security vulnerabilities in this project',
+    color: 'from-red-500/20 to-red-500/5 border-red-500/20 text-red-500',
+  },
+  {
+    icon: <Activity className="w-5 h-5" />,
+    title: 'System Monitoring',
+    description: 'View background processes, notifications, environment info',
+    prompt: 'List all running background processes',
+    color: 'from-cyan-500/20 to-cyan-500/5 border-cyan-500/20 text-cyan-500',
+  },
 ];
 
 /**
  * Welcome state when no messages exist - Feature-focused design
+ * Layout optimized to fit content within viewport while remaining scrollable
  */
 function WelcomeState({ onAction }: WelcomeStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-full py-8 px-4">
+    <div className="flex flex-col items-center min-h-full py-4 sm:py-6 px-4">
       {/* Header with icon - centered and prominent */}
-      <div className="flex flex-col items-center gap-4 mb-8">
+      <div className="flex flex-col items-center gap-3 mb-4 sm:mb-6">
         <div
           className={cn(
             'w-16 h-16 rounded-2xl',
@@ -577,25 +768,27 @@ function WelcomeState({ onAction }: WelcomeStateProps) {
             'relative'
           )}
         >
-          <Bot className="w-8 h-8 text-purple-500 dark:text-purple-400" />
+          <AnimatedBotIcon className="w-10 h-10 text-purple-500 dark:text-purple-400" />
           <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-blue-500/20 dark:bg-blue-500/30 border border-blue-500/30 flex items-center justify-center">
             <Sparkles className="w-3 h-3 text-blue-500 dark:text-blue-400" />
           </div>
         </div>
         <div className="text-center">
           <h2 className="text-xl font-semibold text-foreground mb-1">PackageFlow AI</h2>
-          <p className="text-sm text-muted-foreground">Automate workflows with MCP-powered tools</p>
+          <p className="text-sm text-muted-foreground">
+            Your intelligent assistant for project automation
+          </p>
         </div>
       </div>
 
-      {/* Feature tips grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-xl mb-8">
+      {/* Feature tips grid - responsive 1/2/3 columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 w-full max-w-3xl mb-4 sm:mb-6">
         {FEATURE_TIPS.map((tip) => (
           <button
             key={tip.title}
             onClick={() => onAction(tip.prompt)}
             className={cn(
-              'group p-4 rounded-xl text-left',
+              'group p-3 sm:p-4 rounded-xl text-left',
               'bg-gradient-to-br border',
               tip.color,
               'hover:scale-[1.02] hover:shadow-lg',
@@ -604,19 +797,19 @@ function WelcomeState({ onAction }: WelcomeStateProps) {
               'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
             )}
           >
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-2 sm:gap-3">
               <div
                 className={cn(
-                  'p-2.5 rounded-xl bg-background/60',
+                  'p-2 sm:p-2.5 rounded-xl bg-background/60',
                   'group-hover:bg-background/90 transition-colors',
-                  'shadow-sm'
+                  'shadow-sm flex-shrink-0'
                 )}
               >
                 {tip.icon}
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-medium text-foreground text-sm mb-1">{tip.title}</h3>
-                <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed">
+                <h3 className="font-medium text-foreground text-sm mb-0.5">{tip.title}</h3>
+                <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-snug">
                   {tip.description}
                 </p>
               </div>
@@ -626,21 +819,25 @@ function WelcomeState({ onAction }: WelcomeStateProps) {
       </div>
 
       {/* Example prompts - contextual tips */}
-      <div className="w-full max-w-xl text-center">
-        <p className="text-xs text-muted-foreground/70 mb-3 uppercase tracking-wide font-medium">
+      <div className="w-full max-w-3xl text-center">
+        <p className="text-xs text-muted-foreground/70 mb-2 uppercase tracking-wide font-medium">
           Quick Start
         </p>
-        <div className="flex flex-wrap justify-center gap-2">
+        <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2">
           {[
             'How many projects are registered?',
             'Run build script for current project',
             'Create a workflow to build and test',
+            // Feature 024: New Quick Start examples
+            'Check for security vulnerabilities',
+            'List all running background processes',
+            'Show project dependencies',
           ].map((example) => (
             <button
               key={example}
               onClick={() => onAction(example)}
               className={cn(
-                'px-3 py-1.5 text-xs rounded-lg',
+                'px-2.5 py-1 sm:px-3 sm:py-1.5 text-xs rounded-lg',
                 'bg-muted/40 hover:bg-muted/70',
                 'text-muted-foreground hover:text-foreground',
                 'border border-border/40 hover:border-border/70',
@@ -658,7 +855,7 @@ function WelcomeState({ onAction }: WelcomeStateProps) {
       </div>
 
       {/* Keyboard shortcuts hint */}
-      <div className="mt-8 pt-6 border-t border-border/30 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[11px] text-muted-foreground/50">
+      <div className="mt-4 sm:mt-6 pt-4 border-t border-border/30 flex flex-wrap items-center justify-center gap-x-4 sm:gap-x-6 gap-y-2 text-[11px] text-muted-foreground/50">
         <span className="flex items-center gap-1.5">
           <kbd className="px-1.5 py-0.5 bg-muted/50 rounded text-[10px] font-mono border border-border/30">
             Cmd+B

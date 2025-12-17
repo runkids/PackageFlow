@@ -93,29 +93,54 @@ export interface ParameterDefinition {
 // Quick Actions / Suggestions
 // ============================================================================
 
-/** Lazy action type */
-export type LazyActionType = 'navigate' | 'execute_tool' | 'copy';
+/**
+ * Quick action execution mode
+ * - instant: Execute tool directly, display result card (zero tokens)
+ * - smart: Execute tool, then AI summarizes/analyzes (moderate tokens)
+ * - ai: Full AI conversation flow (AI decides tool usage)
+ */
+export type QuickActionMode = 'instant' | 'smart' | 'ai';
 
-/** Lazy action that executes directly without chat */
-export interface LazyAction {
-  /** Type of action */
-  type: LazyActionType;
-  /** Action-specific payload */
-  payload: string;
+/** Tool specification for quick action */
+export interface QuickActionTool {
+  /** MCP tool name to execute */
+  name: string;
+  /** Tool arguments */
+  args: Record<string, unknown>;
 }
 
 /** Suggested quick action */
 export interface SuggestedAction {
   id: string;
   label: string;
+  /** Prompt text (used for AI mode, or as display text) */
   prompt: string;
   icon?: string;
   variant?: 'default' | 'primary' | 'warning';
-  category?: 'git' | 'project' | 'workflow' | 'general';
-  /** Is this a lazy action (one-click, no confirm)? */
-  isLazyAction?: boolean;
-  /** Action to execute directly (bypasses chat) */
-  directAction?: LazyAction;
+  category?: 'git' | 'project' | 'workflow' | 'general' | 'security' | 'system' | 'process';
+  /** Execution mode: instant (zero token), smart (AI summary), ai (full flow) */
+  mode: QuickActionMode;
+  /** Tool to execute (for instant/smart modes) */
+  tool?: QuickActionTool;
+  /** Hint for AI summarization (smart mode only) */
+  summaryHint?: string;
+  /** Whether this action requires a project context to be available */
+  requiresProject?: boolean;
+}
+
+// ============================================================================
+// AI Project Context (Feature 024: Context-Aware AI)
+// ============================================================================
+
+/** Source of project context */
+export type AIContextSource = 'navigation' | 'manual' | 'conversation';
+
+/** AI project context state */
+export interface AIProjectContext {
+  /** Project path (null = no project selected) */
+  projectPath: string | null;
+  /** How the context was set */
+  source: AIContextSource | null;
 }
 
 // ============================================================================

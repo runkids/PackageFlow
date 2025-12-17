@@ -25,20 +25,8 @@ use uuid::Uuid;
 
 /// Create a Command with proper environment for macOS GUI apps
 fn create_env_command(cmd: &str) -> std::process::Command {
-    let mut command = std::process::Command::new(cmd);
-
-    // Set essential environment variables for macOS GUI apps
-    if let Some(home) = path_resolver::get_home_dir() {
-        command.env("HOME", &home);
-    }
-    command.env("PATH", path_resolver::get_path());
-    if let Some(sock) = path_resolver::get_ssh_auth_sock() {
-        command.env("SSH_AUTH_SOCK", &sock);
-    }
-    command.env("LANG", "en_US.UTF-8");
-    command.env("LC_ALL", "en_US.UTF-8");
-
-    command
+    // Use path_resolver for consistent environment setup
+    path_resolver::create_command(cmd)
 }
 
 /// Returns (command, args) with version manager wrapper based on project config

@@ -1,10 +1,10 @@
 [package]
-name = "packageflow"
+name = "PackageFlow"
 version = "0.3.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "The AI-Driven package.json Project Manager"
+authors = ["runkids <https://github.com/runkids/PackageFlow>"]
 edition = "2021"
-default-run = "packageflow"
+default-run = "PackageFlow"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

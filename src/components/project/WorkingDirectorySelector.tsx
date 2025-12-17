@@ -379,7 +379,10 @@ export function WorkingDirectorySelector({
                     )}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-muted-foreground truncate" title={formatPath(worktree.path)}>
+                    <span
+                      className="text-xs text-muted-foreground truncate"
+                      title={formatPath(worktree.path)}
+                    >
                       {formatPath(worktree.path)}
                     </span>
                     <WorktreeStatusIndicator status={status} compact />

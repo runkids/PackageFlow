@@ -26,6 +26,7 @@ import {
   Search,
   Copy,
   Check,
+  Bot, // Feature 024: AI Assistant icon
 } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
@@ -98,6 +99,8 @@ interface ProjectExplorerProps {
   onEditWorkflow?: (workflow: Workflow) => void;
   onNavigateToWorkflow?: (workflow: Workflow, projectPath: string) => void;
   onOpenSettings?: (section?: SettingsSection) => void;
+  /** Feature 024: Open AI Assistant with this project's context */
+  onOpenAIAssistant?: (projectPath: string) => void;
 }
 
 const packageManagerLabels: Record<PackageManager, string> = {
@@ -145,6 +148,7 @@ export function ProjectExplorer({
   onEditWorkflow,
   onOpenSettings,
   onNavigateToWorkflow,
+  onOpenAIAssistant,
 }: ProjectExplorerProps) {
   const [activeTab, setActiveTab] = useState<TabType>('scripts');
   const [hasIpaFiles, setHasIpaFiles] = useState(false);
@@ -696,6 +700,19 @@ export function ProjectExplorer({
             <Button variant="ghost" size="icon" onClick={onOpenInFinder} title="Open in Finder">
               <ExternalLink className="w-4 h-4 text-muted-foreground" />
             </Button>
+            {/* Feature 024: Ask AI button - prominent style at far right */}
+            {onOpenAIAssistant && project && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenAIAssistant(project.path)}
+                title="Ask AI about this project"
+                className="ml-2 gap-1.5 bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 hover:border-purple-500/50"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span className="text-xs font-medium">Ask AI</span>
+              </Button>
+            )}
           </div>
         </div>
 

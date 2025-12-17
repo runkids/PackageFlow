@@ -1167,7 +1167,7 @@ pub async fn open_in_editor(
     // (CLI commands like `code` may be symlinked to different apps)
     #[cfg(target_os = "macos")]
     if let Some(name) = app_name {
-        match std::process::Command::new("open")
+        match path_resolver::create_command("open")
             .args(["-a", name, &worktree_path])
             .spawn()
         {
@@ -2322,9 +2322,9 @@ pub async fn open_in_terminal(
 
     #[cfg(not(target_os = "macos"))]
     {
-        // For other platforms, use command
+        // For other platforms, use command (use path_resolver for consistent environment)
         if let Some(cmd) = &terminal.command {
-            let mut command = std::process::Command::new(cmd);
+            let mut command = path_resolver::create_command(cmd);
             command.arg(&path);
             for arg in &terminal.args {
                 command.arg(arg);

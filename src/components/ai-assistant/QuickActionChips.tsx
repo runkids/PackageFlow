@@ -24,6 +24,14 @@ import {
   Lightbulb,
   Zap,
   Info,
+  // Feature 024: New icons for security, process, system categories
+  Shield,
+  AlertTriangle,
+  Activity,
+  StopCircle,
+  Search,
+  Settings,
+  Bell,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { SuggestedAction } from '../../types/ai-assistant';
@@ -31,8 +39,8 @@ import type { SuggestedAction } from '../../types/ai-assistant';
 interface QuickActionChipsProps {
   /** List of suggested actions to display */
   suggestions: SuggestedAction[];
-  /** Handler when a chip is clicked */
-  onAction: (prompt: string) => void;
+  /** Handler when a chip is clicked - receives the full action object */
+  onAction: (action: SuggestedAction) => void;
   /** Whether the chips are disabled (e.g., during generation) */
   disabled?: boolean;
   /** Optional class name */
@@ -43,6 +51,8 @@ interface QuickActionChipsProps {
   isVisible?: boolean;
   /** Horizontal inline mode for collapsible quick actions */
   horizontal?: boolean;
+  /** Current project path for context (Feature 024) */
+  currentProjectPath?: string;
 }
 
 // ============================================================================
@@ -78,6 +88,9 @@ const CATEGORY_ORDER: Array<SuggestedAction['category']> = [
   'git',
   'project',
   'workflow',
+  'security',
+  'process',
+  'system',
   'general',
 ];
 
@@ -104,6 +117,22 @@ const CATEGORY_CONFIG: Record<NonNullable<SuggestedAction['category']>, Category
     icon: Workflow,
     colorClass: 'text-purple-500',
   },
+  // Feature 024: New categories
+  security: {
+    label: 'Security',
+    icon: Shield,
+    colorClass: 'text-red-500',
+  },
+  process: {
+    label: 'Process',
+    icon: Activity,
+    colorClass: 'text-cyan-500',
+  },
+  system: {
+    label: 'System',
+    icon: Settings,
+    colorClass: 'text-gray-500',
+  },
   general: {
     label: 'General',
     icon: Lightbulb,
@@ -127,6 +156,15 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Workflow,
   Zap,
   Info,
+  // Feature 024: New icons for security, process, system
+  Shield,
+  AlertTriangle,
+  Activity,
+  StopCircle,
+  Search,
+  Settings,
+  Bell,
+  Package,
 };
 
 /** Get icon component by name */
@@ -196,7 +234,23 @@ function getAnimationDelay(index: number, total: number, isEntering: boolean): n
 }
 
 /**
+ * Get mode indicator color
+ */
+function getModeIndicatorColor(mode: SuggestedAction['mode']): string {
+  switch (mode) {
+    case 'instant':
+      return 'bg-green-500/60'; // Green for instant (no AI)
+    case 'smart':
+      return 'bg-blue-500/60'; // Blue for smart (AI summary)
+    case 'ai':
+    default:
+      return ''; // No indicator for full AI mode (default)
+  }
+}
+
+/**
  * Single chip button component with staggered animation support
+ * Feature 024: Supports context-disabled state with tooltip
  */
 function ChipButton({
   suggestion,
@@ -205,17 +259,24 @@ function ChipButton({
   animationState = 'visible',
   animationDelay = 0,
   horizontal = false,
+  contextDisabled = false,
 }: {
   suggestion: SuggestedAction;
-  onAction: (prompt: string) => void;
+  onAction: (action: SuggestedAction) => void;
   disabled: boolean;
   animationState?: ChipAnimationState;
   animationDelay?: number;
   /** Whether using horizontal expand animation */
   horizontal?: boolean;
+  /** Feature 024: Whether this action is disabled due to missing project context */
+  contextDisabled?: boolean;
 }) {
   const Icon = getIcon(suggestion.icon);
   const variantStyles = getVariantStyles(suggestion.variant);
+  const modeIndicatorColor = getModeIndicatorColor(suggestion.mode);
+
+  // Feature 024: Combine disabled states
+  const isDisabled = disabled || contextDisabled;
 
   // Generate animation styles based on mode
   const animationStyles = useMemo(() => {
@@ -238,17 +299,42 @@ function ChipButton({
     };
   }, [animationState, animationDelay, horizontal]);
 
+  // Handle click - pass the full action to parent
+  const handleClick = useCallback(() => {
+    onAction(suggestion);
+  }, [suggestion, onAction]);
+
+  // Feature 024: Generate tooltip text
+  const tooltipText = useMemo(() => {
+    if (contextDisabled) {
+      return 'Select a project to enable this action';
+    }
+    if (suggestion.mode === 'instant') {
+      return 'Instant result (no AI)';
+    }
+    if (suggestion.mode === 'smart') {
+      return 'AI will analyze';
+    }
+    return undefined;
+  }, [contextDisabled, suggestion.mode]);
+
   return (
     <button
-      onClick={() => onAction(suggestion.prompt)}
-      disabled={disabled}
+      onClick={handleClick}
+      disabled={isDisabled}
       className={cn(
         'inline-flex items-center gap-1.5 px-3 py-1.5',
         'text-xs font-medium rounded-full border',
         'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
         'whitespace-nowrap flex-shrink-0',
         variantStyles,
-        disabled && 'opacity-50 cursor-not-allowed',
+        // Feature 024: Different styling for context-disabled vs general disabled
+        contextDisabled &&
+          'opacity-40 cursor-not-allowed bg-muted/30 border-border/50 hover:bg-muted/30 hover:border-border/50',
+        disabled && !contextDisabled && 'opacity-50 cursor-not-allowed',
+        // Mode indicator for instant/smart modes (only when not context-disabled)
+        !contextDisabled && suggestion.mode === 'instant' && 'ring-1 ring-green-500/20',
+        !contextDisabled && suggestion.mode === 'smart' && 'ring-1 ring-blue-500/20',
         // Animation classes - different for horizontal mode
         horizontal && animationState === 'entering' && 'animate-chip-slide-in',
         horizontal && animationState === 'exiting' && 'animate-chip-slide-out',
@@ -260,10 +346,15 @@ function ChipButton({
           'transition-all duration-200'
       )}
       style={animationStyles}
-      aria-label={`${suggestion.label}: ${suggestion.prompt}`}
+      aria-label={`${suggestion.label}: ${suggestion.prompt || 'Execute action'}${contextDisabled ? ' (requires project)' : ''}`}
+      title={tooltipText}
     >
-      {Icon && <Icon className="w-3.5 h-3.5" />}
+      {Icon && <Icon className={cn('w-3.5 h-3.5', contextDisabled && 'opacity-60')} />}
       <span>{suggestion.label}</span>
+      {/* Mode indicator dot for instant/smart (hide when context-disabled) */}
+      {modeIndicatorColor && !contextDisabled && (
+        <span className={cn('w-1.5 h-1.5 rounded-full', modeIndicatorColor)} aria-hidden="true" />
+      )}
     </button>
   );
 }
@@ -358,7 +449,17 @@ export function QuickActionChips({
   grouped = false,
   isVisible,
   horizontal = false,
+  currentProjectPath,
 }: QuickActionChipsProps) {
+  // Feature 024: Check if an action should be context-disabled
+  const isContextDisabled = useCallback(
+    (action: SuggestedAction): boolean => {
+      // If requiresProject is true and no project path, disable
+      return action.requiresProject === true && !currentProjectPath;
+    },
+    [currentProjectPath]
+  );
+
   // Group suggestions by category (memoized)
   const groupedSuggestions = useMemo(() => {
     if (!grouped) return null;
@@ -399,6 +500,7 @@ export function QuickActionChips({
               animationState={animationState}
               animationDelay={delay}
               horizontal
+              contextDisabled={isContextDisabled(suggestion)}
             />
           );
         })}
@@ -440,6 +542,7 @@ export function QuickActionChips({
                       disabled={disabled}
                       animationState={animationState}
                       animationDelay={delay}
+                      contextDisabled={isContextDisabled(suggestion)}
                     />
                   );
                 })}
@@ -465,6 +568,7 @@ export function QuickActionChips({
             disabled={disabled}
             animationState={animationState}
             animationDelay={delay}
+            contextDisabled={isContextDisabled(suggestion)}
           />
         );
       })}
@@ -483,6 +587,7 @@ export const DEFAULT_QUICK_ACTIONS: SuggestedAction[] = [
     icon: 'HelpCircle',
     variant: 'default',
     category: 'general',
+    mode: 'ai',
   },
 ];
 
@@ -497,6 +602,7 @@ export const GIT_QUICK_ACTIONS: SuggestedAction[] = [
     icon: 'GitCommit',
     variant: 'primary',
     category: 'git',
+    mode: 'ai',
   },
   {
     id: 'review-changes',
@@ -505,6 +611,7 @@ export const GIT_QUICK_ACTIONS: SuggestedAction[] = [
     icon: 'FileSearch',
     variant: 'default',
     category: 'git',
+    mode: 'ai',
   },
 ];
 
@@ -519,6 +626,7 @@ export const PROJECT_QUICK_ACTIONS: SuggestedAction[] = [
     icon: 'TestTube',
     variant: 'default',
     category: 'project',
+    mode: 'ai',
   },
   {
     id: 'build-project',
@@ -527,5 +635,6 @@ export const PROJECT_QUICK_ACTIONS: SuggestedAction[] = [
     icon: 'Hammer',
     variant: 'default',
     category: 'project',
+    mode: 'ai',
   },
 ];

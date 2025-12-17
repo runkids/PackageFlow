@@ -78,6 +78,15 @@
   @apply bg-muted-foreground/50;
 }
 
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
 /* JSON syntax highlighting */
 .json-key {
   @apply text-primary;
@@ -334,5 +343,305 @@
   .animated-edge {
     animation: none;
     stroke-dasharray: none;
+  }
+}
+
+/* ==========================================
+   AI Assistant Bot Animation Styles
+   ========================================== */
+
+/* Eye blink animation - scales Y to simulate closing eyes */
+@keyframes blink {
+  0%, 90%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+.animate-blink {
+  animation: blink 4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* Head wobble animation - steady side-to-side movement */
+@keyframes bot-wobble {
+  0% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
+  100% {
+    transform: rotate(-6deg);
+  }
+}
+
+.animate-bot-wobble {
+  animation: bot-wobble 3s ease-in-out infinite;
+}
+
+/* Respect reduce-motion for bot animations */
+.reduce-motion .animate-blink,
+.reduce-motion .animate-bot-wobble {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-blink,
+  .animate-bot-wobble {
+    animation: none;
+  }
+}
+
+/* ==========================================
+   Shimmer Effect (ChatGPT-style loading)
+   ========================================== */
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    currentColor 40%,
+    color-mix(in srgb, currentColor, transparent 50%) 50%,
+    currentColor 60%,
+    currentColor 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Shimmer with specific colors for different states - BOLD effect */
+.shimmer-purple {
+  background: linear-gradient(
+    90deg,
+    rgb(147 51 234) 0%,
+    rgb(147 51 234) 25%,
+    rgb(255 255 255) 50%,
+    rgb(147 51 234) 75%,
+    rgb(147 51 234) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.dark .shimmer-purple {
+  background: linear-gradient(
+    90deg,
+    rgb(192 132 252) 0%,
+    rgb(192 132 252) 25%,
+    rgb(255 255 255) 50%,
+    rgb(192 132 252) 75%,
+    rgb(192 132 252) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.shimmer-blue {
+  background: linear-gradient(
+    90deg,
+    rgb(37 99 235) 0%,
+    rgb(37 99 235) 25%,
+    rgb(255 255 255) 50%,
+    rgb(37 99 235) 75%,
+    rgb(37 99 235) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.dark .shimmer-blue {
+  background: linear-gradient(
+    90deg,
+    rgb(96 165 250) 0%,
+    rgb(96 165 250) 25%,
+    rgb(255 255 255) 50%,
+    rgb(96 165 250) 75%,
+    rgb(96 165 250) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.shimmer-amber {
+  background: linear-gradient(
+    90deg,
+    rgb(217 119 6) 0%,
+    rgb(217 119 6) 25%,
+    rgb(255 255 255) 50%,
+    rgb(217 119 6) 75%,
+    rgb(217 119 6) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.dark .shimmer-amber {
+  background: linear-gradient(
+    90deg,
+    rgb(251 191 36) 0%,
+    rgb(251 191 36) 25%,
+    rgb(255 255 255) 50%,
+    rgb(251 191 36) 75%,
+    rgb(251 191 36) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Respect reduce-motion for shimmer */
+.reduce-motion .animate-shimmer,
+.reduce-motion .shimmer-purple,
+.reduce-motion .shimmer-blue,
+.reduce-motion .shimmer-amber {
+  animation: none;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .shimmer-purple,
+  .shimmer-blue,
+  .shimmer-amber {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* ==========================================
+   Chat Input Animation Styles
+   ========================================== */
+
+/* IME composition indicator pulse */
+@keyframes ime-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.animate-ime-pulse {
+  animation: ime-pulse 1.5s ease-in-out infinite;
+}
+
+/* Chip slide animations for horizontal expand */
+@keyframes chip-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes chip-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-12px) scale(0.9);
+  }
+}
+
+.animate-chip-slide-in {
+  animation: chip-slide-in var(--animation-duration, 180ms) ease-out forwards;
+  animation-delay: var(--animation-delay, 0ms);
+}
+
+.animate-chip-slide-out {
+  animation: chip-slide-out var(--animation-duration, 180ms) ease-in forwards;
+  animation-delay: var(--animation-delay, 0ms);
+}
+
+/* Chip enter/exit animations for vertical mode */
+@keyframes chip-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes chip-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.95);
+  }
+}
+
+.animate-chip-enter {
+  animation: chip-enter var(--animation-duration, 200ms) ease-out forwards;
+  animation-delay: var(--animation-delay, 0ms);
+}
+
+.animate-chip-exit {
+  animation: chip-exit var(--animation-duration, 200ms) ease-in forwards;
+  animation-delay: var(--animation-delay, 0ms);
+}
+
+/* Respect reduce-motion for chat input animations */
+.reduce-motion .animate-chip-slide-in,
+.reduce-motion .animate-chip-slide-out,
+.reduce-motion .animate-chip-enter,
+.reduce-motion .animate-chip-exit,
+.reduce-motion .animate-ime-pulse {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-chip-slide-in,
+  .animate-chip-slide-out,
+  .animate-chip-enter,
+  .animate-chip-exit,
+  .animate-ime-pulse {
+    animation: none;
   }
 }

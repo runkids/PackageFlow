@@ -357,6 +357,7 @@ impl AIAssistantService {
             icon: Some("HelpCircle".to_string()),
             variant: Some("default".to_string()),
             category: Some("general".to_string()),
+            ..Default::default()
         });
 
         // Project-specific suggestions
@@ -372,6 +373,7 @@ impl AIAssistantService {
                     icon: Some("GitBranch".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("git".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -381,6 +383,7 @@ impl AIAssistantService {
                     icon: Some("GitCommit".to_string()),
                     variant: Some("primary".to_string()),
                     category: Some("git".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -390,6 +393,7 @@ impl AIAssistantService {
                     icon: Some("FileSearch".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("git".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -399,6 +403,7 @@ impl AIAssistantService {
                     icon: Some("FileDiff".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("git".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -408,6 +413,7 @@ impl AIAssistantService {
                     icon: Some("GitFork".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("git".to_string()),
+                    ..Default::default()
                 });
             }
 
@@ -420,6 +426,7 @@ impl AIAssistantService {
                     icon: Some("Info".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -429,6 +436,7 @@ impl AIAssistantService {
                     icon: Some("Play".to_string()),
                     variant: Some("primary".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -438,6 +446,7 @@ impl AIAssistantService {
                     icon: Some("Hammer".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -447,6 +456,7 @@ impl AIAssistantService {
                     icon: Some("TestTube".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -456,6 +466,7 @@ impl AIAssistantService {
                     icon: Some("FileWarning".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
             }
 
@@ -468,6 +479,7 @@ impl AIAssistantService {
                     icon: Some("CheckCircle".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -477,6 +489,7 @@ impl AIAssistantService {
                     icon: Some("Hammer".to_string()),
                     variant: Some("primary".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -486,6 +499,7 @@ impl AIAssistantService {
                     icon: Some("TestTube".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
 
                 suggestions.push(SuggestedAction {
@@ -495,6 +509,7 @@ impl AIAssistantService {
                     icon: Some("FileWarning".to_string()),
                     variant: Some("default".to_string()),
                     category: Some("project".to_string()),
+                    ..Default::default()
                 });
             }
 
@@ -506,6 +521,7 @@ impl AIAssistantService {
                 icon: Some("Workflow".to_string()),
                 variant: Some("default".to_string()),
                 category: Some("workflow".to_string()),
+                ..Default::default()
             });
         }
 

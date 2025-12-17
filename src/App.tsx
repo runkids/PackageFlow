@@ -28,6 +28,7 @@ import {
 } from './components/status-bar';
 import { ActionConfirmationDialog } from './components/settings/mcp';
 import { AIAssistantPage } from './components/ai-assistant';
+import type { AIProjectContext } from './types/ai-assistant';
 
 type AppTab = 'workflow' | 'project-manager' | 'ai-assistant';
 
@@ -115,6 +116,12 @@ function App() {
   const [shortcutToast, setShortcutToast] = useState<{ message: string; key: string } | null>(null);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const mcpStatus = useMcpStatus();
+
+  // AI Assistant project context state (Feature 024: Context-Aware AI)
+  const [aiProjectContext, setAiProjectContext] = useState<AIProjectContext>({
+    projectPath: null,
+    source: null,
+  });
 
   const showShortcutToast = useCallback((message: string, key: string) => {
     setShortcutToast({ message, key });
@@ -288,6 +295,28 @@ function App() {
 
   const handleClearWorkflowNavState = useCallback(() => {
     setWorkflowNavState(null);
+  }, []);
+
+  // Feature 024: Open AI Assistant with optional project context
+  // Will be used in Stage 4 (Navigation Integration)
+  const handleOpenAIAssistant = useCallback((projectPath?: string) => {
+    if (projectPath) {
+      setAiProjectContext({ projectPath, source: 'navigation' });
+    }
+    setActiveTab('ai-assistant');
+  }, []);
+
+  // Feature 024: Clear AI project context
+  const handleClearAIProjectContext = useCallback(() => {
+    setAiProjectContext({ projectPath: null, source: null });
+  }, []);
+
+  // Feature 024: Update AI project context manually
+  const handleSetAIProjectContext = useCallback((projectPath: string | null) => {
+    setAiProjectContext({
+      projectPath,
+      source: projectPath ? 'manual' : null,
+    });
   }, []);
 
   const handleKillAllNodeProcesses = useCallback(async () => {
@@ -705,13 +734,19 @@ function App() {
               isTerminalCollapsed={isTerminalCollapsed}
               onToggleTerminalCollapse={() => setIsTerminalCollapsed(!isTerminalCollapsed)}
               onOpenSettings={openSettings}
+              onOpenAIAssistant={handleOpenAIAssistant}
             />
           </div>
         )}
 
         {activeTab === 'ai-assistant' && (
           <div className="flex-1 overflow-hidden">
-            <AIAssistantPage onOpenSettings={() => openSettings('ai-providers')} />
+            <AIAssistantPage
+              onOpenSettings={() => openSettings('ai-providers')}
+              initialProjectPath={aiProjectContext.projectPath ?? undefined}
+              onProjectContextChange={handleSetAIProjectContext}
+              onClearProjectContext={handleClearAIProjectContext}
+            />
           </div>
         )}
       </main>

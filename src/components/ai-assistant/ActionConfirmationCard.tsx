@@ -9,7 +9,7 @@
  * - Collapsible output for long results
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef, useId } from 'react';
 import {
   Play,
   X,
@@ -26,9 +26,11 @@ import {
   Check,
   Clock,
   Zap,
+  Maximize2,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
+import { registerModal, unregisterModal, isTopModal } from '../ui/modalStack';
 import type { ToolCall, ToolResult } from '../../types/ai-assistant';
 
 interface ActionConfirmationCardProps {
@@ -137,6 +139,238 @@ function formatArguments(args: Record<string, unknown>): { key: string; value: s
   return formatted;
 }
 
+/** Tool Output Dialog - displays full output in a modal */
+interface ToolOutputDialogProps {
+  toolName: string;
+  displayName: string;
+  output: string;
+  success: boolean;
+  durationMs?: number;
+  onClose: () => void;
+}
+
+function ToolOutputDialog({
+  toolName,
+  displayName,
+  output,
+  success,
+  durationMs,
+  onClose,
+}: ToolOutputDialogProps) {
+  const modalId = useId();
+  const [copied, setCopied] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const ToolIcon = getToolIcon(toolName);
+
+  // Register/unregister modal
+  useEffect(() => {
+    registerModal(modalId);
+    return () => unregisterModal(modalId);
+  }, [modalId]);
+
+  // Handle ESC key with modal stack
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (!isTopModal(modalId)) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalId, onClose]);
+
+  // Focus trap
+  useEffect(() => {
+    if (contentRef.current) {
+      const timer = setTimeout(() => {
+        contentRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Copy all output to clipboard
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  // Handle backdrop click
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  const statusConfig = success
+    ? {
+        borderColor: 'border-green-500/30',
+        bgColor: 'bg-green-500/5',
+        iconBg: 'bg-green-500/10',
+        iconColor: 'text-green-400',
+        label: 'Success',
+      }
+    : {
+        borderColor: 'border-red-500/30',
+        bgColor: 'bg-red-500/5',
+        iconBg: 'bg-red-500/10',
+        iconColor: 'text-red-400',
+        label: 'Failed',
+      };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] animate-in fade-in-0 duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tool-output-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={handleBackdropClick}
+        aria-hidden="true"
+      />
+
+      {/* Panel */}
+      <div
+        ref={contentRef}
+        className={cn(
+          'fixed inset-4 md:inset-8 lg:inset-12 flex flex-col',
+          'bg-background rounded-xl',
+          'border',
+          statusConfig.borderColor,
+          'shadow-2xl shadow-black/60',
+          'animate-in fade-in-0 zoom-in-95 duration-200',
+          'focus:outline-none'
+        )}
+        tabIndex={-1}
+      >
+        {/* Header with gradient */}
+        <div
+          className={cn(
+            'relative px-5 py-4 border-b border-border',
+            'bg-gradient-to-r',
+            success
+              ? 'dark:from-green-500/15 dark:via-green-600/5 dark:to-transparent from-green-500/10 via-green-600/5 to-transparent'
+              : 'dark:from-red-500/15 dark:via-red-600/5 dark:to-transparent from-red-500/10 via-red-600/5 to-transparent'
+          )}
+        >
+          {/* Close button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="absolute right-4 top-4 h-auto w-auto p-2"
+            aria-label="Close dialog"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+
+          <div className="flex items-center gap-4 pr-10">
+            {/* Icon badge */}
+            <div
+              className={cn(
+                'flex-shrink-0 w-11 h-11 rounded-xl',
+                'flex items-center justify-center',
+                'bg-background/80 dark:bg-background/50 backdrop-blur-sm',
+                'border',
+                statusConfig.borderColor,
+                statusConfig.iconBg,
+                'shadow-lg'
+              )}
+            >
+              <ToolIcon className={cn('w-5 h-5', statusConfig.iconColor)} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2
+                id="tool-output-title"
+                className="text-base font-semibold text-foreground leading-tight"
+              >
+                {displayName}
+              </h2>
+              <div className="flex items-center gap-2 mt-1">
+                {success ? (
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-red-500" />
+                )}
+                <span className="text-sm text-muted-foreground">{statusConfig.label}</span>
+                {durationMs && (
+                  <>
+                    <span className="text-sm text-muted-foreground">•</span>
+                    <span className="text-sm text-muted-foreground">{durationMs}ms</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Output content */}
+        <div className="flex-1 overflow-hidden p-4 bg-card/30">
+          <pre
+            className={cn(
+              'h-full overflow-auto',
+              'text-sm text-foreground/90 whitespace-pre-wrap break-all',
+              'font-mono bg-background/80 rounded-lg p-4',
+              'border border-border'
+            )}
+          >
+            {output || 'No output'}
+          </pre>
+        </div>
+
+        {/* Footer */}
+        <div
+          className={cn(
+            'px-5 py-3 border-t flex items-center justify-between',
+            statusConfig.borderColor,
+            statusConfig.bgColor
+          )}
+        >
+          {/* Left: line count */}
+          <div className="text-xs text-muted-foreground">
+            {output.split('\n').length} lines
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleCopy}
+              disabled={!output}
+              className="h-auto px-3 py-1.5 text-sm"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4 text-green-500 mr-2" />
+                  <span className="text-green-500">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 mr-2" />
+                  <span>Copy</span>
+                </>
+              )}
+            </Button>
+            <Button variant="secondary" onClick={onClose} className="h-auto px-4 py-1.5 text-sm">
+              Close
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ActionConfirmationCard({
   toolCall,
   onApprove,
@@ -150,6 +384,7 @@ export function ActionConfirmationCard({
   const [isStopping, setIsStopping] = useState(false);
   const [outputExpanded, setOutputExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showOutputDialog, setShowOutputDialog] = useState(false);
 
   const ToolIcon = getToolIcon(toolCall.name);
   const displayName = getToolDisplayName(toolCall.name);
@@ -383,7 +618,7 @@ export function ActionConfirmationCard({
 
                   {/* Fade overlay for collapsed state */}
                   {isOutputCollapsible && !outputExpanded && (
-                    <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background/90 to-transparent rounded-b-lg" />
+                    <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background/90 to-transparent rounded-b-lg pointer-events-none" />
                   )}
 
                   {/* Actions row */}
@@ -409,25 +644,37 @@ export function ActionConfirmationCard({
                         )}
                       </button>
                     )}
-                    <button
-                      onClick={handleCopyOutput}
-                      className={cn(
-                        'flex items-center gap-1 text-xs text-muted-foreground',
-                        'hover:text-foreground transition-colors ml-auto'
-                      )}
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-green-500" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-3 ml-auto">
+                      <button
+                        onClick={() => setShowOutputDialog(true)}
+                        className={cn(
+                          'flex items-center gap-1 text-xs text-muted-foreground',
+                          'hover:text-foreground transition-colors'
+                        )}
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        View Full
+                      </button>
+                      <button
+                        onClick={handleCopyOutput}
+                        className={cn(
+                          'flex items-center gap-1 text-xs text-muted-foreground',
+                          'hover:text-foreground transition-colors'
+                        )}
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-green-500" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            Copy
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -451,6 +698,18 @@ export function ActionConfirmationCard({
           <AlertTriangle className="w-4 h-4 text-zinc-400" />
           <span>Action was denied by user</span>
         </div>
+      )}
+
+      {/* Tool Output Dialog */}
+      {showOutputDialog && result?.output && (
+        <ToolOutputDialog
+          toolName={toolCall.name}
+          displayName={displayName}
+          output={result.output}
+          success={result.success}
+          durationMs={result.durationMs}
+          onClose={() => setShowOutputDialog(false)}
+        />
       )}
     </div>
   );

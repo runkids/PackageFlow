@@ -624,7 +624,10 @@ export function WorktreeBatchActions({
                         <div className="text-sm font-medium truncate">
                           {w.branch || '(detached)'}
                         </div>
-                        <div className="text-xs text-muted-foreground truncate" title={formatPath(w.path)}>
+                        <div
+                          className="text-xs text-muted-foreground truncate"
+                          title={formatPath(w.path)}
+                        >
                           {formatPath(w.path)}
                         </div>
                       </div>

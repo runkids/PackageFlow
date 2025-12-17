@@ -112,6 +112,21 @@ pub async fn ai_assistant_update_conversation_service(
     repo.update_conversation_service(&conversation_id, provider_id.as_deref())
 }
 
+/// Update a conversation's project context
+/// Feature 024: Context-Aware AI Assistant
+#[tauri::command]
+pub async fn ai_assistant_update_conversation_context(
+    db: State<'_, DatabaseState>,
+    conversation_id: String,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    let repo = AIConversationRepository::new(db.0.as_ref().clone());
+
+    // Use Some(Some(path)) to set, Some(None) to clear
+    let project_path_update = Some(project_path.as_deref());
+    repo.update_conversation(&conversation_id, None, project_path_update)
+}
+
 /// Delete a conversation
 #[tauri::command]
 pub async fn ai_assistant_delete_conversation(
@@ -208,8 +223,18 @@ pub async fn ai_assistant_send_message(
     // Build ChatMessage array from history
     let mut chat_messages: Vec<ChatMessage> = Vec::new();
 
+    // Build project context from path if not provided directly
+    // Feature 024: Auto-generate project context from project_path
+    let project_context = if request.project_context.is_some() {
+        request.project_context.clone()
+    } else if let Some(ref path) = request.project_path {
+        ProjectContextBuilder::build_from_path(path).ok()
+    } else {
+        None
+    };
+
     // Add system message with context
-    let system_prompt = build_system_prompt(&request.project_context);
+    let system_prompt = build_system_prompt(&project_context);
     chat_messages.push(ChatMessage::system(system_prompt));
 
     // Add conversation history (excluding the just-created assistant placeholder)
@@ -701,9 +726,17 @@ fn generate_conversation_title(message: &str) -> String {
 
     // Find a good breaking point (space, punctuation)
     let max_len = 47; // Leave room for "..."
-    let truncated = &trimmed[..max_len];
 
-    // Try to find a word boundary
+    // UTF-8 safe truncation: find valid character boundary
+    let truncate_at = trimmed
+        .char_indices()
+        .take_while(|(i, _)| *i < max_len)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(trimmed.len().min(max_len));
+    let truncated = &trimmed[..truncate_at];
+
+    // Try to find a word boundary (rfind returns byte index of ASCII space, which is safe)
     if let Some(last_space) = truncated.rfind(' ') {
         if last_space > 20 {
             return format!("{}...", &truncated[..last_space]);
@@ -730,34 +763,60 @@ r#"You are an AI assistant integrated into PackageFlow, a development workflow m
 You have access to these MCP tools. When you need to perform an action, tell the user which tool you would use and wait for their confirmation.
 
 ### Execution Tools (Require User Approval)
-1. **run_script**: Run an npm/pnpm/yarn script from package.json
+1. **run_script**: Run a script ONLY if it's defined in the project's package.json
    - Parameters: script_name (required), project_path (required)
+   - IMPORTANT: script_name MUST be one of the available scripts listed below
    - Example: "I'll use run_script to execute the 'build' script"
+   - DO NOT use this for package manager commands like 'audit', 'outdated', 'install' - use run_package_manager_command instead
 
-2. **run_workflow**: Execute a PackageFlow workflow
+2. **run_package_manager_command**: Run package manager commands directly (audit, outdated, install, update, etc.)
+   - Parameters: command (required), project_path (required), args (optional array)
+   - Supported commands: audit, outdated, install, update, prune, dedupe, why, list, info
+   - Example: "I'll use run_package_manager_command with command='audit' to check for vulnerabilities"
+   - Use this for security audits, dependency checks, and package management
+
+3. **run_workflow**: Execute a PackageFlow workflow
    - Parameters: workflow_id (required)
    - Example: "I'll use run_workflow to run the deployment workflow"
 
-3. **trigger_webhook**: Trigger a configured webhook
+4. **trigger_webhook**: Trigger a configured webhook
    - Parameters: webhook_id (required), payload (optional)
 
 ### Read-Only Tools (Auto-Approved)
-4. **get_git_status**: Get current git status of a repository
+5. **get_git_status**: Get current git status of a repository
    - Parameters: project_path (required)
 
-5. **get_staged_diff**: Get diff of staged changes
+6. **get_staged_diff**: Get diff of staged changes
    - Parameters: project_path (required)
 
-6. **list_project_scripts**: List available scripts from package.json
+7. **list_project_scripts**: List available scripts from package.json
    - Parameters: project_path (required)
+
+## Important Clarifications
+
+### What run_script CAN do:
+- Run scripts defined in package.json (e.g., "build", "test", "dev", "lint")
+- These are custom scripts the project has set up
+
+### What run_script CANNOT do:
+- Run package manager commands like `audit`, `outdated`, `install`
+- For these commands, use **run_package_manager_command** instead
+
+### What run_package_manager_command CAN do:
+- Run built-in package manager commands: audit, outdated, install, update, prune, dedupe, why, list, info
+- Security audits: Use command='audit' to check for vulnerabilities
+- Dependency checks: Use command='outdated' to see outdated packages
+- Package operations: install, update, prune, etc.
 
 ## Guidelines
 - **Always respond in the same language as the user's message** (e.g., if user writes in Chinese, respond in Chinese; if in English, respond in English)
 - Be helpful, concise, and provide actionable responses
 - When you want to run a tool, clearly state which tool and parameters you'll use
 - For execution tools, wait for user approval before proceeding
-- If asked to do something outside these tools, explain what's possible
+- CRITICAL: Only use run_script with script names from the available scripts list
+- If asked to do something outside these tools, explain what's possible and suggest alternatives
 - Do NOT make up commands or tools that don't exist
+- Do NOT use run_script with script names that aren't in the available scripts list
 - Format code examples in code blocks
 "#
     );
@@ -770,9 +829,11 @@ You have access to these MCP tools. When you need to perform an action, tell the
         prompt.push_str(&format!("- **Package Manager**: {}\n", ctx.package_manager));
         if !ctx.available_scripts.is_empty() {
             prompt.push_str(&format!(
-                "- **Available Scripts**: {}\n",
+                "- **Available Scripts** (ONLY these can be used with run_script): {}\n",
                 ctx.available_scripts.join(", ")
             ));
+            prompt.push_str("\nIMPORTANT: When user asks to run something, check if it's in the available scripts list above.\n");
+            prompt.push_str("If not, explain that it's not a defined script and suggest alternatives.\n");
         }
         prompt.push_str("\nUse this project path when calling tools that require project_path.\n");
     }
@@ -1585,120 +1646,531 @@ pub async fn ai_assistant_continue_after_tool(
 }
 
 /// Get suggestions for the current context
+///
+/// Quick Action Modes:
+/// - Instant: Execute tool directly, display result card (zero tokens)
+/// - Smart: Execute tool, then AI summarizes (moderate tokens)
+/// - Ai: Full AI conversation flow (AI decides tool usage)
 #[tauri::command]
 pub async fn ai_assistant_get_suggestions(
     _conversation_id: Option<String>,
     project_path: Option<String>,
 ) -> Result<SuggestionsResponse, String> {
-    use crate::models::ai_assistant::SuggestedAction;
+    use crate::models::ai_assistant::{QuickActionMode, QuickActionTool, SuggestedAction};
 
     let mut suggestions = Vec::new();
 
     // Project-specific suggestions based on actual MCP tools
     if let Some(ref path) = project_path {
-        let project_path = std::path::Path::new(path);
+        let project_path_obj = std::path::Path::new(path);
 
-        // Git suggestions (maps to get_git_status, get_staged_diff, list_worktrees)
-        if project_path.join(".git").exists() {
+        // Git suggestions - Smart mode (AI provides analysis)
+        if project_path_obj.join(".git").exists() {
             suggestions.push(SuggestedAction {
                 id: "git-status".to_string(),
                 label: "Git Status".to_string(),
-                prompt: "Use get_git_status for this project".to_string(),
+                prompt: "Show me the git status of this project".to_string(),
                 icon: Some("GitBranch".to_string()),
                 variant: Some("default".to_string()),
                 category: Some("git".to_string()),
+                mode: QuickActionMode::Smart,
+                tool: Some(QuickActionTool {
+                    name: "get_git_status".to_string(),
+                    args: serde_json::json!({ "project_path": path }),
+                }),
+                summary_hint: Some("Summarize the git status. Highlight any uncommitted changes or issues.".to_string()),
+                requires_project: Some(true), // Feature 024
             });
 
             suggestions.push(SuggestedAction {
                 id: "staged-diff".to_string(),
                 label: "Staged Diff".to_string(),
-                prompt: "Use get_staged_diff to show staged changes".to_string(),
+                prompt: "Show me the staged changes for review".to_string(),
                 icon: Some("FileDiff".to_string()),
                 variant: Some("default".to_string()),
                 category: Some("git".to_string()),
+                mode: QuickActionMode::Smart,
+                tool: Some(QuickActionTool {
+                    name: "get_staged_diff".to_string(),
+                    args: serde_json::json!({ "project_path": path }),
+                }),
+                summary_hint: Some("Review the staged changes. Provide a brief summary and any suggestions.".to_string()),
+                requires_project: Some(true), // Feature 024
             });
 
             suggestions.push(SuggestedAction {
                 id: "worktrees".to_string(),
                 label: "Worktrees".to_string(),
-                prompt: "Use list_worktrees for this project".to_string(),
+                prompt: "List all git worktrees".to_string(),
                 icon: Some("GitFork".to_string()),
                 variant: Some("default".to_string()),
                 category: Some("git".to_string()),
+                mode: QuickActionMode::Instant,
+                tool: Some(QuickActionTool {
+                    name: "list_worktrees".to_string(),
+                    args: serde_json::json!({ "project_path": path }),
+                }),
+                summary_hint: None,
+                requires_project: Some(true), // Feature 024
             });
         }
 
-        // Node.js project suggestions (maps to list_project_scripts, run_npm_script)
-        if project_path.join("package.json").exists() {
+        // Node.js project suggestions
+        if project_path_obj.join("package.json").exists() {
+            // Scripts - Instant (just list them)
             suggestions.push(SuggestedAction {
                 id: "scripts".to_string(),
                 label: "Scripts".to_string(),
-                prompt: "Use list_project_scripts to show available npm scripts".to_string(),
+                prompt: "Show available npm scripts".to_string(),
                 icon: Some("Terminal".to_string()),
                 variant: Some("default".to_string()),
                 category: Some("project".to_string()),
+                mode: QuickActionMode::Instant,
+                tool: Some(QuickActionTool {
+                    name: "list_project_scripts".to_string(),
+                    args: serde_json::json!({ "project_path": path }),
+                }),
+                summary_hint: None,
+                requires_project: Some(true), // Feature 024
             });
 
+            // Run scripts - AI mode (needs confirmation and status reporting)
             suggestions.push(SuggestedAction {
                 id: "run-dev".to_string(),
                 label: "npm dev".to_string(),
-                prompt: "Use run_npm_script with scriptName \"dev\"".to_string(),
+                prompt: "Run the dev script for this project".to_string(),
                 icon: Some("Play".to_string()),
                 variant: Some("primary".to_string()),
                 category: Some("project".to_string()),
+                mode: QuickActionMode::Ai,
+                tool: None,
+                summary_hint: None,
+                requires_project: Some(true), // Feature 024
             });
 
             suggestions.push(SuggestedAction {
                 id: "run-build".to_string(),
                 label: "npm build".to_string(),
-                prompt: "Use run_npm_script with scriptName \"build\"".to_string(),
+                prompt: "Run the build script for this project".to_string(),
                 icon: Some("Hammer".to_string()),
                 variant: Some("default".to_string()),
                 category: Some("project".to_string()),
+                mode: QuickActionMode::Ai,
+                tool: None,
+                summary_hint: None,
+                requires_project: Some(true), // Feature 024
             });
 
             suggestions.push(SuggestedAction {
                 id: "run-test".to_string(),
                 label: "npm test".to_string(),
-                prompt: "Use run_npm_script with scriptName \"test\"".to_string(),
+                prompt: "Run the test script for this project".to_string(),
                 icon: Some("TestTube".to_string()),
                 variant: Some("default".to_string()),
                 category: Some("project".to_string()),
+                mode: QuickActionMode::Ai,
+                tool: None,
+                summary_hint: None,
+                requires_project: Some(true), // Feature 024
+            });
+
+            // Security - Smart mode (AI analyzes vulnerabilities)
+            suggestions.push(SuggestedAction {
+                id: "security-scan".to_string(),
+                label: "Security Scan".to_string(),
+                prompt: "Run a security scan on this project".to_string(),
+                icon: Some("Shield".to_string()),
+                variant: Some("warning".to_string()),
+                category: Some("security".to_string()),
+                mode: QuickActionMode::Smart,
+                tool: Some(QuickActionTool {
+                    name: "run_security_scan".to_string(),
+                    args: serde_json::json!({ "project_path": path }),
+                }),
+                summary_hint: Some("Analyze the security scan results. List vulnerabilities by severity and provide remediation suggestions.".to_string()),
+                requires_project: Some(true), // Feature 024
+            });
+
+            suggestions.push(SuggestedAction {
+                id: "view-vulnerabilities".to_string(),
+                label: "Vulnerabilities".to_string(),
+                prompt: "Show security vulnerabilities".to_string(),
+                icon: Some("AlertTriangle".to_string()),
+                variant: Some("default".to_string()),
+                category: Some("security".to_string()),
+                mode: QuickActionMode::Smart,
+                tool: Some(QuickActionTool {
+                    name: "get_security_scan_results".to_string(),
+                    args: serde_json::json!({ "project_path": path }),
+                }),
+                summary_hint: Some("Summarize the vulnerabilities found. Group by severity and suggest fixes.".to_string()),
+                requires_project: Some(true), // Feature 024
+            });
+
+            // Dependencies - Instant (just display the list)
+            suggestions.push(SuggestedAction {
+                id: "dependencies".to_string(),
+                label: "Dependencies".to_string(),
+                prompt: "Show project dependencies".to_string(),
+                icon: Some("Package".to_string()),
+                variant: Some("default".to_string()),
+                category: Some("project".to_string()),
+                mode: QuickActionMode::Instant,
+                tool: Some(QuickActionTool {
+                    name: "get_project_dependencies".to_string(),
+                    args: serde_json::json!({ "project_path": path }),
+                }),
+                summary_hint: None,
+                requires_project: Some(true), // Feature 024
+            });
+
+            // File search - AI mode (needs user input)
+            suggestions.push(SuggestedAction {
+                id: "search-files".to_string(),
+                label: "Search Files".to_string(),
+                prompt: "Search for files in this project. What pattern should I search for?".to_string(),
+                icon: Some("Search".to_string()),
+                variant: Some("default".to_string()),
+                category: Some("project".to_string()),
+                mode: QuickActionMode::Ai,
+                tool: None,
+                summary_hint: None,
+                requires_project: Some(true), // Feature 024
             });
         }
     }
 
-    // Default suggestions when no project context (maps to list_projects, list_workflows, list_actions)
-    if suggestions.is_empty() {
-        suggestions.push(SuggestedAction {
-            id: "list-projects".to_string(),
-            label: "Projects".to_string(),
-            prompt: "Use list_projects to show all registered projects".to_string(),
-            icon: Some("FolderOpen".to_string()),
-            variant: Some("primary".to_string()),
-            category: Some("project".to_string()),
-        });
+    // Process management - Instant (pure status query) - Global actions
+    suggestions.push(SuggestedAction {
+        id: "list-processes".to_string(),
+        label: "Processes".to_string(),
+        prompt: "Show running background processes".to_string(),
+        icon: Some("Activity".to_string()),
+        variant: Some("default".to_string()),
+        category: Some("process".to_string()),
+        mode: QuickActionMode::Instant,
+        tool: Some(QuickActionTool {
+            name: "list_background_processes".to_string(),
+            args: serde_json::json!({}),
+        }),
+        summary_hint: None,
+        requires_project: Some(false), // Feature 024: Global action
+    });
 
-        suggestions.push(SuggestedAction {
-            id: "list-workflows".to_string(),
-            label: "Workflows".to_string(),
-            prompt: "Use list_workflows to show all available workflows".to_string(),
-            icon: Some("Workflow".to_string()),
-            variant: Some("default".to_string()),
-            category: Some("workflow".to_string()),
-        });
+    suggestions.push(SuggestedAction {
+        id: "stop-process".to_string(),
+        label: "Stop Process".to_string(),
+        prompt: "Show me the running background processes so I can stop one".to_string(),
+        icon: Some("StopCircle".to_string()),
+        variant: Some("warning".to_string()),
+        category: Some("process".to_string()),
+        mode: QuickActionMode::Ai,
+        tool: None,
+        summary_hint: None,
+        requires_project: Some(false), // Feature 024: Global action
+    });
 
-        suggestions.push(SuggestedAction {
-            id: "list-actions".to_string(),
-            label: "Actions".to_string(),
-            prompt: "Use list_actions to show all MCP actions".to_string(),
-            icon: Some("Zap".to_string()),
-            variant: Some("default".to_string()),
-            category: Some("workflow".to_string()),
-        });
+    // System - Instant (pure status query) - Global actions
+    suggestions.push(SuggestedAction {
+        id: "environment".to_string(),
+        label: "Environment".to_string(),
+        prompt: "Show environment info".to_string(),
+        icon: Some("Settings".to_string()),
+        variant: Some("default".to_string()),
+        category: Some("system".to_string()),
+        mode: QuickActionMode::Instant,
+        tool: Some(QuickActionTool {
+            name: "get_environment_info".to_string(),
+            args: serde_json::json!({}),
+        }),
+        summary_hint: None,
+        requires_project: Some(false), // Feature 024: Global action
+    });
+
+    suggestions.push(SuggestedAction {
+        id: "notifications".to_string(),
+        label: "Notifications".to_string(),
+        prompt: "Show notifications".to_string(),
+        icon: Some("Bell".to_string()),
+        variant: Some("default".to_string()),
+        category: Some("system".to_string()),
+        mode: QuickActionMode::Instant,
+        tool: Some(QuickActionTool {
+            name: "get_notifications".to_string(),
+            args: serde_json::json!({}),
+        }),
+        summary_hint: None,
+        requires_project: Some(false), // Feature 024: Global action
+    });
+
+    // Default suggestions when no project context
+    let has_project_suggestions = suggestions
+        .iter()
+        .any(|s| s.category.as_deref() == Some("project") || s.category.as_deref() == Some("git"));
+
+    if !has_project_suggestions {
+        suggestions.insert(
+            0,
+            SuggestedAction {
+                id: "list-projects".to_string(),
+                label: "Projects".to_string(),
+                prompt: "List all registered projects".to_string(),
+                icon: Some("FolderOpen".to_string()),
+                variant: Some("primary".to_string()),
+                category: Some("project".to_string()),
+                mode: QuickActionMode::Instant,
+                tool: Some(QuickActionTool {
+                    name: "list_projects".to_string(),
+                    args: serde_json::json!({}),
+                }),
+                summary_hint: None,
+                requires_project: Some(false), // Feature 024: Global action
+            },
+        );
+
+        suggestions.insert(
+            1,
+            SuggestedAction {
+                id: "list-workflows".to_string(),
+                label: "Workflows".to_string(),
+                prompt: "List all available workflows".to_string(),
+                icon: Some("Workflow".to_string()),
+                variant: Some("default".to_string()),
+                category: Some("workflow".to_string()),
+                mode: QuickActionMode::Instant,
+                tool: Some(QuickActionTool {
+                    name: "list_workflows".to_string(),
+                    args: serde_json::json!({}),
+                }),
+                summary_hint: None,
+                requires_project: Some(false), // Feature 024: Global action
+            },
+        );
+
+        suggestions.insert(
+            2,
+            SuggestedAction {
+                id: "list-actions".to_string(),
+                label: "Actions".to_string(),
+                prompt: "List all MCP actions".to_string(),
+                icon: Some("Zap".to_string()),
+                variant: Some("default".to_string()),
+                category: Some("workflow".to_string()),
+                mode: QuickActionMode::Instant,
+                tool: Some(QuickActionTool {
+                    name: "list_actions".to_string(),
+                    args: serde_json::json!({}),
+                }),
+                summary_hint: None,
+                requires_project: Some(false), // Feature 024: Global action
+            },
+        );
     }
 
     Ok(SuggestionsResponse { suggestions })
+}
+
+/// Execute a tool directly without AI interpretation (for Lazy Actions)
+/// This is a simplified execution path that doesn't require a conversation context
+#[tauri::command]
+pub async fn ai_assistant_execute_tool_direct(
+    app: AppHandle,
+    db: State<'_, DatabaseState>,
+    tool_name: String,
+    tool_args: serde_json::Value,
+) -> Result<ToolResult, String> {
+    use crate::models::ai_assistant::{ToolCall, ToolCallStatus};
+    use crate::commands::script::{ScriptExecutionState, ExecutionStatus};
+
+    log::info!("[AI Tool Direct] Executing tool: {} with args: {:?}", tool_name, tool_args);
+
+    // Special handling for list_background_processes - directly access ScriptExecutionState
+    if tool_name == "list_background_processes" {
+        log::info!("[AI Tool Direct] Special handling for list_background_processes");
+        let state = app.state::<ScriptExecutionState>();
+        let executions = state.executions.lock().unwrap();
+
+        let processes: Vec<serde_json::Value> = executions
+            .values()
+            .map(|exec| {
+                serde_json::json!({
+                    "execution_id": exec.execution_id,
+                    "script_name": exec.script_name,
+                    "project_path": exec.project_path,
+                    "project_name": exec.project_name,
+                    "started_at": exec.started_at_iso,
+                    "status": match exec.status {
+                        ExecutionStatus::Running => "running",
+                        ExecutionStatus::Completed => "completed",
+                        ExecutionStatus::Failed => "failed",
+                        ExecutionStatus::Cancelled => "cancelled",
+                    },
+                    "exit_code": exec.exit_code,
+                    "completed_at": exec.completed_at,
+                    "elapsed_ms": exec.started_at.elapsed().as_millis() as u64,
+                })
+            })
+            .collect();
+
+        let result = serde_json::json!({
+            "message": if processes.is_empty() {
+                "No background processes are currently running"
+            } else {
+                "Found running processes"
+            },
+            "count": processes.len(),
+            "processes": processes
+        });
+
+        return Ok(ToolResult {
+            call_id: format!("direct_{}", uuid::Uuid::new_v4()),
+            success: true,
+            output: serde_json::to_string_pretty(&result).unwrap_or_default(),
+            error: None,
+            duration_ms: None,
+            metadata: None,
+        });
+    }
+
+    // Special handling for get_environment_info - use get_environment_diagnostics
+    if tool_name == "get_environment_info" {
+        log::info!("[AI Tool Direct] Special handling for get_environment_info");
+        match crate::commands::toolchain::get_environment_diagnostics(None).await {
+            Ok(diagnostics) => {
+                let result = serde_json::json!({
+                    "volta": {
+                        "available": diagnostics.volta.available,
+                        "version": diagnostics.volta.version,
+                        "path": diagnostics.volta.path,
+                        "shim_path": diagnostics.volta.shim_path,
+                    },
+                    "corepack": {
+                        "available": diagnostics.corepack.available,
+                        "enabled": diagnostics.corepack.enabled,
+                        "version": diagnostics.corepack.version,
+                    },
+                    "system_node": {
+                        "version": diagnostics.system_node.version,
+                        "path": diagnostics.system_node.path,
+                    },
+                    "package_managers": {
+                        "npm": diagnostics.package_managers.npm,
+                        "pnpm": diagnostics.package_managers.pnpm,
+                        "yarn": diagnostics.package_managers.yarn,
+                    },
+                    "path_analysis": {
+                        "volta_first": diagnostics.path_analysis.volta_first,
+                        "corepack_first": diagnostics.path_analysis.corepack_first,
+                    }
+                });
+
+                return Ok(ToolResult {
+                    call_id: format!("direct_{}", uuid::Uuid::new_v4()),
+                    success: true,
+                    output: serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    error: None,
+                    duration_ms: None,
+                    metadata: None,
+                });
+            }
+            Err(e) => {
+                return Ok(ToolResult {
+                    call_id: format!("direct_{}", uuid::Uuid::new_v4()),
+                    success: false,
+                    output: String::new(),
+                    error: Some(e),
+                    duration_ms: None,
+                    metadata: None,
+                });
+            }
+        }
+    }
+
+    // Special handling for get_notifications - return empty for now
+    if tool_name == "get_notifications" {
+        log::info!("[AI Tool Direct] Special handling for get_notifications");
+        let result = serde_json::json!({
+            "message": "No pending notifications",
+            "notifications": []
+        });
+
+        return Ok(ToolResult {
+            call_id: format!("direct_{}", uuid::Uuid::new_v4()),
+            success: true,
+            output: serde_json::to_string_pretty(&result).unwrap_or_default(),
+            error: None,
+            duration_ms: None,
+            metadata: None,
+        });
+    }
+
+    // Special handling for security tools - require project context
+    if tool_name == "run_security_scan" || tool_name == "get_security_scan_results" {
+        log::info!("[AI Tool Direct] Special handling for security tool: {}", tool_name);
+        let result = serde_json::json!({
+            "message": "Security scanning requires a project context. Please select a project first or use the Security panel in the Projects tab.",
+            "hint": "Navigate to Projects tab > select a project > Security panel to run security scans."
+        });
+
+        return Ok(ToolResult {
+            call_id: format!("direct_{}", uuid::Uuid::new_v4()),
+            success: true,
+            output: serde_json::to_string_pretty(&result).unwrap_or_default(),
+            error: None,
+            duration_ms: None,
+            metadata: None,
+        });
+    }
+
+    // Special handling for get_project_dependencies - require project context
+    if tool_name == "get_project_dependencies" {
+        log::info!("[AI Tool Direct] Special handling for get_project_dependencies");
+        let result = serde_json::json!({
+            "message": "Dependency listing requires a project context. Please select a project first.",
+            "hint": "Navigate to Projects tab > select a project to view its dependencies."
+        });
+
+        return Ok(ToolResult {
+            call_id: format!("direct_{}", uuid::Uuid::new_v4()),
+            success: true,
+            output: serde_json::to_string_pretty(&result).unwrap_or_default(),
+            error: None,
+            duration_ms: None,
+            metadata: None,
+        });
+    }
+
+    // Create tool handler
+    let handler = MCPToolHandler::with_database(db.0.as_ref().clone());
+
+    // Create a ToolCall structure
+    let tool_call = ToolCall {
+        id: format!("direct_{}", uuid::Uuid::new_v4()),
+        name: tool_name.clone(),
+        arguments: tool_args,
+        status: ToolCallStatus::Pending,
+    };
+
+    // Validate the tool exists
+    let available_tools = handler.get_available_tools(None);
+    let tool_def = available_tools
+        .tools
+        .iter()
+        .find(|t| t.name == tool_name)
+        .ok_or_else(|| format!("Unknown tool: {}", tool_name))?;
+
+    // Check if tool requires confirmation - Lazy Actions should not require confirmation
+    if tool_def.requires_confirmation {
+        return Err(format!(
+            "Tool '{}' requires confirmation and cannot be executed directly. Use the chat interface instead.",
+            tool_name
+        ));
+    }
+
+    // Execute the tool
+    let result = handler.execute_tool_call(&tool_call).await;
+
+    Ok(result)
 }
 
 // ============================================================================
@@ -1889,7 +2361,14 @@ pub async fn ai_assistant_get_autocomplete(
                         text: msg.content.clone(),
                         source: AutocompleteSource::RecentPrompt,
                         label: if msg.content.len() > 50 {
-                            format!("{}...", &msg.content[..50])
+                            // UTF-8 safe truncation: find valid character boundary
+                            let truncate_at = msg.content
+                                .char_indices()
+                                .take_while(|(i, _)| *i < 50)
+                                .last()
+                                .map(|(i, c)| i + c.len_utf8())
+                                .unwrap_or(msg.content.len().min(50));
+                            format!("{}...", &msg.content[..truncate_at])
                         } else {
                             msg.content.clone()
                         },

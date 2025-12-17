@@ -5,7 +5,7 @@
 // Phase 1 components (US1 - Basic Chat):
 export { AIAssistantPage } from './AIAssistantPage';
 export { ChatMessage } from './ChatMessage';
-export { ChatInputArea } from './ChatInputArea';
+export { ChatInputContainer } from './chat-input';
 export { StreamingIndicator } from './StreamingIndicator';
 export { AIProviderNotConfiguredState } from './AIProviderNotConfiguredState';
 
@@ -19,6 +19,7 @@ export {
   GIT_QUICK_ACTIONS,
   PROJECT_QUICK_ACTIONS,
 } from './QuickActionChips';
+export { QuickActionsPopover } from './QuickActionsPopover';
 
 // Phase 4 components (US4 - History Management):
 export { AIAssistantSidebar } from './AIAssistantSidebar';
@@ -32,3 +33,7 @@ export { ConversationHeader } from './ConversationHeader';
 
 // Feature 023: Enhanced AI Chat Experience
 export { ResponseStatusIndicator, TimingBreakdown } from './ResponseStatusIndicator';
+
+// Feature 024: Context-Aware AI Assistant
+export { ProjectContextSelector } from './ProjectContextSelector';
+export { ContextBanner, ContextIndicator } from './ContextBanner';

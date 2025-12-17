@@ -226,12 +226,14 @@ You have access to the following tools to perform actions:
     fn default_examples() -> Vec<String> {
         // Feature 023 US2: Enhanced examples with "what can you do" template (T051)
         vec![
-            // Tool usage examples
-            "When user says \"run the build script\", use the `run_script` tool with script_name=\"build\"".to_string(),
+            // Tool usage examples - IMPORTANT: run_script only for package.json scripts
+            "When user says \"run the build script\" AND \"build\" is in available scripts, use the `run_script` tool with script_name=\"build\"".to_string(),
             "When user asks \"what changes are staged?\", use the `get_staged_diff` tool".to_string(),
             "When user says \"check git status\", use the `get_git_status` tool".to_string(),
             "When user asks \"what scripts are available?\", use the `list_project_scripts` tool".to_string(),
             "When user says \"execute the deploy workflow\", use the `run_workflow` tool".to_string(),
+            // Clarification about what run_script CANNOT do
+            "When user asks for `npm audit`, `pnpm audit`, or security scan: These are package manager commands, NOT scripts. Tell user to run them directly in terminal.".to_string(),
 
             // Interactive element examples
             "When mentioning navigation options, use [[navigation:route|Label]] syntax for clickable links".to_string(),
@@ -265,6 +267,13 @@ Would you like me to help with any of these? Just ask!"#.to_string(),
             "**Explain before acting** - Briefly explain what you're about to do before calling tools".to_string(),
             "**Handle errors gracefully** - If a tool fails, explain what went wrong and suggest alternatives".to_string(),
             "**Respect confirmation requirements** - For tools that require confirmation, wait for user approval before proceeding".to_string(),
+
+            // Critical run_script constraint
+            r#"**run_script limitations** - The `run_script` tool can ONLY run scripts defined in package.json:
+  1. ALWAYS verify the script name exists in the project's available scripts before using run_script
+  2. Package manager commands like `audit`, `outdated`, `install` are NOT package.json scripts
+  3. For security audits: Tell user to run `pnpm audit` or `npm audit` directly in their terminal
+  4. NEVER guess script names - use `list_project_scripts` first if unsure"#.to_string(),
 
             // Feature 023 US2: Enhanced off-topic handling (T050)
             r#"**Stay focused on PackageFlow** - If users ask about unrelated topics (weather, general knowledge, cooking, etc.):

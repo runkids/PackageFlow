@@ -2603,9 +2603,15 @@ impl PackageFlowMcp {
         match result {
             Ok((exit_code, stdout, stderr)) => {
                 let output = if !stdout.is_empty() { stdout } else { stderr };
-                // Truncate output if too long
+                // Truncate output if too long (UTF-8 safe)
                 let truncated_output = if output.len() > 10000 {
-                    format!("{}...[truncated]", &output[..10000])
+                    let truncate_at = output
+                        .char_indices()
+                        .take_while(|(i, _)| *i < 10000)
+                        .last()
+                        .map(|(i, c)| i + c.len_utf8())
+                        .unwrap_or(output.len().min(10000));
+                    format!("{}...[truncated]", &output[..truncate_at])
                 } else {
                     output
                 };

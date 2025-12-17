@@ -72,6 +72,8 @@ interface UseAIChatReturn {
   isExecutingTool: boolean;
   /** Current response status (Feature 023) */
   responseStatus: ResponseStatus | null;
+  /** Feature 024: Update conversation's project context */
+  updateConversationContext: (projectPath: string | null) => Promise<void>;
 }
 
 /**
@@ -425,6 +427,8 @@ export function useAIChat(options: UseAIChatOptions = {}): UseAIChatReturn {
       // Add both messages to state
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setIsGenerating(true);
+      // Set initial status immediately (don't wait for backend event)
+      setResponseStatus({ phase: 'thinking', startTime: Date.now() });
 
       try {
         // Call Tauri command to send message
@@ -786,13 +790,16 @@ export function useAIChat(options: UseAIChatOptions = {}): UseAIChatReturn {
             return msg;
           });
         });
+        // Continue conversation so AI can acknowledge the denial
+        // This allows AI to provide an alternative response
+        await continueAfterToolApproval();
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to deny tool';
         setError(errorMsg);
         throw err;
       }
     },
-    [conversation]
+    [conversation, continueAfterToolApproval]
   );
 
   // Stop/cancel an executing tool call
@@ -850,7 +857,40 @@ export function useAIChat(options: UseAIChatOptions = {}): UseAIChatReturn {
 
     // Clear response status
     setResponseStatus(null);
-  }, []);
+
+    // Continue conversation so AI can acknowledge the cancellation
+    // This allows AI to provide a response even when tool is cancelled
+    await continueAfterToolApproval();
+  }, [continueAfterToolApproval]);
+
+  // Feature 024: Update conversation's project context
+  const updateConversationContext = useCallback(
+    async (newProjectPath: string | null): Promise<void> => {
+      if (!conversation) {
+        console.warn('[AI Chat] Cannot update context: no conversation');
+        return;
+      }
+
+      try {
+        await invoke('ai_assistant_update_conversation_context', {
+          conversationId: conversation.id,
+          projectPath: newProjectPath,
+        });
+
+        // Update local conversation state
+        setConversation((prev) => (prev ? { ...prev, projectPath: newProjectPath } : null));
+
+        console.log('[AI Chat] Conversation context updated:', {
+          conversationId: conversation.id,
+          projectPath: newProjectPath,
+        });
+      } catch (err) {
+        console.error('[AI Chat] Failed to update conversation context:', err);
+        throw err;
+      }
+    },
+    [conversation]
+  );
 
   return {
     conversation,
@@ -872,5 +912,6 @@ export function useAIChat(options: UseAIChatOptions = {}): UseAIChatReturn {
     stopToolExecution,
     isExecutingTool,
     responseStatus,
+    updateConversationContext,
   };
 }

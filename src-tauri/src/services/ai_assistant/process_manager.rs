@@ -86,6 +86,8 @@ impl ProcessManager {
         args: &[&str],
         cwd: &str,
     ) -> Result<String, String> {
+        use crate::utils::path_resolver;
+
         // Build description
         let description = if args.is_empty() {
             command.to_string()
@@ -93,13 +95,44 @@ impl ProcessManager {
             format!("{} {}", command, args.join(" "))
         };
 
-        // Spawn the process
-        let child = Command::new(command)
-            .args(args)
+        // Spawn the process with proper environment for macOS GUI apps
+        let mut cmd = Command::new(command);
+        cmd.args(args)
             .current_dir(cwd)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+
+        // Set essential environment variables (critical for macOS GUI apps)
+        if let Some(home) = dirs::home_dir() {
+            let home_str = home.to_string_lossy().to_string();
+            cmd.env("HOME", &home_str);
+
+            // Volta support
+            let volta_home = format!("{}/.volta", home_str);
+            if std::path::Path::new(&volta_home).exists() {
+                cmd.env("VOLTA_HOME", &volta_home);
+            }
+
+            // fnm support
+            let fnm_dir = format!("{}/.fnm", home_str);
+            if std::path::Path::new(&fnm_dir).exists() {
+                cmd.env("FNM_DIR", &fnm_dir);
+            }
+        }
+
+        // Set PATH so child processes can find tools
+        cmd.env("PATH", path_resolver::get_path());
+
+        // Set LANG for proper encoding
+        cmd.env("LANG", "en_US.UTF-8");
+        cmd.env("LC_ALL", "en_US.UTF-8");
+
+        // Terminal settings
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("FORCE_COLOR", "1");
+        cmd.env("CI", "false");
+
+        let child = cmd.spawn()
             .map_err(|e| format!("Failed to spawn process: {}", e))?;
 
         // Track it
@@ -179,6 +212,7 @@ impl ProcessManager {
     ) -> Result<(String, String, bool), String> {
         let timeout = timeout_ms.unwrap_or(300_000); // 5 minutes default
         let start = std::time::Instant::now();
+        println!(">>> [ProcessManager] wait_for_output started for {}", tool_call_id);
 
         // Poll for completion, checking for stop every 100ms
         loop {
@@ -222,6 +256,7 @@ impl ProcessManager {
                         match child.try_wait() {
                             Ok(Some(status)) => {
                                 // Process has completed
+                                println!(">>> [ProcessManager] Process {} completed with status: {:?}", tool_call_id, status);
                                 let mut stdout = String::new();
                                 let mut stderr = String::new();
 

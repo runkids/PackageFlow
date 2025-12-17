@@ -1,24 +1,25 @@
 /**
  * ConversationHeader - Header bar for the chat area
  * Feature: AI Assistant Tab (022-ai-assistant-tab)
+ * Enhancement: Feature 024 - Context-Aware AI Assistant (Project Selector)
  *
  * Features:
  * - Model selector (per-conversation)
  * - Token usage indicator
- * - Project context badge
+ * - Project context selector (Feature 024)
  * - Settings access
  */
 
-import { useState, useEffect } from 'react';
-import { Settings, Sparkles, Folder, ChevronDown, Check, Loader2, Bot } from 'lucide-react';
-import { AIProviderIcon } from '../ui/AIProviderIcon';
+import { useState, useEffect, useRef } from 'react';
+import { Settings, Sparkles, ChevronDown, Check, Loader2, Bot } from 'lucide-react';
+import { AIProviderIcon, getProviderColorScheme } from '../ui/AIProviderIcon';
 import type { AIProvider } from '../../types/ai';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
-import { Dropdown, DropdownItem, DropdownSection } from '../ui/Dropdown';
 import type { Conversation } from '../../types/ai-assistant';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { ProjectContextSelector } from './ProjectContextSelector';
 
 interface ConversationHeaderProps {
   /** Current conversation */
@@ -35,6 +36,10 @@ interface ConversationHeaderProps {
   onProviderSelect?: (providerId: string) => void;
   /** Handler for service change */
   onServiceChange?: () => void;
+  /** Feature 024: Current project path (may differ from conversation.projectPath) */
+  currentProjectPath?: string;
+  /** Feature 024: Handler for project context change */
+  onProjectContextChange?: (projectPath: string | null) => void;
 }
 
 interface AIProviderConfig {
@@ -99,7 +104,79 @@ function TokenUsageIndicator({
 }
 
 /**
- * Model selector dropdown
+ * Individual provider item in the dropdown
+ */
+function ProviderItem({
+  service,
+  isSelected,
+  onClick,
+}: {
+  service: AIProviderConfig;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  const providerType = service.provider?.toLowerCase() as AIProvider;
+  const colorScheme = service.provider ? getProviderColorScheme(providerType) : null;
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-3 px-3 py-2.5 text-left',
+        'transition-colors duration-100',
+        'focus:outline-none focus-visible:bg-accent/50',
+        isSelected
+          ? 'bg-primary/10 dark:bg-primary/15'
+          : 'hover:bg-accent/50 dark:hover:bg-accent/30'
+      )}
+    >
+      {/* Icon container - uses provider-specific color scheme */}
+      <div
+        className={cn(
+          'flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0',
+          'transition-colors duration-100',
+          colorScheme ? colorScheme.iconBg : 'bg-muted text-muted-foreground'
+        )}
+      >
+        {service.provider ? (
+          <AIProviderIcon provider={providerType} size={16} />
+        ) : (
+          <Bot className="w-4 h-4" />
+        )}
+      </div>
+
+      {/* Text content */}
+      <div className="flex flex-col flex-1 min-w-0">
+        <span
+          className={cn(
+            'text-sm font-medium truncate',
+            isSelected ? 'text-foreground' : 'text-foreground/90'
+          )}
+        >
+          {service.name}
+        </span>
+        <span
+          className={cn(
+            'text-[11px] truncate',
+            isSelected ? 'text-muted-foreground' : 'text-muted-foreground/70'
+          )}
+        >
+          {service.model}
+        </span>
+      </div>
+
+      {/* Check indicator */}
+      {isSelected && (
+        <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
+          <Check className="w-4 h-4 text-primary" />
+        </div>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Model selector dropdown - redesigned to match ProjectContextSelector
  */
 function ModelSelector({
   currentServiceId,
@@ -112,8 +189,34 @@ function ModelSelector({
   disabled: boolean;
   onSelect: (providerId: string) => void;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const currentService = services.find((s) => s.id === currentServiceId);
   const enabledServices = services.filter((s) => s.isEnabled);
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
 
   if (enabledServices.length === 0) {
     return (
@@ -123,61 +226,88 @@ function ModelSelector({
     );
   }
 
-  // Render provider icon based on provider type
-  const renderProviderIcon = (provider: string | undefined) => {
-    if (!provider) {
-      return <Bot className="w-3.5 h-3.5 text-muted-foreground" />;
+  // Render provider icon for trigger button
+  const renderTriggerIcon = () => {
+    if (!currentService?.provider) {
+      return <Bot className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400" />;
     }
-    // Map provider string to AIProvider type
-    const providerType = provider.toLowerCase() as AIProvider;
+    const providerType = currentService.provider.toLowerCase() as AIProvider;
     return <AIProviderIcon provider={providerType} size={14} />;
   };
 
+  const handleSelect = (serviceId: string) => {
+    onSelect(serviceId);
+    setIsOpen(false);
+  };
+
   return (
-    <Dropdown
-      trigger={
-        <button
-          disabled={disabled}
+    <div ref={dropdownRef} className="relative">
+      {/* Trigger button */}
+      <button
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          'flex items-center gap-2 px-2.5 py-1.5 rounded-lg',
+          'text-xs font-medium',
+          'bg-muted/40 hover:bg-muted/60',
+          'border border-border/60 hover:border-border',
+          'transition-all duration-150',
+          'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+          disabled && 'opacity-50 cursor-not-allowed'
+        )}
+        aria-label="Select AI provider"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+      >
+        {renderTriggerIcon()}
+        <span className="truncate max-w-[100px]">
+          {currentService?.name || 'Select provider'}
+        </span>
+        <ChevronDown
           className={cn(
-            'flex items-center gap-2 px-2.5 py-1.5 rounded-lg',
-            'text-xs font-medium',
-            'bg-muted/40 hover:bg-muted/60',
-            'border border-border/60 hover:border-border',
-            'transition-all duration-150',
-            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-            disabled && 'opacity-50 cursor-not-allowed'
+            'w-3 h-3 text-muted-foreground/70 transition-transform duration-200',
+            isOpen && 'rotate-180'
           )}
-          aria-label="Select AI provider"
+        />
+      </button>
+
+      {/* Dropdown menu */}
+      {isOpen && (
+        <div
+          className={cn(
+            'absolute z-[1000] mt-1.5 left-0',
+            'min-w-[260px] max-w-[320px]',
+            'rounded-xl shadow-lg',
+            'bg-card',
+            'border border-border',
+            'overflow-hidden',
+            'animate-in fade-in-0 zoom-in-95 slide-in-from-top-2',
+            'duration-150'
+          )}
+          role="listbox"
+          aria-label="AI provider options"
         >
-          {renderProviderIcon(currentService?.provider)}
-          <span className="truncate max-w-[100px]">
-            {currentService?.name || 'Select provider'}
-          </span>
-          <ChevronDown className="w-3 h-3 text-muted-foreground/70" />
-        </button>
-      }
-      align="left"
-    >
-      <DropdownSection>
-        {enabledServices.map((service) => (
-          <DropdownItem
-            key={service.id}
-            icon={renderProviderIcon(service.provider)}
-            onClick={() => onSelect(service.id)}
-          >
-            <div className="flex items-center gap-2 flex-1">
-              <div className="flex flex-col flex-1">
-                <span className="font-medium">{service.name}</span>
-                <span className="text-[11px] text-muted-foreground/70">{service.model}</span>
-              </div>
-              {service.id === currentServiceId && (
-                <Check className="w-4 h-4 text-primary flex-shrink-0" />
-              )}
-            </div>
-          </DropdownItem>
-        ))}
-      </DropdownSection>
-    </Dropdown>
+          {/* Section header */}
+          <div className="px-3 py-2 border-b border-border/50">
+            <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+              AI Providers
+            </span>
+          </div>
+
+          {/* Provider list */}
+          <div className="max-h-[240px] overflow-y-auto py-1">
+            {enabledServices.map((service) => (
+              <ProviderItem
+                key={service.id}
+                service={service}
+                isSelected={service.id === currentServiceId}
+                onClick={() => handleSelect(service.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -192,6 +322,8 @@ export function ConversationHeader({
   selectedProviderId,
   onProviderSelect,
   onServiceChange,
+  currentProjectPath,
+  onProjectContextChange,
 }: ConversationHeaderProps) {
   const [aiProviders, setAiServices] = useState<AIProviderConfig[]>([]);
   const [isLoadingServices, setIsLoadingServices] = useState(true);
@@ -266,8 +398,8 @@ export function ConversationHeader({
   // Determine current service ID: conversation's provider takes precedence, then selectedProviderId
   const currentServiceId = conversation?.providerId ?? selectedProviderId ?? null;
 
-  // Get project name from path
-  const projectName = conversation?.projectPath ? conversation.projectPath.split('/').pop() : null;
+  // Feature 024: Effective project path (prop takes precedence for hybrid mode)
+  const effectiveProjectPath = currentProjectPath ?? conversation?.projectPath;
 
   return (
     <header
@@ -297,19 +429,12 @@ export function ConversationHeader({
           />
         )}
 
-        {/* Project context badge */}
-        {projectName && (
-          <div
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
-              'text-xs text-muted-foreground/80',
-              'bg-muted/30 border border-border/40'
-            )}
-          >
-            <Folder className="w-3.5 h-3.5 text-blue-500/70" />
-            <span className="truncate max-w-[120px]">{projectName}</span>
-          </div>
-        )}
+        {/* Feature 024: Project context selector */}
+        <ProjectContextSelector
+          currentProjectPath={effectiveProjectPath ?? undefined}
+          onProjectChange={onProjectContextChange ?? (() => {})}
+          disabled={isGenerating}
+        />
       </div>
 
       {/* Right side - Token usage and settings */}

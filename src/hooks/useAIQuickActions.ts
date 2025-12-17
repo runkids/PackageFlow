@@ -35,26 +35,32 @@ const DEFAULT_SUGGESTIONS: SuggestedAction[] = [
   {
     id: 'list-projects',
     label: 'Projects',
-    prompt: 'Use list_projects to show all registered projects',
+    prompt: 'List all registered projects',
     icon: 'FolderOpen',
     variant: 'primary',
     category: 'project',
+    mode: 'instant',
+    tool: { name: 'list_projects', args: {} },
   },
   {
     id: 'list-workflows',
     label: 'Workflows',
-    prompt: 'Use list_workflows to show all available workflows',
+    prompt: 'List all available workflows',
     icon: 'Workflow',
     variant: 'default',
     category: 'workflow',
+    mode: 'instant',
+    tool: { name: 'list_workflows', args: {} },
   },
   {
     id: 'list-actions',
     label: 'Actions',
-    prompt: 'Use list_actions to show all MCP actions',
+    prompt: 'List all MCP actions',
     icon: 'Zap',
     variant: 'default',
     category: 'workflow',
+    mode: 'instant',
+    tool: { name: 'list_actions', args: {} },
   },
 ];
 
@@ -117,6 +123,7 @@ export function useAIQuickActions(options: UseAIQuickActionsOptions = {}): UseAI
 /**
  * Get quick actions based on detected project context
  * These map directly to PackageFlow MCP tools
+ * Note: This is a fallback; backend provides more complete suggestions
  */
 export function getContextualQuickActions(
   hasGit: boolean,
@@ -130,30 +137,33 @@ export function getContextualQuickActions(
     actions.push({
       id: 'git-status',
       label: 'Git Status',
-      prompt: 'Use get_git_status for this project',
+      prompt: 'Show git status',
       icon: 'GitBranch',
       variant: 'default',
       category: 'git',
+      mode: 'smart',
     });
 
     if (hasStagedChanges) {
       actions.push({
         id: 'git-diff',
         label: 'Staged Diff',
-        prompt: 'Use get_staged_diff to show staged changes',
+        prompt: 'Show staged changes',
         icon: 'FileDiff',
         variant: 'default',
         category: 'git',
+        mode: 'smart',
       });
     }
 
     actions.push({
       id: 'list-worktrees',
       label: 'Worktrees',
-      prompt: 'Use list_worktrees for this project',
+      prompt: 'List worktrees',
       icon: 'GitFork',
       variant: 'default',
       category: 'git',
+      mode: 'instant',
     });
   }
 
@@ -162,37 +172,41 @@ export function getContextualQuickActions(
     actions.push({
       id: 'list-scripts',
       label: 'Scripts',
-      prompt: 'Use list_project_scripts to show available npm scripts',
+      prompt: 'Show npm scripts',
       icon: 'Terminal',
       variant: 'default',
       category: 'project',
+      mode: 'instant',
     });
 
     actions.push({
       id: 'run-dev',
       label: 'npm dev',
-      prompt: 'Use run_npm_script with scriptName "dev"',
+      prompt: 'Run dev script',
       icon: 'Play',
       variant: 'primary',
       category: 'project',
+      mode: 'ai',
     });
 
     actions.push({
       id: 'run-build',
       label: 'npm build',
-      prompt: 'Use run_npm_script with scriptName "build"',
+      prompt: 'Run build script',
       icon: 'Hammer',
       variant: 'default',
       category: 'project',
+      mode: 'ai',
     });
 
     actions.push({
       id: 'run-test',
       label: 'npm test',
-      prompt: 'Use run_npm_script with scriptName "test"',
+      prompt: 'Run test script',
       icon: 'TestTube',
       variant: 'default',
       category: 'project',
+      mode: 'ai',
     });
   }
 

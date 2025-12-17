@@ -154,12 +154,13 @@ pub async fn test_mcp_connection(app: AppHandle) -> Result<McpHealthCheckResult,
         });
     }
 
-    // Execute --version and measure time
+    // Execute --version and measure time (use path_resolver for consistent environment)
     let start = Instant::now();
-    let output = tokio::process::Command::new(&server_info.binary_path)
-        .arg("--version")
-        .output()
-        .await;
+    let output = {
+        let mut cmd = crate::utils::path_resolver::create_async_command(&server_info.binary_path);
+        cmd.arg("--version");
+        cmd.output().await
+    };
     let elapsed = start.elapsed().as_millis() as u64;
 
     match output {
