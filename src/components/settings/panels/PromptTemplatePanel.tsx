@@ -257,29 +257,62 @@ const TemplateStatusCard: React.FC<TemplateStatusCardProps> = ({
   const defaultCount = Object.values(defaultTemplates).filter(Boolean).length;
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-4 p-4 rounded-xl',
-        'bg-gradient-to-r',
-        hasTemplates
-          ? 'from-primary/5 via-primary/3 to-transparent border border-primary/10'
-          : 'from-muted/50 via-muted/30 to-transparent border border-border',
-        'transition-all duration-300',
-        className
-      )}
-    >
-      {/* Icon */}
+    <div className={cn('relative', className)}>
+      {/* Gradient border wrapper - purple → blue → cyan theme (AI theme) */}
       <div
         className={cn(
-          'w-12 h-12 rounded-xl flex items-center justify-center shrink-0',
-          'transition-all duration-300',
-          hasTemplates
-            ? 'bg-primary/10 text-primary'
-            : 'bg-muted text-muted-foreground'
+          'absolute inset-0 rounded-xl',
+          'bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-500',
+          'transition-opacity duration-300',
+          hasTemplates ? 'opacity-100' : 'opacity-30'
+        )}
+      />
+
+      {/* Inner content with background */}
+      <div
+        className={cn(
+          'relative flex items-center gap-4 p-4 rounded-[11px] m-[1px]',
+          'bg-card/95 dark:bg-card/90 backdrop-blur-sm',
+          'transition-all duration-300'
         )}
       >
-        <FileText className="w-6 h-6" />
-      </div>
+        {/* Icon with gradient background */}
+        <div
+          className={cn(
+            'w-12 h-12 rounded-xl flex items-center justify-center shrink-0',
+            'transition-all duration-300',
+            hasTemplates
+              ? 'bg-gradient-to-br from-purple-500/20 via-blue-500/15 to-cyan-500/10'
+              : 'bg-muted'
+          )}
+        >
+          {hasTemplates ? (
+            <svg
+              className="w-6 h-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="url(#template-gradient)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <defs>
+                <linearGradient id="template-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#a855f7" />
+                  <stop offset="50%" stopColor="#3b82f6" />
+                  <stop offset="100%" stopColor="#06b6d4" />
+                </linearGradient>
+              </defs>
+              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+              <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+              <path d="M10 9H8" />
+              <path d="M16 13H8" />
+              <path d="M16 17H8" />
+            </svg>
+          ) : (
+            <FileText className="w-6 h-6 text-muted-foreground" />
+          )}
+        </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
@@ -340,6 +373,7 @@ const TemplateStatusCard: React.FC<TemplateStatusCardProps> = ({
             </>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -1234,18 +1268,25 @@ export function PromptTemplatePanel() {
     }
   }, [deleteTarget, deleteTemplate]);
 
+  // Render header component for reuse
+  const renderHeader = () => (
+    <div>
+      <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+        <FileText className="w-5 h-5" />
+        Prompt Templates
+      </h2>
+      <p className="text-sm text-muted-foreground mt-1">
+        Customize prompts for AI-powered features
+      </p>
+    </div>
+  );
+
   // Render
   if (isLoadingTemplates && templates.length === 0) {
     return (
       <div className="flex flex-col flex-1 min-h-0">
         <div className="shrink-0 pb-4">
-          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            Prompt Templates
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Customize prompts for AI-powered features
-          </p>
+          {renderHeader()}
         </div>
         <div className="flex-1 overflow-y-auto min-h-0">
           <LoadingSkeleton />
@@ -1258,13 +1299,7 @@ export function PromptTemplatePanel() {
     return (
       <div className="flex flex-col flex-1 min-h-0">
         <div className="shrink-0 pb-4">
-          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            Prompt Templates
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Customize prompts for AI-powered features
-          </p>
+          {renderHeader()}
         </div>
         <div className="flex-1 overflow-y-auto min-h-0">
           <ErrorState message={templatesError} onRetry={loadTemplates} />
@@ -1277,13 +1312,7 @@ export function PromptTemplatePanel() {
     <div className="flex flex-col flex-1 min-h-0">
       {/* Header - Fixed */}
       <div className="shrink-0 pb-4">
-        <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Prompt Templates
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Customize prompts for AI-powered features
-        </p>
+        {renderHeader()}
       </div>
 
       {/* Status Card - Fixed */}

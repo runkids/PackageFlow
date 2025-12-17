@@ -100,29 +100,66 @@ const AIStatusCard: React.FC<AIStatusCardProps> = ({
   className,
 }) => {
   return (
-    <div
-      className={cn(
-        'flex items-center gap-4 p-4 rounded-xl',
-        'bg-gradient-to-r',
-        hasEnabledServices
-          ? 'from-primary/5 via-primary/3 to-transparent border border-primary/10'
-          : 'from-muted/50 via-muted/30 to-transparent border border-border',
-        'transition-all duration-300',
-        className
-      )}
-    >
-      {/* Icon */}
+    <div className={cn('relative', className)}>
+      {/* Gradient border wrapper - purple → blue → cyan theme */}
       <div
         className={cn(
-          'w-12 h-12 rounded-xl flex items-center justify-center shrink-0',
-          'transition-all duration-300',
-          hasEnabledServices
-            ? 'bg-primary/10 text-primary'
-            : 'bg-muted text-muted-foreground'
+          'absolute inset-0 rounded-xl',
+          'bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-500',
+          'transition-opacity duration-300',
+          hasEnabledServices ? 'opacity-100' : 'opacity-30'
+        )}
+      />
+
+      {/* Inner content with background */}
+      <div
+        className={cn(
+          'relative flex items-center gap-4 p-4 rounded-[11px] m-[1px]',
+          'bg-card/95 dark:bg-card/90 backdrop-blur-sm',
+          'transition-all duration-300'
         )}
       >
-        <Bot className="w-6 h-6" />
-      </div>
+        {/* Icon with gradient background */}
+        <div
+          className={cn(
+            'w-12 h-12 rounded-xl flex items-center justify-center shrink-0',
+            'transition-all duration-300',
+            hasEnabledServices
+              ? 'bg-gradient-to-br from-purple-500/20 via-blue-500/15 to-cyan-500/10'
+              : 'bg-muted'
+          )}
+        >
+          {hasEnabledServices ? (
+            <svg
+              className="w-6 h-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="url(#ai-gradient)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <defs>
+                <linearGradient id="ai-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#a855f7" />
+                  <stop offset="50%" stopColor="#3b82f6" />
+                  <stop offset="100%" stopColor="#06b6d4" />
+                </linearGradient>
+              </defs>
+              {/* Bot icon - head with antenna */}
+              <path d="M12 8V4H8" />
+              <rect width="16" height="12" x="4" y="8" rx="2" />
+              {/* Ears */}
+              <path d="M2 14h2" />
+              <path d="M20 14h2" />
+              {/* Eyes - filled circles */}
+              <circle cx="9" cy="13" r="1" fill="url(#ai-gradient)" stroke="none" />
+              <circle cx="15" cy="13" r="1" fill="url(#ai-gradient)" stroke="none" />
+            </svg>
+          ) : (
+            <Bot className="w-6 h-6 text-muted-foreground" />
+          )}
+        </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
@@ -185,6 +222,7 @@ const AIStatusCard: React.FC<AIStatusCardProps> = ({
             </>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -1160,9 +1198,9 @@ const AddServiceTab: React.FC<AddServiceTabProps> = ({
   }, [formModels, formData.model]);
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col h-full">
       {/* Scrollable Form Area */}
-      <div className="space-y-6 pr-1">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1 pb-4">
         {/* Form Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -1341,8 +1379,8 @@ const AddServiceTab: React.FC<AddServiceTabProps> = ({
       </div>
       </div>
 
-      {/* Submit Button - with frosted glass effect */}
-      <div className="sticky bottom-0 pt-4 pb-8 mt-4 -mx-1 px-1 border-t border-border/50 bg-background/80 backdrop-blur-md">
+      {/* Submit Button - Fixed at bottom */}
+      <div className="shrink-0 pt-4 border-t border-border bg-background">
         <div className="flex justify-end gap-2">
           {editingService && (
             <Button variant="ghost" onClick={onCancel}>
@@ -1664,151 +1702,156 @@ export function AIProviderSettingsPanel() {
     }
   }, [deleteTarget, deleteService]);
 
+  // Render header component for reuse
+  const renderHeader = () => (
+    <div>
+      <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+        <Bot className="w-5 h-5" />
+        AI Providers
+      </h2>
+      <p className="text-sm text-muted-foreground mt-1">
+        Configure AI providers for code review, commit messages, and more
+      </p>
+    </div>
+  );
+
   // Render
   if (isLoadingServices) {
     return (
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <Bot className="w-5 h-5" />
-            AI Providers
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure AI providers for code review, commit messages, and more
-          </p>
+      <div className="flex flex-col h-full min-h-0">
+        <div className="shrink-0 pb-4">
+          {renderHeader()}
         </div>
-        <LoadingSkeleton />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <LoadingSkeleton />
+        </div>
       </div>
     );
   }
 
   if (servicesError) {
     return (
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <Bot className="w-5 h-5" />
-            AI Providers
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure AI providers for code review, commit messages, and more
-          </p>
+      <div className="flex flex-col h-full min-h-0">
+        <div className="shrink-0 pb-4">
+          {renderHeader()}
         </div>
-        <ErrorState message={servicesError} onRetry={loadServices} />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <ErrorState message={servicesError} onRetry={loadServices} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-          <Bot className="w-5 h-5" />
-          AI Providers
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Configure AI providers for code review, commit messages, and more
-        </p>
+    <div className="flex flex-col h-full min-h-0">
+      {/* Fixed Header Section */}
+      <div className="shrink-0 space-y-4 pb-4">
+        {/* Header */}
+        {renderHeader()}
+
+        {/* Status Card */}
+        <AIStatusCard
+          totalServices={services.length}
+          localServices={localServices.length}
+          cloudServices={cloudServices.length}
+          defaultService={defaultService}
+          hasEnabledServices={services.length > 0}
+        />
       </div>
 
-      {/* Status Card */}
-      <AIStatusCard
-        totalServices={services.length}
-        localServices={localServices.length}
-        cloudServices={cloudServices.length}
-        defaultService={defaultService}
-        hasEnabledServices={services.length > 0}
-      />
+      {/* Scrollable Tabbed Content */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
+        <div className="shrink-0 pb-4">
+          <TabsList className="w-full grid grid-cols-4">
+            <TabsTrigger value="overview" className="flex items-center gap-1.5">
+              <Settings2 className="w-3.5 h-3.5" />
+              <span>Overview</span>
+            </TabsTrigger>
+            <TabsTrigger value="services" className="flex items-center gap-1.5">
+              <Server className="w-3.5 h-3.5" />
+              <span>Providers</span>
+              {services.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-muted rounded-full">
+                  {services.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="cli-tools" className="flex items-center gap-1.5">
+              <Terminal className="w-3.5 h-3.5" />
+              <span>CLI Tools</span>
+            </TabsTrigger>
+            <TabsTrigger value="add" className="flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5" />
+              <span>{editingService ? 'Edit' : 'Add'}</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-      {/* Tabbed Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="w-full grid grid-cols-4">
-          <TabsTrigger value="overview" className="flex items-center gap-1.5">
-            <Settings2 className="w-3.5 h-3.5" />
-            <span>Overview</span>
-          </TabsTrigger>
-          <TabsTrigger value="services" className="flex items-center gap-1.5">
-            <Server className="w-3.5 h-3.5" />
-            <span>Providers</span>
-            {services.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-muted rounded-full">
-                {services.length}
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="cli-tools" className="flex items-center gap-1.5">
-            <Terminal className="w-3.5 h-3.5" />
-            <span>CLI Tools</span>
-          </TabsTrigger>
-          <TabsTrigger value="add" className="flex items-center gap-1.5">
-            <Plus className="w-3.5 h-3.5" />
-            <span>{editingService ? 'Edit' : 'Add'}</span>
-          </TabsTrigger>
-        </TabsList>
+        {/* Content Area - flex container for proper height inheritance */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-x-hidden pr-1">
+          <TabsContent value="overview" className="mt-0 px-0.5 overflow-y-auto">
+            <OverviewTab
+              services={services}
+              localServices={localServices}
+              cloudServices={cloudServices}
+              defaultService={defaultService}
+              defaultCliTool={defaultCliTool}
+              executionMode={executionMode}
+              onExecutionModeChange={handleExecutionModeChange}
+            />
+          </TabsContent>
 
-        <TabsContent value="overview" className="max-h-[calc(100vh-280px)] overflow-y-auto">
-          <OverviewTab
-            services={services}
-            localServices={localServices}
-            cloudServices={cloudServices}
-            defaultService={defaultService}
-            defaultCliTool={defaultCliTool}
-            executionMode={executionMode}
-            onExecutionModeChange={handleExecutionModeChange}
-          />
-        </TabsContent>
+          <TabsContent value="services" className="mt-0 px-0.5 overflow-y-auto">
+            <ServicesTab
+              localServices={localServices}
+              cloudServices={cloudServices}
+              testResult={testResult}
+              testingServiceId={testingServiceId}
+              loadingModels={loadingModels}
+              availableModels={availableModels}
+              onEdit={handleStartEdit}
+              onDelete={setDeleteTarget}
+              onSetDefault={setDefaultService}
+              onTest={handleTestConnection}
+              onLoadModels={handleLoadModels}
+            />
+          </TabsContent>
 
-        <TabsContent value="services" className="max-h-[calc(100vh-280px)] overflow-y-auto">
-          <ServicesTab
-            localServices={localServices}
-            cloudServices={cloudServices}
-            testResult={testResult}
-            testingServiceId={testingServiceId}
-            loadingModels={loadingModels}
-            availableModels={availableModels}
-            onEdit={handleStartEdit}
-            onDelete={setDeleteTarget}
-            onSetDefault={setDefaultService}
-            onTest={handleTestConnection}
-            onLoadModels={handleLoadModels}
-          />
-        </TabsContent>
+          <TabsContent value="cli-tools" className="mt-0 px-0.5 overflow-y-auto">
+            <CLIToolsTab
+              detectedTools={detectedCLITools.map((t) => ({
+                toolType: t.toolType,
+                binaryPath: t.binaryPath,
+                version: t.version ?? undefined,
+              }))}
+              isLoading={cliToolsLoading}
+              error={cliToolsError}
+              defaultCliTool={defaultCliTool}
+              onSetDefault={handleSetDefaultCliTool}
+              onRefresh={refreshCLITools}
+            />
+          </TabsContent>
 
-        <TabsContent value="cli-tools" className="max-h-[calc(100vh-280px)] overflow-y-auto">
-          <CLIToolsTab
-            detectedTools={detectedCLITools.map((t) => ({
-              toolType: t.toolType,
-              binaryPath: t.binaryPath,
-              version: t.version ?? undefined,
-            }))}
-            isLoading={cliToolsLoading}
-            error={cliToolsError}
-            defaultCliTool={defaultCliTool}
-            onSetDefault={handleSetDefaultCliTool}
-            onRefresh={refreshCLITools}
-          />
-        </TabsContent>
-
-        <TabsContent value="add" className="max-h-[calc(100vh-280px)] overflow-y-auto">
-          <AddServiceTab
-            editingService={editingService}
-            formData={formData}
-            formError={formError}
-            isSubmitting={isSubmitting}
-            showApiKey={showApiKey}
-            formModels={formModels}
-            isProbingModels={isProbingModels}
-            probeError={probeError}
-            formId={formId}
-            onFormDataChange={handleFormDataChange}
-            onProviderChange={handleProviderChange}
-            onProbeModels={handleProbeModels}
-            onToggleShowApiKey={() => setShowApiKey(!showApiKey)}
-            onSubmit={handleSubmit}
-            onCancel={handleCancelForm}
-          />
-        </TabsContent>
+          <TabsContent value="add" className="mt-0 px-0.5 flex-1 min-h-0 flex flex-col">
+            <AddServiceTab
+              editingService={editingService}
+              formData={formData}
+              formError={formError}
+              isSubmitting={isSubmitting}
+              showApiKey={showApiKey}
+              formModels={formModels}
+              isProbingModels={isProbingModels}
+              probeError={probeError}
+              formId={formId}
+              onFormDataChange={handleFormDataChange}
+              onProviderChange={handleProviderChange}
+              onProbeModels={handleProbeModels}
+              onToggleShowApiKey={() => setShowApiKey(!showApiKey)}
+              onSubmit={handleSubmit}
+              onCancel={handleCancelForm}
+            />
+          </TabsContent>
+        </div>
       </Tabs>
 
       {/* Delete Confirmation */}

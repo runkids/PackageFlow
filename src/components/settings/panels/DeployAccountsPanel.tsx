@@ -96,9 +96,9 @@ export const DeployAccountsPanel: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
+    <div className="flex flex-col h-full min-h-0">
+      {/* Fixed Header */}
+      <div className="shrink-0 pb-4">
         <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
           <Rocket className="w-5 h-5" />
           Deploy Accounts
@@ -108,35 +108,38 @@ export const DeployAccountsPanel: React.FC = () => {
         </p>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+      {/* Scrollable Content */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
+        {/* Error Alert */}
+        {error && (
+          <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
-      {/* Platform Sections */}
-      {PLATFORMS.map((platform) => (
-        <PlatformAccountSection
-          key={platform.id}
-          platform={platform}
-          accounts={getAccountsForPlatform(platform.id)}
-          defaultAccountId={getDefaultAccountId(platform.id)}
-          isAdding={addingPlatform === platform.id}
-          removingAccountId={removingAccountId}
-          onAddAccount={() => handleAddAccount(platform.id)}
-          onRemoveAccount={handleRemoveAccount}
-          onUpdateDisplayName={handleUpdateDisplayName}
-          onSetDefaultAccount={(accountId) =>
-            handleSetDefaultAccount(platform.id, accountId)
-          }
-          onCheckUsage={checkUsage}
-        />
-      ))}
+        {/* Platform Sections */}
+        {PLATFORMS.map((platform) => (
+          <PlatformAccountSection
+            key={platform.id}
+            platform={platform}
+            accounts={getAccountsForPlatform(platform.id)}
+            defaultAccountId={getDefaultAccountId(platform.id)}
+            isAdding={addingPlatform === platform.id}
+            removingAccountId={removingAccountId}
+            onAddAccount={() => handleAddAccount(platform.id)}
+            onRemoveAccount={handleRemoveAccount}
+            onUpdateDisplayName={handleUpdateDisplayName}
+            onSetDefaultAccount={(accountId) =>
+              handleSetDefaultAccount(platform.id, accountId)
+            }
+            onCheckUsage={checkUsage}
+          />
+        ))}
 
-      {/* Security Info */}
-      <SecurityInfoBox />
+        {/* Security Info */}
+        <SecurityInfoBox />
+      </div>
 
       {/* Cloudflare Token Dialog */}
       <CloudflareTokenDialog
