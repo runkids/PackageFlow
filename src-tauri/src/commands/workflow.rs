@@ -2531,9 +2531,9 @@ fn capture_execution_snapshot(
             workflow_id, execution_id
         );
 
-        // Get app data directory for snapshot storage
+        // Get app data directory for snapshot storage (use time-machine subdirectory)
         let storage_base = match app.path().app_data_dir() {
-            Ok(path) => path.join("snapshots"),
+            Ok(path) => path.join("time-machine"),
             Err(e) => {
                 log::error!("[snapshot] Failed to get app data dir: {}", e);
                 return;

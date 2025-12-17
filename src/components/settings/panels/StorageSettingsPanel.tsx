@@ -19,21 +19,34 @@ import {
   Info,
   Copy,
   Check,
+  Clock,
+  Trash2,
+  RefreshCw,
+  Archive,
 } from 'lucide-react';
 import { Button } from '../../ui/Button';
-import { settingsAPI } from '../../../lib/tauri-api';
+import { settingsAPI, snapshotAPI } from '../../../lib/tauri-api';
 import { SettingSection } from '../ui/SettingSection';
 import { SettingInfoBox } from '../ui/SettingInfoBox';
 import { Skeleton } from '../../ui/Skeleton';
 import { cn } from '../../../lib/utils';
 import { useSettings } from '../../../contexts/SettingsContext';
 import type { StorePathInfo } from '../../../types/tauri';
+import type { SnapshotStorageStats } from '../../../types/snapshot';
 
 export const StorageSettingsPanel: React.FC = () => {
   const { formatPath } = useSettings();
   const [storePathInfo, setStorePathInfo] = useState<StorePathInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  // Time Machine storage state
+  const [snapshotStats, setSnapshotStats] = useState<SnapshotStorageStats | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [keepPerWorkflow, setKeepPerWorkflow] = useState(10);
+  const [isPruning, setIsPruning] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [pruneResult, setPruneResult] = useState<{ count: number; type: string } | null>(null);
 
   // Formatted storage path for display (respects Compact Paths setting)
   const displayPath = useMemo(() => {
@@ -63,6 +76,55 @@ export const StorageSettingsPanel: React.FC = () => {
     };
     loadPathInfo();
   }, []);
+
+  // Load snapshot storage stats
+  const loadSnapshotStats = useCallback(async () => {
+    try {
+      setIsLoadingStats(true);
+      const stats = await snapshotAPI.getStorageStats();
+      setSnapshotStats(stats);
+    } catch (error) {
+      console.error('Failed to load snapshot stats:', error);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSnapshotStats();
+  }, [loadSnapshotStats]);
+
+  // Handle prune snapshots
+  const handlePruneSnapshots = useCallback(async () => {
+    try {
+      setIsPruning(true);
+      setPruneResult(null);
+      const deleted = await snapshotAPI.pruneSnapshots(keepPerWorkflow);
+      setPruneResult({ count: deleted, type: 'prune' });
+      // Reload stats after pruning
+      await loadSnapshotStats();
+    } catch (error) {
+      console.error('Failed to prune snapshots:', error);
+    } finally {
+      setIsPruning(false);
+    }
+  }, [keepPerWorkflow, loadSnapshotStats]);
+
+  // Handle cleanup orphaned storage
+  const handleCleanupOrphaned = useCallback(async () => {
+    try {
+      setIsCleaningUp(true);
+      setPruneResult(null);
+      const deleted = await snapshotAPI.cleanupOrphanedStorage();
+      setPruneResult({ count: deleted, type: 'cleanup' });
+      // Reload stats after cleanup
+      await loadSnapshotStats();
+    } catch (error) {
+      console.error('Failed to cleanup orphaned storage:', error);
+    } finally {
+      setIsCleaningUp(false);
+    }
+  }, [loadSnapshotStats]);
 
   // Handle open store location in file explorer
   const handleOpenLocation = useCallback(async () => {
@@ -214,6 +276,149 @@ export const StorageSettingsPanel: React.FC = () => {
           </div>
         </SettingSection>
 
+        {/* Time Machine Storage Section */}
+        <SettingSection
+          title="Time Machine Storage"
+          description="Manage execution snapshots and storage usage"
+          icon={<Clock className="w-4 h-4" />}
+        >
+          {isLoadingStats ? (
+            <TimeMachineStorageSkeleton />
+          ) : (
+            <div className="space-y-4">
+              {/* Storage Stats */}
+              {snapshotStats && (
+                <div
+                  className={cn(
+                    'p-4 rounded-lg',
+                    'bg-gradient-to-r from-purple-500/5 via-transparent to-transparent',
+                    'border border-purple-500/20'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-lg bg-purple-500/10 text-purple-500">
+                        <Archive className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-foreground">
+                          {snapshotStats.totalSnapshots} Snapshots
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {snapshotStats.totalSizeHuman} total storage
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={loadSnapshotStats}
+                      className="h-8 w-8"
+                      title="Refresh stats"
+                    >
+                      <RefreshCw className={cn('w-4 h-4', isLoadingStats && 'animate-spin')} />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Retention Setting */}
+              <div className="p-4 rounded-lg border border-border bg-card">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h4 className="text-sm font-medium text-foreground">Snapshot Retention</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Keep the most recent snapshots per workflow
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Keep</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={keepPerWorkflow}
+                      onChange={(e) => setKeepPerWorkflow(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-16 px-2 py-1 text-sm text-center rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <span className="text-xs text-muted-foreground">per workflow</span>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handlePruneSnapshots}
+                  disabled={isPruning || !snapshotStats || snapshotStats.totalSnapshots === 0}
+                  className="w-full"
+                >
+                  {isPruning ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Pruning...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Prune Old Snapshots
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Cleanup Orphaned Storage */}
+              <div className="p-4 rounded-lg border border-border bg-card">
+                <div className="mb-3">
+                  <h4 className="text-sm font-medium text-foreground">Cleanup Orphaned Storage</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Remove snapshot files that are no longer referenced in the database
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handleCleanupOrphaned}
+                  disabled={isCleaningUp}
+                  className="w-full"
+                >
+                  {isCleaningUp ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Cleaning up...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Cleanup Orphaned Files
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Result Message */}
+              {pruneResult && (
+                <div
+                  className={cn(
+                    'p-3 rounded-lg text-sm',
+                    pruneResult.count > 0
+                      ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20'
+                      : 'bg-muted text-muted-foreground border border-border'
+                  )}
+                >
+                  {pruneResult.type === 'prune' ? (
+                    pruneResult.count > 0 ? (
+                      <>Deleted {pruneResult.count} old snapshots</>
+                    ) : (
+                      <>No snapshots to prune</>
+                    )
+                  ) : pruneResult.count > 0 ? (
+                    <>Cleaned up {pruneResult.count} orphaned files</>
+                  ) : (
+                    <>No orphaned files found</>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </SettingSection>
+
         {/* Data Management Tips */}
         <SettingInfoBox title="Data Management" variant="info">
           <ul className="space-y-1.5">
@@ -269,6 +474,38 @@ const StorageLocationSkeleton: React.FC = () => (
       </div>
     </div>
     <Skeleton className="w-full h-9 rounded-md" />
+  </div>
+);
+
+/** Loading skeleton for Time Machine storage section */
+const TimeMachineStorageSkeleton: React.FC = () => (
+  <div className="space-y-4">
+    <div className="p-4 rounded-lg border border-border">
+      <div className="flex items-center gap-3">
+        <Skeleton className="w-11 h-11 rounded-lg" />
+        <div className="space-y-2">
+          <Skeleton className="w-28 h-4" />
+          <Skeleton className="w-20 h-3" />
+        </div>
+      </div>
+    </div>
+    <div className="p-4 rounded-lg border border-border space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <Skeleton className="w-32 h-4" />
+          <Skeleton className="w-48 h-3" />
+        </div>
+        <Skeleton className="w-24 h-8" />
+      </div>
+      <Skeleton className="w-full h-9 rounded-md" />
+    </div>
+    <div className="p-4 rounded-lg border border-border space-y-3">
+      <div className="space-y-1">
+        <Skeleton className="w-40 h-4" />
+        <Skeleton className="w-64 h-3" />
+      </div>
+      <Skeleton className="w-full h-9 rounded-md" />
+    </div>
   </div>
 );
 

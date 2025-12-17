@@ -267,6 +267,19 @@ Output is displayed in the panel.
 |------|------------|---------|
 | `get_security_scan_results` | `projectPath` | Scan results |
 | `run_security_scan` | `projectPath`, `fix?` | Audit output |
+| `check_dependency_integrity` | `projectPath`, `referenceSnapshotId?` | Integrity check result |
+| `get_security_insights` | `projectPath` | Security overview with risk score |
+| `export_security_report` | `projectPath`, `format` | Audit report (json/markdown/html) |
+
+### Time Machine Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `list_execution_snapshots` | `workflowId`, `limit?` | Array of snapshots |
+| `get_snapshot_details` | `snapshotId` | Snapshot with dependencies |
+| `compare_snapshots` | `snapshotAId`, `snapshotBId` | Diff result |
+| `search_snapshots` | `packageName?`, `projectPath?`, `fromDate?`, `toDate?`, `limit?` | Search results |
+| `replay_execution` | `snapshotId`, `option`, `force?` | Replay result |
 
 ### Deployment Tools
 
