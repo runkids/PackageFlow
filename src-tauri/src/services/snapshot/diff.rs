@@ -8,6 +8,7 @@ use crate::models::snapshot::{
     SnapshotDependency, SnapshotDiff, TimingDiff,
 };
 use crate::repositories::SnapshotRepository;
+use crate::services::security_guardian::patterns::{analyze_dependency_changes, PatternAnalysisResult};
 use crate::utils::database::Database;
 
 /// Service for comparing execution snapshots
@@ -344,5 +345,22 @@ impl SnapshotDiffService {
         }
 
         Ok(snapshots)
+    }
+
+    /// Perform offline pattern-based security analysis on a diff
+    /// This provides security insights without requiring AI/cloud access
+    pub fn analyze_patterns(&self, diff: &SnapshotDiff) -> PatternAnalysisResult {
+        analyze_dependency_changes(&diff.dependency_changes)
+    }
+
+    /// Compare snapshots and include pattern analysis
+    pub fn compare_with_patterns(
+        &self,
+        snapshot_a_id: &str,
+        snapshot_b_id: &str,
+    ) -> Result<(SnapshotDiff, PatternAnalysisResult), String> {
+        let diff = self.compare_snapshots(snapshot_a_id, snapshot_b_id)?;
+        let patterns = self.analyze_patterns(&diff);
+        Ok((diff, patterns))
     }
 }

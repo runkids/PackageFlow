@@ -10,6 +10,7 @@ pub mod file_watcher;
 pub mod incoming_webhook;
 pub mod mcp_action;
 pub mod notification;
+pub mod security_guardian;
 pub mod snapshot;
 
 pub use crypto::*;

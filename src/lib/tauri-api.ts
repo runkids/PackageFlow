@@ -2667,6 +2667,7 @@ import type {
   InsightSummary,
   AIAnalysisRequest,
   AIAnalysisResponse,
+  PatternAnalysisResult,
 } from '../types/snapshot';
 
 export const snapshotAPI = {
@@ -2741,6 +2742,14 @@ export const snapshotAPI = {
   /** Request AI analysis of snapshot diff */
   requestAiAnalysis: (request: AIAnalysisRequest): Promise<AIAnalysisResponse> =>
     invoke<AIAnalysisResponse>('request_ai_analysis', { request }),
+
+  // Pattern-based Analysis (Offline)
+  /** Get pattern-based security analysis for a diff (no AI required) */
+  analyzeDiffPatterns: (
+    snapshotAId: string,
+    snapshotBId: string
+  ): Promise<PatternAnalysisResult> =>
+    invoke<PatternAnalysisResult>('analyze_diff_patterns', { snapshotAId, snapshotBId }),
 };
 
 export const tauriAPI = {

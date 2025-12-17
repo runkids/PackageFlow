@@ -432,6 +432,7 @@ pub fn run() {
             snapshot::compare_snapshots,
             snapshot::get_diff_ai_prompt,
             snapshot::get_comparison_candidates,
+            snapshot::analyze_diff_patterns,
             snapshot::get_security_insights,
             snapshot::get_insight_summary,
             snapshot::dismiss_insight,

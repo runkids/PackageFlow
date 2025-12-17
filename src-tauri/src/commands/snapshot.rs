@@ -250,6 +250,25 @@ pub async fn get_comparison_candidates(
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
+/// Get pattern-based security analysis for a diff (offline mode)
+/// This analyzes dependency changes for security patterns without requiring AI
+#[tauri::command]
+pub async fn analyze_diff_patterns(
+    db: State<'_, DatabaseState>,
+    snapshot_a_id: String,
+    snapshot_b_id: String,
+) -> Result<crate::services::security_guardian::PatternAnalysisResult, String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let service = SnapshotDiffService::new(db);
+        let diff = service.compare_snapshots(&snapshot_a_id, &snapshot_b_id)?;
+        Ok(service.analyze_patterns(&diff))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
 // =========================================================================
 // Security Insights
 // =========================================================================

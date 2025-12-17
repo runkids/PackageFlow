@@ -281,3 +281,43 @@ export interface AIAnalysisResponse {
   data?: AIAnalysisResult;
   error?: string;
 }
+
+// =========================================================================
+// Pattern-based Analysis Types (Offline Mode)
+// =========================================================================
+
+export type AlertSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
+
+export type PatternAlertType =
+  | 'typosquatting'
+  | 'suspicious_version'
+  | 'major_version_jump'
+  | 'new_postinstall'
+  | 'postinstall_changed'
+  | 'unexpected_downgrade'
+  | 'suspicious_package_name'
+  | 'deprecated_package';
+
+export interface PatternAlert {
+  alertType: PatternAlertType;
+  severity: AlertSeverity;
+  packageName: string;
+  title: string;
+  description: string;
+  recommendation?: string;
+}
+
+export interface PatternAnalysisSummary {
+  totalAlerts: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  infoCount: number;
+  riskScore: number; // 0-100
+}
+
+export interface PatternAnalysisResult {
+  alerts: PatternAlert[];
+  summary: PatternAnalysisSummary;
+}
