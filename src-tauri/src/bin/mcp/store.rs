@@ -13,7 +13,7 @@ use packageflow_lib::repositories::{
     MCPRepository, McpLogEntry, ProjectRepository, SettingsRepository,
     TemplateRepository, WorkflowRepository,
 };
-use packageflow_lib::utils::database::Database;
+use packageflow_lib::utils::database::{Database, DATABASE_FILE};
 use packageflow_lib::utils::shared_store::{get_app_data_dir, sanitize_error};
 
 // ============================================================================
@@ -30,7 +30,7 @@ pub const MCP_CONFIG_KEY: &str = "mcp_server_config";
 /// Get the SQLite database path
 pub fn get_database_path() -> Result<PathBuf, String> {
     let app_dir = get_app_data_dir()?;
-    Ok(app_dir.join("packageflow.db"))
+    Ok(app_dir.join(DATABASE_FILE))
 }
 
 /// Open the SQLite database

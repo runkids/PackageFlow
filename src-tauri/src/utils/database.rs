@@ -9,6 +9,10 @@ use super::schema;
 use super::shared_store::APP_IDENTIFIER;
 
 /// Database file name
+#[cfg(debug_assertions)]
+pub const DATABASE_FILE: &str = "packageflow-dev.db";
+
+#[cfg(not(debug_assertions))]
 pub const DATABASE_FILE: &str = "packageflow.db";
 
 /// Thread-safe database wrapper
