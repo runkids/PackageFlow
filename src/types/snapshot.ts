@@ -257,3 +257,27 @@ export interface SnapshotCapturedEvent {
   capturedAt: string;
   errorMessage: string | null;
 }
+
+// =========================================================================
+// AI Analysis Types
+// =========================================================================
+
+export interface AIAnalysisRequest {
+  baseSnapshotId: string;
+  compareSnapshotId: string;
+  providerId?: string;
+  focusOnSecurity?: boolean;
+}
+
+export interface AIAnalysisResult {
+  analysis: string;
+  tokensUsed?: number;
+  isTruncated: boolean;
+  cached: boolean;
+}
+
+export interface AIAnalysisResponse {
+  success: boolean;
+  data?: AIAnalysisResult;
+  error?: string;
+}

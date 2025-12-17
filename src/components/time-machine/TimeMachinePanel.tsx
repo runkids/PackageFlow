@@ -39,7 +39,6 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
     snapshotA: SnapshotListItem | null;
     snapshotB: SnapshotListItem | null;
   }>({ snapshotA: null, snapshotB: null });
-  const [generatingPrompt, setGeneratingPrompt] = useState(false);
 
   // Fetch snapshots for this workflow
   const {
@@ -61,10 +60,8 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
   // Fetch diff when comparing
   const {
     diff,
-    aiPrompt: diffAiPrompt,
     loading: diffLoading,
     compare: compareDiff,
-    generateAiPrompt: generateDiffAiPrompt,
   } = useSnapshotDiff();
 
   // Compare snapshots when both are selected
@@ -129,25 +126,6 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
       await pruneSnapshots(30);
     }
   }, [pruneSnapshots]);
-
-  // Handle generate AI prompt
-  const handleGenerateAiPrompt = useCallback(async () => {
-    if (!compareSnapshots.snapshotA?.id || !compareSnapshots.snapshotB?.id) return;
-
-    setGeneratingPrompt(true);
-    try {
-      await generateDiffAiPrompt(compareSnapshots.snapshotA.id, compareSnapshots.snapshotB.id);
-    } finally {
-      setGeneratingPrompt(false);
-    }
-  }, [compareSnapshots, generateDiffAiPrompt]);
-
-  // Handle copy AI prompt
-  const handleCopyAiPrompt = useCallback(() => {
-    if (diffAiPrompt) {
-      navigator.clipboard.writeText(diffAiPrompt);
-    }
-  }, [diffAiPrompt]);
 
   // Back to timeline
   const handleBackToTimeline = useCallback(() => {
@@ -337,13 +315,7 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
         )}
 
         {viewMode === 'compare' && diff && (
-          <SnapshotDiffView
-            diff={diff}
-            aiPrompt={diffAiPrompt}
-            onGenerateAiPrompt={handleGenerateAiPrompt}
-            onCopyAiPrompt={handleCopyAiPrompt}
-            loading={generatingPrompt || diffLoading}
-          />
+          <SnapshotDiffView diff={diff} />
         )}
 
         {viewMode === 'compare' && !diff && !diffLoading && (

@@ -437,6 +437,7 @@ pub fn run() {
             snapshot::dismiss_insight,
             snapshot::get_snapshot_storage_stats,
             snapshot::cleanup_orphaned_storage,
+            snapshot::request_ai_analysis,
         ])
         // Setup hook - sync incoming webhook server and start database watcher on app start
         .setup(|app| {

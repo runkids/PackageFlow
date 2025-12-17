@@ -2665,6 +2665,8 @@ import type {
   SnapshotStorageStats,
   SecurityInsight,
   InsightSummary,
+  AIAnalysisRequest,
+  AIAnalysisResponse,
 } from '../types/snapshot';
 
 export const snapshotAPI = {
@@ -2734,6 +2736,11 @@ export const snapshotAPI = {
 
   /** Cleanup orphaned storage */
   cleanupOrphanedStorage: (): Promise<number> => invoke<number>('cleanup_orphaned_storage'),
+
+  // AI Analysis
+  /** Request AI analysis of snapshot diff */
+  requestAiAnalysis: (request: AIAnalysisRequest): Promise<AIAnalysisResponse> =>
+    invoke<AIAnalysisResponse>('request_ai_analysis', { request }),
 };
 
 export const tauriAPI = {

@@ -10,27 +10,18 @@ import {
   Clock,
   ChevronDown,
   ChevronRight,
-  Copy,
-  Sparkles,
 } from 'lucide-react';
 import type { SnapshotDiff, DependencyChange, PostinstallChange } from '../../types/snapshot';
 import { cn } from '../../lib/utils';
+import { AIAnalysisPanel } from './AIAnalysisPanel';
 
 interface SnapshotDiffViewProps {
   diff: SnapshotDiff;
-  aiPrompt?: string | null;
-  onGenerateAiPrompt?: () => void;
-  onCopyAiPrompt?: () => void;
-  loading?: boolean;
   className?: string;
 }
 
 export function SnapshotDiffView({
   diff,
-  aiPrompt,
-  onGenerateAiPrompt,
-  onCopyAiPrompt,
-  loading = false,
   className,
 }: SnapshotDiffViewProps) {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -39,7 +30,6 @@ export function SnapshotDiffView({
     removed: true,
     updated: true,
     postinstall: false,
-    aiPrompt: false,
   });
 
   const [showUnchanged, setShowUnchanged] = useState(false);
@@ -314,42 +304,10 @@ export function SnapshotDiffView({
       )}
 
       {/* AI Analysis */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex items-center justify-between">
-          <SectionHeader
-            title="AI Analysis"
-            section="aiPrompt"
-            icon={Sparkles}
-            iconColor="text-purple-500"
-          />
-          <div className="flex items-center gap-2">
-            {aiPrompt && (
-              <button
-                onClick={onCopyAiPrompt}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-              >
-                <Copy size={12} />
-                Copy
-              </button>
-            )}
-            {!aiPrompt && onGenerateAiPrompt && (
-              <button
-                onClick={onGenerateAiPrompt}
-                disabled={loading}
-                className="flex items-center gap-1 px-3 py-1 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50"
-              >
-                <Sparkles size={12} />
-                Generate
-              </button>
-            )}
-          </div>
-        </div>
-        {expandedSections.aiPrompt && aiPrompt && (
-          <pre className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs font-mono whitespace-pre-wrap overflow-auto max-h-64">
-            {aiPrompt}
-          </pre>
-        )}
-      </div>
+      <AIAnalysisPanel
+        baseSnapshotId={diff.snapshotAId}
+        compareSnapshotId={diff.snapshotBId}
+      />
     </div>
   );
 }
