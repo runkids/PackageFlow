@@ -7,9 +7,9 @@
 pub mod types;
 pub mod security;
 pub mod state;
+pub mod templates;
 
 // Modules to be populated incrementally
-// pub mod templates;
 // pub mod utils;
 // pub mod store;
 // pub mod background;
@@ -18,3 +18,4 @@ pub mod state;
 pub use types::*;
 pub use security::{ToolCategory, get_tool_category, is_tool_allowed};
 pub use state::{RATE_LIMITER, TOOL_RATE_LIMITERS, ACTION_SEMAPHORE};
+pub use templates::get_builtin_templates;
