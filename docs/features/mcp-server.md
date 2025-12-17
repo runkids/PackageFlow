@@ -140,33 +140,99 @@ Output is displayed in the panel.
 
 | Tool | Parameters | Returns |
 |------|------------|---------|
-| `list_projects` | none | Array of projects |
-| `get_project_details` | `project_id` | Project details |
-| `scan_project` | `path` | New project |
+| `list_projects` | `query?` | Array of projects |
+| `get_project` | `path` | Project details |
+| `get_project_dependencies` | `projectPath`, `includeDev?`, `includePeer?` | Dependencies |
+
+### Git & Worktree Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `list_worktrees` | `projectPath` | Array of worktrees |
+| `get_worktree_status` | `worktreePath` | Git status |
+| `get_git_diff` | `worktreePath` | Staged changes diff |
 
 ### Workflow Tools
 
 | Tool | Parameters | Returns |
 |------|------------|---------|
-| `list_workflows` | none | Array of workflows |
-| `execute_workflow` | `workflow_id` | Execution result |
-| `get_workflow_status` | `execution_id` | Status |
+| `list_workflows` | `projectId?` | Array of workflows |
+| `get_workflow` | `workflowId` | Workflow details |
+| `create_workflow` | `name`, `projectId?`, `description?` | New workflow |
+| `add_workflow_step` | `workflowId`, `name`, `command`, `cwd?`, `timeout?` | Step added |
+| `update_workflow` | `workflowId`, `name?`, `description?` | Updated workflow |
+| `delete_workflow_step` | `workflowId`, `stepId` | Step removed |
+| `run_workflow` | `workflowId`, `projectPath?` | Execution result |
+| `get_workflow_execution_details` | `executionId`, `includeOutput?` | Execution logs |
 
-### Script Tools
-
-| Tool | Parameters | Returns |
-|------|------------|---------|
-| `list_scripts` | `project_id` | Array of scripts |
-| `run_script` | `project_id`, `script_name` | Execution result |
-| `stop_script` | `execution_id` | Success status |
-
-### Deploy Tools
+### Script & NPM Tools
 
 | Tool | Parameters | Returns |
 |------|------------|---------|
-| `list_deploy_accounts` | none | Array of accounts |
-| `deploy` | `project_id`, `account_id` | Deploy result |
-| `get_deploy_status` | `deploy_id` | Status |
+| `run_npm_script` | `projectPath`, `scriptName`, `args?`, `timeoutMs?` | Execution result |
+| `list_step_templates` | `category?`, `query?` | Array of templates |
+| `create_step_template` | `name`, `command`, `category?`, `description?` | New template |
+
+### Background Process Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `get_background_process_output` | `processId`, `tailLines?` | Process output |
+| `stop_background_process` | `processId`, `force?` | Stop result |
+| `list_background_processes` | none | Array of processes |
+
+### MCP Action Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `list_actions` | `actionType?`, `projectId?`, `enabledOnly?` | Array of actions |
+| `get_action` | `actionId` | Action details |
+| `run_script` | `actionId`, `args?`, `cwd?`, `env?` | Script result |
+| `trigger_webhook` | `actionId`, `payload?`, `variables?` | Webhook result |
+| `get_execution_status` | `executionId` | Execution status |
+| `list_action_executions` | `actionId?`, `status?`, `actionType?`, `limit?` | Execution history |
+| `get_action_permissions` | `actionId?` | Permission config |
+
+### AI Assistant Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `list_ai_providers` | `enabledOnly?` | Array of providers |
+| `list_conversations` | `projectPath?`, `limit?`, `searchQuery?` | Conversation list |
+
+### Notification Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `get_notifications` | `category?`, `unreadOnly?`, `limit?` | Notifications |
+| `mark_notifications_read` | `notificationIds?`, `markAll?` | Mark result |
+
+### Security Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `get_security_scan_results` | `projectPath` | Scan results |
+| `run_security_scan` | `projectPath`, `fix?` | Audit output |
+
+### Deployment Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `list_deployments` | `projectPath?`, `platform?`, `status?`, `limit?` | Deployment history |
+
+### File Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `check_file_exists` | `projectPath`, `paths` | File existence map |
+| `search_project_files` | `projectPath`, `pattern`, `maxResults?`, `includeDirectories?` | Matching files |
+| `read_project_file` | `projectPath`, `filePath`, `maxLines?`, `startLine?` | File content |
+
+### System Tools
+
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `get_environment_info` | `includePaths?`, `projectPath?` | Environment info |
 
 ## Logs and Monitoring
 

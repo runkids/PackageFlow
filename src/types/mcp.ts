@@ -292,25 +292,46 @@ export const MCP_TOOL_DEFINITIONS: McpToolWithPermission[] = [
   // Read-only tools
   { name: 'list_projects', description: 'List all registered projects in PackageFlow', category: 'read' },
   { name: 'get_project', description: 'Get project info (name, remote URL, current branch)', category: 'read' },
+  { name: 'get_project_dependencies', description: 'Get dependencies from package.json', category: 'read' },
   { name: 'list_worktrees', description: 'List all Git worktrees', category: 'read' },
   { name: 'get_worktree_status', description: 'Get Git status (branch, ahead/behind, file status)', category: 'read' },
   { name: 'get_git_diff', description: 'Get staged changes diff (for commit message generation)', category: 'read' },
   { name: 'list_workflows', description: 'List all workflows, optionally filtered by project', category: 'read' },
   { name: 'get_workflow', description: 'Get detailed workflow info including all steps', category: 'read' },
+  { name: 'get_workflow_execution_details', description: 'Get execution logs', category: 'read' },
   { name: 'list_step_templates', description: 'List available step templates (built-in + custom)', category: 'read' },
   // Background process read tools
   { name: 'get_background_process_output', description: 'Get output from a background process', category: 'read' },
   { name: 'list_background_processes', description: 'List all background processes', category: 'read' },
+  // AI Assistant read tools
+  { name: 'list_ai_providers', description: 'List configured AI providers', category: 'read' },
+  { name: 'list_conversations', description: 'List past AI conversations', category: 'read' },
+  // Notification read tools
+  { name: 'get_notifications', description: 'Get recent notifications', category: 'read' },
+  // Security read tools
+  { name: 'get_security_scan_results', description: 'Get vulnerability scan results', category: 'read' },
+  // Deployment read tools
+  { name: 'list_deployments', description: 'List deployment history', category: 'read' },
+  // File read tools
+  { name: 'check_file_exists', description: 'Check if files exist in project', category: 'read' },
+  { name: 'search_project_files', description: 'Search files by pattern', category: 'read' },
+  { name: 'read_project_file', description: 'Read file content (security-limited)', category: 'read' },
+  // System tools
+  { name: 'get_environment_info', description: 'Get system environment info', category: 'read' },
 
   // Write tools
   { name: 'create_workflow', description: 'Create a new workflow', category: 'write' },
   { name: 'add_workflow_step', description: 'Add a step (script node) to a workflow', category: 'write' },
+  { name: 'update_workflow', description: 'Update workflow name/description', category: 'write' },
+  { name: 'delete_workflow_step', description: 'Remove a step from workflow', category: 'write' },
   { name: 'create_step_template', description: 'Create a custom step template', category: 'write' },
+  { name: 'mark_notifications_read', description: 'Mark notifications as read', category: 'write' },
 
   // Execute tools
   { name: 'run_workflow', description: 'Execute a workflow and return results', category: 'execute' },
   { name: 'run_npm_script', description: 'Execute npm/yarn/pnpm script (supports background mode)', category: 'execute' },
   { name: 'stop_background_process', description: 'Stop/terminate a background process', category: 'execute' },
+  { name: 'run_security_scan', description: 'Run npm/yarn/pnpm audit', category: 'execute' },
 ];
 
 /** Get tools by category */
@@ -499,6 +520,41 @@ export const TOOL_DEFINITIONS_WITH_PERMISSIONS: ToolDefinitionWithPermissions[] 
   { name: 'create_workflow', description: 'Create a new workflow', category: 'write', applicablePermissions: ['read', 'write'] },
   { name: 'add_workflow_step', description: 'Add step to workflow', category: 'write', applicablePermissions: ['read', 'write'] },
   { name: 'create_step_template', description: 'Create step template', category: 'write', applicablePermissions: ['read', 'write'] },
+
+  // ============================================================================
+  // Enhanced MCP Tools (023-enhanced-ai-chat)
+  // ============================================================================
+
+  // System tools - Read only
+  { name: 'get_environment_info', description: 'Get system environment info (Node, npm versions, paths)', category: 'read', applicablePermissions: ['read'] },
+
+  // AI Assistant tools - Read only
+  { name: 'list_ai_providers', description: 'List configured AI providers', category: 'read', applicablePermissions: ['read'] },
+  { name: 'list_conversations', description: 'List past AI conversations', category: 'read', applicablePermissions: ['read'] },
+
+  // Notification tools - Read and Write
+  { name: 'get_notifications', description: 'Get recent notifications', category: 'read', applicablePermissions: ['read'] },
+  { name: 'mark_notifications_read', description: 'Mark notifications as read', category: 'write', applicablePermissions: ['read', 'write'] },
+
+  // Security tools - Read and Execute
+  { name: 'get_security_scan_results', description: 'Get vulnerability scan results', category: 'read', applicablePermissions: ['read'] },
+  { name: 'run_security_scan', description: 'Run npm/yarn/pnpm audit', category: 'execute', applicablePermissions: ['read', 'execute'] },
+
+  // Deployment tools - Read only
+  { name: 'list_deployments', description: 'List deployment history', category: 'read', applicablePermissions: ['read'] },
+
+  // Project tools - Read only
+  { name: 'get_project_dependencies', description: 'Get dependencies from package.json', category: 'read', applicablePermissions: ['read'] },
+
+  // Workflow tools - Read, Write, and mixed
+  { name: 'update_workflow', description: 'Update workflow name/description', category: 'write', applicablePermissions: ['read', 'write'] },
+  { name: 'delete_workflow_step', description: 'Remove a step from workflow', category: 'write', applicablePermissions: ['read', 'write'] },
+  { name: 'get_workflow_execution_details', description: 'Get execution logs', category: 'read', applicablePermissions: ['read'] },
+
+  // File tools - Read only
+  { name: 'check_file_exists', description: 'Check if files exist in project', category: 'read', applicablePermissions: ['read'] },
+  { name: 'search_project_files', description: 'Search files by pattern', category: 'read', applicablePermissions: ['read'] },
+  { name: 'read_project_file', description: 'Read file content (security-limited)', category: 'read', applicablePermissions: ['read'] },
 ];
 
 /** Default permission flags (all disabled) */

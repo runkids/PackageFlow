@@ -386,6 +386,7 @@ const MCP_TOOL_CATEGORIES: MCPToolCategory[] = [
     tools: [
       { name: 'list_projects', description: 'List all registered projects with detailed info' },
       { name: 'get_project', description: 'Get project details (scripts, workflows, git info)' },
+      { name: 'get_project_dependencies', description: 'Get dependencies from package.json' },
     ],
   },
   {
@@ -407,7 +408,10 @@ const MCP_TOOL_CATEGORIES: MCPToolCategory[] = [
       { name: 'get_workflow', description: 'Get detailed workflow info with all steps' },
       { name: 'create_workflow', description: 'Create a new workflow' },
       { name: 'add_workflow_step', description: 'Add a script step to a workflow' },
+      { name: 'update_workflow', description: 'Update workflow name/description' },
+      { name: 'delete_workflow_step', description: 'Remove a step from a workflow' },
       { name: 'run_workflow', description: 'Execute a workflow synchronously' },
+      { name: 'get_workflow_execution_details', description: 'Get execution logs' },
     ],
   },
   {
@@ -428,6 +432,16 @@ const MCP_TOOL_CATEGORIES: MCPToolCategory[] = [
     ],
   },
   {
+    name: 'Background Processes',
+    icon: <Zap className="w-4 h-4" />,
+    iconColor: 'text-yellow-500',
+    tools: [
+      { name: 'get_background_process_output', description: 'Get output from a background process' },
+      { name: 'stop_background_process', description: 'Stop/terminate a background process' },
+      { name: 'list_background_processes', description: 'List all background processes' },
+    ],
+  },
+  {
     name: 'MCP Actions',
     icon: <Target className="w-4 h-4" />,
     iconColor: 'text-amber-500',
@@ -439,6 +453,59 @@ const MCP_TOOL_CATEGORIES: MCPToolCategory[] = [
       { name: 'get_execution_status', description: 'Get action execution status' },
       { name: 'list_action_executions', description: 'List recent executions' },
       { name: 'get_action_permissions', description: 'Get permission configuration' },
+    ],
+  },
+  {
+    name: 'AI Assistant',
+    icon: <Settings2 className="w-4 h-4" />,
+    iconColor: 'text-violet-500',
+    tools: [
+      { name: 'list_ai_providers', description: 'List configured AI providers' },
+      { name: 'list_conversations', description: 'List past AI conversations' },
+    ],
+  },
+  {
+    name: 'Notifications',
+    icon: <AlertCircle className="w-4 h-4" />,
+    iconColor: 'text-pink-500',
+    tools: [
+      { name: 'get_notifications', description: 'Get recent notifications' },
+      { name: 'mark_notifications_read', description: 'Mark notifications as read' },
+    ],
+  },
+  {
+    name: 'Security',
+    icon: <Shield className="w-4 h-4" />,
+    iconColor: 'text-red-500',
+    tools: [
+      { name: 'get_security_scan_results', description: 'Get vulnerability scan results' },
+      { name: 'run_security_scan', description: 'Run npm/yarn/pnpm audit' },
+    ],
+  },
+  {
+    name: 'Deployments',
+    icon: <Server className="w-4 h-4" />,
+    iconColor: 'text-green-500',
+    tools: [
+      { name: 'list_deployments', description: 'List deployment history' },
+    ],
+  },
+  {
+    name: 'File Operations',
+    icon: <FileText className="w-4 h-4" />,
+    iconColor: 'text-slate-500',
+    tools: [
+      { name: 'check_file_exists', description: 'Check if files exist in project' },
+      { name: 'search_project_files', description: 'Search files by pattern' },
+      { name: 'read_project_file', description: 'Read file content (security-limited)' },
+    ],
+  },
+  {
+    name: 'System',
+    icon: <Wrench className="w-4 h-4" />,
+    iconColor: 'text-gray-500',
+    tools: [
+      { name: 'get_environment_info', description: 'Get system tool versions and paths' },
     ],
   },
 ];
