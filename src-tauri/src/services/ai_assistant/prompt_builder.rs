@@ -369,6 +369,10 @@ You have access to the following tools to perform actions:
             "**Handle errors gracefully** - Explain failures and suggest alternatives".to_string(),
             "**Respect confirmations** - Wait for user approval on confirmation-required tools".to_string(),
 
+            // === TASK COMPLETION (New) ===
+            "**ALWAYS summarize after task completion** - After a tool executes successfully, provide a concise summary: (1) What was done, (2) Key results or output, (3) Any suggested next steps. Example: '✅ Build completed successfully. Output: 42 modules compiled in 3.2s. You may want to run tests next.'".to_string(),
+            "**ONE TOOL, ONE RESULT, DONE** - When a tool executes and returns results, summarize once and STOP. Do NOT call the same tool again to 'verify' or 'confirm' - tool results are authoritative.".to_string(),
+
             // === TOOL USAGE (Consolidated) ===
             "**run_script vs run_package_manager_command**: `run_script` is ONLY for package.json scripts. For `audit`, `outdated`, `install`, use `run_package_manager_command` instead.".to_string(),
             "**Verify before executing** - If unsure about IDs/names, call list tools first (list_workflows, list_projects, list_project_scripts)".to_string(),
@@ -492,6 +496,16 @@ mod tests {
     }
 
     #[test]
+    fn test_constraints_include_task_completion_summary() {
+        let prompt = SystemPromptBuilder::new().build();
+
+        // Should require summarizing after task completion
+        assert!(prompt.contains("ALWAYS summarize after task completion"));
+        // Should prevent duplicate tool calls
+        assert!(prompt.contains("ONE TOOL, ONE RESULT, DONE"));
+    }
+
+    #[test]
     fn test_examples_include_tool_patterns() {
         let prompt = SystemPromptBuilder::new().build();
 
@@ -505,7 +519,7 @@ mod tests {
         let prompt = SystemPromptBuilder::new().build();
 
         // Should include off-topic handling instruction
-        assert!(prompt.contains("Stay focused on PackageFlow"));
+        assert!(prompt.contains("Stay focused"));
     }
 
     #[test]

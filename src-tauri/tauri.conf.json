@@ -37,7 +37,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg"],
     "createUpdaterArtifacts": true,
     "resources": {
       "target/release/packageflow-mcp": "bin/packageflow-mcp"
