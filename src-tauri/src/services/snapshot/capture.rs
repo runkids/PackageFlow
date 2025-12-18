@@ -154,6 +154,11 @@ impl SnapshotCaptureService {
 
     /// Detect lockfile type and read content
     fn detect_and_read_lockfile(&self, project_path: &Path) -> Result<(LockfileType, Vec<u8>), String> {
+        log::info!(
+            "[SnapshotCapture] Detecting lockfile in: {}",
+            project_path.display()
+        );
+
         // Try each lockfile type in order of preference
         let lockfile_checks = [
             (LockfileType::Pnpm, "pnpm-lock.yaml"),
@@ -164,14 +169,28 @@ impl SnapshotCaptureService {
 
         for (lockfile_type, filename) in lockfile_checks {
             let path = project_path.join(filename);
+            log::debug!(
+                "[SnapshotCapture] Checking {} - exists: {}",
+                path.display(),
+                path.exists()
+            );
             if path.exists() {
+                log::info!(
+                    "[SnapshotCapture] Found {} lockfile: {}",
+                    lockfile_type.as_str(),
+                    path.display()
+                );
                 let content = fs::read(&path)
                     .map_err(|e| format!("Failed to read {}: {}", filename, e))?;
                 return Ok((lockfile_type, content));
             }
         }
 
-        Err("No lockfile found in project directory".to_string())
+        log::error!(
+            "[SnapshotCapture] No lockfile found in: {}",
+            project_path.display()
+        );
+        Err(format!("No lockfile found in project: {}", project_path.display()))
     }
 
     /// Parse lockfile and extract dependencies

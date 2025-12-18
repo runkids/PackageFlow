@@ -423,6 +423,11 @@ pub fn run() {
             // AI Assistant - Autocomplete & Context (023-enhanced-ai-chat US5)
             ai_assistant::ai_assistant_get_autocomplete,
             ai_assistant::ai_assistant_summarize_context,
+            // AI Assistant - Background Process Management
+            ai_assistant::ai_assistant_spawn_background_process,
+            ai_assistant::ai_assistant_stop_background_process,
+            ai_assistant::ai_assistant_list_background_processes,
+            ai_assistant::ai_assistant_get_background_process,
             // Time Machine - Snapshot commands (025-ai-workflow-generator)
             snapshot::list_snapshots,
             snapshot::get_snapshot,
@@ -468,11 +473,67 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // Initialize BackgroundProcessManager with app handle for Tauri event emission
+            {
+                let bg_handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    use crate::services::ai_assistant::background_process::BACKGROUND_PROCESS_MANAGER;
+                    BACKGROUND_PROCESS_MANAGER.set_app_handle(bg_handle).await;
+                    log::info!("[setup] BackgroundProcessManager initialized with app handle");
+                });
+            }
+
             // Start database watcher for MCP-triggered changes
             if let Ok(db_path) = get_database_path() {
                 let db_watcher = app.handle().state::<DatabaseWatcher>();
                 if let Err(e) = db_watcher.start_watching(&handle, db_path) {
                     log::warn!("[setup] Failed to start database watcher: {}", e);
+                }
+            }
+
+            // Start lockfile watchers for Time Machine auto-capture
+            {
+                let db_state = app.handle().state::<DatabaseState>();
+                let lockfile_watcher = app.handle().state::<LockfileWatcherState>();
+                let repo = repositories::SnapshotRepository::new(db_state.0.as_ref().clone());
+
+                // Check if auto-watch is enabled
+                match repo.get_time_machine_settings() {
+                    Ok(settings) if settings.auto_watch_enabled => {
+                        // Update watcher config with settings
+                        let watcher = lockfile_watcher.0.clone();
+                        let config = services::LockfileWatcherConfig {
+                            debounce_ms: settings.debounce_ms as u64,
+                            auto_capture: true,
+                        };
+                        if let Err(e) = watcher.set_config(config) {
+                            log::warn!("[setup] Failed to set lockfile watcher config: {}", e);
+                        }
+
+                        // Get all registered projects and start watching their lockfiles
+                        let project_repo = repositories::ProjectRepository::new(db_state.0.as_ref().clone());
+                        match project_repo.list() {
+                            Ok(projects) => {
+                                let app_handle = app.handle().clone();
+                                for project in projects {
+                                    if let Err(e) = watcher.watch_project(&app_handle, db_state.0.as_ref().clone(), &project.path) {
+                                        log::debug!("[setup] Skipped watching {}: {}", project.path, e);
+                                    } else {
+                                        log::info!("[setup] Started watching lockfile for: {}", project.path);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("[setup] Failed to list projects for lockfile watching: {}", e);
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        log::info!("[setup] Time Machine auto-watch is disabled");
+                    }
+                    Err(e) => {
+                        log::warn!("[setup] Failed to get Time Machine settings: {}", e);
+                    }
                 }
             }
 
@@ -488,6 +549,19 @@ pub fn run() {
                 }
             });
             Ok(())
+        })
+        // Handle window events for cleanup
+        .on_window_event(|_window, event| {
+            use tauri::WindowEvent;
+            if let WindowEvent::Destroyed = event {
+                // Clean up background processes when app is closing
+                log::info!("[shutdown] Cleaning up background processes...");
+                tauri::async_runtime::block_on(async {
+                    use crate::services::ai_assistant::background_process::BACKGROUND_PROCESS_MANAGER;
+                    BACKGROUND_PROCESS_MANAGER.shutdown().await;
+                    log::info!("[shutdown] Background processes cleaned up");
+                });
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -12,3 +12,6 @@ export { QuickSetupSection } from './QuickSetupSection';
 export { MCPActionSettings } from './MCPActionSettings';
 export { MCPActionHistory } from './MCPActionHistory';
 export { ActionConfirmationDialog } from './ActionConfirmationDialog';
+
+// Unified Activity Log
+export { UnifiedActivityLog } from './UnifiedActivityLog';

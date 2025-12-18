@@ -9,17 +9,17 @@ import { registerModal, unregisterModal, isTopModal } from '../ui/modalStack';
 import { cn } from '../../lib/utils';
 
 interface TimeMachineSidePanelProps {
-  workflowId: string;
-  workflowName: string;
-  projectPath?: string;
+  /** Project path - required for project-level snapshots (Feature 025 redesign) */
+  projectPath: string;
+  /** Display name for the panel header */
+  displayName: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
 export function TimeMachineSidePanel({
-  workflowId,
-  workflowName,
   projectPath,
+  displayName,
   isOpen,
   onClose,
 }: TimeMachineSidePanelProps) {
@@ -124,8 +124,8 @@ export function TimeMachineSidePanel({
               >
                 Time Machine
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground truncate" title={workflowName}>
-                {workflowName}
+              <p className="mt-1 text-sm text-muted-foreground truncate" title={displayName}>
+                {displayName}
               </p>
             </div>
           </div>
@@ -134,7 +134,6 @@ export function TimeMachineSidePanel({
         {/* Content */}
         <div className="flex-1 overflow-hidden">
           <TimeMachinePanel
-            workflowId={workflowId}
             projectPath={projectPath}
             showHeader={false}
             className="h-full"

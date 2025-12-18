@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, FolderOpen, Globe, Check, Folder } from 'lucide-react';
+import { ChevronDown, FolderOpen, Globe, Check, Folder, Lock } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { cn } from '../../lib/utils';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -26,6 +26,8 @@ interface ProjectContextSelectorProps {
   disabled?: boolean;
   /** Optional class name */
   className?: string;
+  /** Indicates if the current conversation is bound to a project (cannot switch to other projects) */
+  isConversationBound?: boolean;
 }
 
 /**
@@ -36,24 +38,32 @@ function ProjectItem({
   isSelected,
   onClick,
   formatPath,
+  disabled = false,
+  disabledReason,
 }: {
   project: ProjectInfo | null;
   isSelected: boolean;
   onClick: () => void;
   formatPath: (path: string) => string;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const isGlobal = project === null;
 
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      title={disabled ? disabledReason : undefined}
       className={cn(
         'w-full flex items-center gap-3 px-3 py-2.5 text-left',
         'transition-colors duration-100',
         'focus:outline-none focus-visible:bg-accent/50',
-        isSelected
-          ? 'bg-primary/10 dark:bg-primary/15'
-          : 'hover:bg-accent/50 dark:hover:bg-accent/30'
+        disabled
+          ? 'opacity-50 cursor-not-allowed'
+          : isSelected
+            ? 'bg-primary/10 dark:bg-primary/15'
+            : 'hover:bg-accent/50 dark:hover:bg-accent/30'
       )}
     >
       {/* Icon container */}
@@ -127,6 +137,7 @@ export function ProjectContextSelector({
   onProjectChange,
   disabled = false,
   className,
+  isConversationBound = false,
 }: ProjectContextSelectorProps) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -155,9 +166,17 @@ export function ProjectContextSelector({
 
         if (result.success && result.output) {
           // Parse the JSON output string
-          const parsed = JSON.parse(result.output) as { projects: ProjectInfo[] };
-          if (parsed && Array.isArray(parsed.projects)) {
-            setProjects(parsed.projects);
+          const parsed = JSON.parse(result.output) as {
+            // New MCPToolResponse format
+            data?: { projects: ProjectInfo[] };
+            // Legacy format
+            projects?: ProjectInfo[];
+          };
+
+          // Handle both new MCPToolResponse format and legacy format
+          const projectList = parsed.data?.projects ?? parsed.projects;
+          if (projectList && Array.isArray(projectList)) {
+            setProjects(projectList);
           }
         }
       } catch (err) {
@@ -258,6 +277,9 @@ export function ProjectContextSelector({
         <span className="truncate max-w-[100px]">
           {isLoading ? 'Loading...' : (currentProject?.name ?? 'Global')}
         </span>
+        {isConversationBound && !isGlobalContext && (
+          <Lock className="w-3 h-3 text-muted-foreground/70" />
+        )}
         <ChevronDown
           className={cn(
             'w-3 h-3 text-muted-foreground/70 transition-transform duration-200',
@@ -301,15 +323,23 @@ export function ProjectContextSelector({
                 </span>
               </div>
               <div className="max-h-[240px] overflow-y-auto">
-                {projects.map((project) => (
-                  <ProjectItem
-                    key={project.id}
-                    project={project}
-                    isSelected={currentProjectPath === project.path}
-                    onClick={() => handleSelectProject(project)}
-                    formatPath={formatPath}
-                  />
-                ))}
+                {projects.map((project) => {
+                  // When bound to a project, disable switching to other projects
+                  const isCurrentProject = currentProjectPath === project.path;
+                  const isDisabled = isConversationBound && !isCurrentProject;
+
+                  return (
+                    <ProjectItem
+                      key={project.id}
+                      project={project}
+                      isSelected={isCurrentProject}
+                      onClick={() => handleSelectProject(project)}
+                      formatPath={formatPath}
+                      disabled={isDisabled}
+                      disabledReason={isDisabled ? 'This conversation is bound to a project. You can only switch to Global.' : undefined}
+                    />
+                  );
+                })}
               </div>
             </div>
           )}

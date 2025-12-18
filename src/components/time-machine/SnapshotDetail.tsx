@@ -43,13 +43,6 @@ export function SnapshotDetail({
     return new Date(dateStr).toLocaleString();
   };
 
-  const formatDuration = (ms?: number | null) => {
-    if (!ms) return 'N/A';
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-  };
-
   const formatSize = (bytes?: number | null) => {
     if (!bytes) return 'N/A';
     if (bytes < 1024) return `${bytes} B`;
@@ -111,13 +104,6 @@ export function SnapshotDetail({
                 <span className="text-gray-500">Created:</span>
                 <span className="text-gray-900 dark:text-gray-100">
                   {formatDate(snapshot.createdAt)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Clock size={16} className="text-gray-400" />
-                <span className="text-gray-500">Duration:</span>
-                <span className="text-gray-900 dark:text-gray-100">
-                  {formatDuration(snapshot.executionDurationMs)}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">

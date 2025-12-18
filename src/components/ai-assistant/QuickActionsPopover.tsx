@@ -39,6 +39,10 @@ import {
   Bell,
   FolderGit2,
   Info,
+  // Time Machine icons
+  Camera,
+  History,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { SuggestedAction } from '../../types/ai-assistant';
@@ -152,6 +156,10 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Settings,
   Bell,
   Package,
+  // Time Machine icons
+  Camera,
+  History,
+  ShieldCheck,
 };
 
 // ============================================================================
@@ -590,7 +598,14 @@ export function QuickActionsPopover({
           className={cn(
             'absolute z-50 left-0',
             'w-[340px] sm:w-[420px] max-h-[400px] flex flex-col',
-            'bg-card border border-border rounded-xl shadow-xl',
+            // Enhanced visual separation from background
+            'bg-card/95 backdrop-blur-sm',
+            'border-2 border-border/60',
+            // Ring effect for additional contrast in dark mode
+            'ring-1 ring-black/5 dark:ring-white/10',
+            // Stronger shadow for depth perception
+            'shadow-2xl shadow-black/25 dark:shadow-black/50',
+            'rounded-xl',
             'animate-in fade-in-0 zoom-in-95 duration-200',
             // Position based on collision detection
             popoverPosition === 'top'
@@ -599,7 +614,7 @@ export function QuickActionsPopover({
           )}
         >
           {/* Fixed Header */}
-          <div className="flex-shrink-0 pt-3 px-3 pb-2 border-b border-border/50">
+          <div className="flex-shrink-0 pt-3 px-3 pb-2 border-b border-border">
             <div className="flex items-center justify-between px-1">
               <h3 className="text-sm font-medium text-foreground">Quick Actions</h3>
               <span className="text-xs text-muted-foreground">{suggestions.length} available</span>
@@ -624,7 +639,7 @@ export function QuickActionsPopover({
           </div>
 
           {/* Fixed Footer hint */}
-          <div className="flex-shrink-0 pt-2 pb-3 px-3 border-t border-border/50">
+          <div className="flex-shrink-0 pt-2 pb-3 px-3 border-t border-border">
             <div className="flex items-center gap-4 text-[10px] text-muted-foreground/60 px-1">
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500/60" />

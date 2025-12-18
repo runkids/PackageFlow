@@ -6,3 +6,4 @@ export {
   type RunningProcessInfo,
 } from './StopProcessesButton';
 export { McpStatusButton } from './McpStatusButton';
+export { AIActivityButton } from './AIActivityButton';

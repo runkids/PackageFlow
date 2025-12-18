@@ -533,3 +533,103 @@ export interface StatusUpdatePayload {
   /** Response status */
   status: ResponseStatus;
 }
+
+// ============================================================================
+// MCP Tool Response Types (Dual-Layer Response Schema)
+// ============================================================================
+
+/**
+ * Display status for visual styling in UI
+ */
+export type DisplayStatus = 'success' | 'warning' | 'info' | 'error';
+
+/**
+ * Display item for list-style presentation
+ */
+export interface DisplayItem {
+  /** Label text */
+  label: string;
+  /** Value text */
+  value: string;
+  /** Optional icon name (from Lucide icons) */
+  icon?: string;
+  /** Optional action to trigger on click */
+  action?: {
+    tool: string;
+    args: Record<string, unknown>;
+  };
+}
+
+/**
+ * Human-readable display layer for MCP tool responses
+ * This layer is used for UI presentation, separate from raw data
+ */
+export interface DisplayLayer {
+  /** One-line summary for compact display (e.g., "Found 5 workflows") */
+  summary: string;
+  /** Optional detailed message for expanded view */
+  detail?: string;
+  /** Visual status hint for styling */
+  status: DisplayStatus;
+  /** Optional items for list-style display */
+  items?: DisplayItem[];
+}
+
+/**
+ * Response metadata for tool chaining and orchestration
+ */
+export interface ResponseMeta {
+  /** Hint for the next logical tool call */
+  nextToolHint?: string;
+  /** Reference IDs that can be used in subsequent calls */
+  referenceIds?: Record<string, string>;
+  /** Execution duration in milliseconds */
+  durationMs?: number;
+}
+
+/**
+ * Structured MCP tool response with dual-layer architecture
+ * - data: Machine-readable structured data for AI and programmatic use
+ * - display: Human-readable presentation layer for UI
+ * - meta: Optional metadata for orchestration
+ */
+export interface MCPToolResponse<T = unknown> {
+  /** Machine-readable structured data */
+  data: T;
+  /** Human-readable display layer */
+  display: DisplayLayer;
+  /** Optional metadata for chaining and tracking */
+  meta?: ResponseMeta;
+}
+
+/**
+ * Type guard to check if a value is an MCPToolResponse
+ */
+export function isMCPToolResponse(value: unknown): value is MCPToolResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    'data' in obj &&
+    'display' in obj &&
+    typeof obj.display === 'object' &&
+    obj.display !== null &&
+    'summary' in (obj.display as Record<string, unknown>) &&
+    'status' in (obj.display as Record<string, unknown>)
+  );
+}
+
+/**
+ * Parse tool output string to MCPToolResponse
+ * Returns null if parsing fails or format is not MCPToolResponse
+ */
+export function parseMCPToolResponse(output: string): MCPToolResponse | null {
+  try {
+    const parsed = JSON.parse(output);
+    if (isMCPToolResponse(parsed)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

@@ -32,6 +32,7 @@ import { cn } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { registerModal, unregisterModal, isTopModal } from '../ui/modalStack';
 import type { ToolCall, ToolResult } from '../../types/ai-assistant';
+import { ToolResultFormatter } from './ToolResultFormatter';
 
 interface ActionConfirmationCardProps {
   /** Tool call to confirm */
@@ -602,19 +603,22 @@ export function ActionConfirmationCard({
                 )}
               </div>
 
-              {/* Output */}
+              {/* Output - use ToolResultFormatter for friendly display */}
               {result.output && (
                 <div className="relative">
-                  <pre
+                  {/* Formatted output display */}
+                  <div
                     className={cn(
-                      'text-xs text-foreground/80 whitespace-pre-wrap break-all',
-                      'font-mono bg-background/80 rounded-lg p-3',
+                      'bg-background/80 rounded-lg p-3',
                       'border border-border',
                       isOutputCollapsible && !outputExpanded && 'max-h-24 overflow-hidden'
                     )}
                   >
-                    {result.output}
-                  </pre>
+                    <ToolResultFormatter
+                      toolName={toolCall.name}
+                      output={result.output}
+                    />
+                  </div>
 
                   {/* Fade overlay for collapsed state */}
                   {isOutputCollapsible && !outputExpanded && (
@@ -653,7 +657,7 @@ export function ActionConfirmationCard({
                         )}
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
-                        View Full
+                        View Raw
                       </button>
                       <button
                         onClick={handleCopyOutput}

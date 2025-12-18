@@ -25,6 +25,7 @@ import {
   BackgroundTasksButton,
   StopProcessesButton,
   McpStatusButton,
+  AIActivityButton,
 } from './components/status-bar';
 import { ActionConfirmationDialog } from './components/settings/mcp';
 import { AIAssistantPage } from './components/ai-assistant';
@@ -318,6 +319,23 @@ function App() {
       source: projectPath ? 'manual' : null,
     });
   }, []);
+
+  // Feature: Open AI conversation from project AI Chats tab
+  const handleOpenAIConversation = useCallback(
+    (conversationId: string, projectPath: string) => {
+      setAiProjectContext({ projectPath, source: 'navigation' });
+      setActiveTab('ai-assistant');
+      // Dispatch event after React has time to mount AIAssistantPage
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('ai-assistant:load-conversation', {
+            detail: { conversationId, projectPath },
+          })
+        );
+      }, 0);
+    },
+    []
+  );
 
   const handleKillAllNodeProcesses = useCallback(async () => {
     if (isKilling) return;
@@ -664,6 +682,8 @@ function App() {
             isLoading={mcpStatus.isLoading}
             onOpenSettings={() => openSettings('mcp')}
           />
+          {/* AI Activity */}
+          <AIActivityButton onOpenSettings={() => openSettings('ai-activity')} />
           {/* Notification Center */}
           <NotificationButton />
           <div className="w-px h-5 bg-border mx-1" />
@@ -712,7 +732,7 @@ function App() {
           >
             AI Assistant
             {activeTab === 'ai-assistant' && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500" />
             )}
           </Button>
         </nav>
@@ -738,6 +758,7 @@ function App() {
               onToggleTerminalCollapse={() => setIsTerminalCollapsed(!isTerminalCollapsed)}
               onOpenSettings={openSettings}
               onOpenAIAssistant={handleOpenAIAssistant}
+              onOpenAIConversation={handleOpenAIConversation}
             />
           </div>
         )}

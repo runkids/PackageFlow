@@ -20,9 +20,13 @@ import { AIProviderNotConfiguredState } from './AIProviderNotConfiguredState';
 import { QuickActionsPopover } from './QuickActionsPopover';
 import { AIAssistantSidebar } from './AIAssistantSidebar';
 import { ConversationHeader } from './ConversationHeader';
+import { BackgroundProcessStatusBar } from './BackgroundProcessStatusBar';
+import { BackgroundProcessPanel } from './background-process/BackgroundProcessPanel';
+import { BackgroundProcessOutputDialog } from './background-process/BackgroundProcessOutputDialog';
 import { useAIChat } from '../../hooks/useAIChat';
 import { useAIQuickActions } from '../../hooks/useAIQuickActions';
 import { useConversations } from '../../hooks/useConversations';
+import { useBackgroundProcesses } from '../../hooks/useBackgroundProcesses';
 import {
   AlertCircle,
   X,
@@ -36,6 +40,7 @@ import {
   Activity,
 } from 'lucide-react';
 import type { SuggestedAction, ToolResult } from '../../types/ai-assistant';
+import { parseMCPToolResponse } from '../../types/ai-assistant';
 import { useScriptExecutionContext } from '../../contexts/ScriptExecutionContext';
 import { QuickActionResultCard } from './QuickActionResultCard';
 
@@ -203,6 +208,12 @@ export function AIAssistantPage({
 
   // Get running scripts for list_background_processes integration
   const { runningScripts } = useScriptExecutionContext();
+
+  // Background process management for long-running scripts
+  const backgroundProcessManager = useBackgroundProcesses();
+
+  // Output dialog state for viewing full process output
+  const [outputDialogProcessId, setOutputDialogProcessId] = useState<string | null>(null);
 
   // Track executing tool IDs
   const executingToolIds = useMemo(() => {
@@ -408,11 +419,18 @@ export function AIAssistantPage({
                 // Parse result and merge PTY sessions for processes
                 let parsedResult: unknown;
                 try {
-                  parsedResult = JSON.parse(result.output);
+                  const rawParsed = JSON.parse(result.output);
+
+                  // Handle MCPToolResponse format - check if data is nested
+                  // MCPToolResponse has: { data: {...}, display: {...}, meta?: {...} }
+                  const isMCPResponse = rawParsed.display && rawParsed.data;
+                  parsedResult = isMCPResponse ? rawParsed : rawParsed;
 
                   // Special handling: merge PTY sessions for list_background_processes
                   if (action.tool.name === 'list_background_processes') {
-                    const backendResult = parsedResult as { processes?: unknown[] };
+                    // Extract actual data from MCPToolResponse or use directly
+                    const actualData = isMCPResponse ? rawParsed.data : rawParsed;
+                    const backendResult = actualData as { processes?: unknown[] };
                     const ptyProcesses = Array.from(runningScripts.values()).map((script) => ({
                       execution_id: script.executionId,
                       script_name: script.scriptName,
@@ -424,11 +442,24 @@ export function AIAssistantPage({
                       source: 'pty_terminal',
                     }));
                     const allProcesses = [...(backendResult.processes || []), ...ptyProcesses];
-                    parsedResult = {
-                      ...backendResult,
-                      processes: allProcesses,
-                      count: allProcesses.length,
-                    };
+
+                    if (isMCPResponse) {
+                      // Preserve MCPToolResponse structure with merged data
+                      parsedResult = {
+                        ...rawParsed,
+                        data: {
+                          ...actualData,
+                          processes: allProcesses,
+                          count: allProcesses.length,
+                        },
+                      };
+                    } else {
+                      parsedResult = {
+                        ...backendResult,
+                        processes: allProcesses,
+                        count: allProcesses.length,
+                      };
+                    }
                   }
                 } catch {
                   parsedResult = { message: result.output };
@@ -488,9 +519,41 @@ export function AIAssistantPage({
               });
 
               if (result.success) {
-                // Send to AI with summary hint
+                // Try to parse as MCPToolResponse with display layer
+                const mcpResponse = parseMCPToolResponse(result.output);
                 const hint = action.summaryHint || `Please analyze this ${action.label} result.`;
-                const contextMessage = `${action.prompt}\n\n[Tool Result]\n\`\`\`json\n${result.output}\n\`\`\`\n\n${hint}`;
+
+                let userVisibleMessage: string;
+                let aiContext: string;
+
+                if (mcpResponse?.display) {
+                  // Use display layer for user-friendly message
+                  userVisibleMessage = mcpResponse.display.summary;
+                  if (mcpResponse.display.detail) {
+                    userVisibleMessage += `\n${mcpResponse.display.detail}`;
+                  }
+                  // AI gets full data context (hidden from direct display)
+                  aiContext = `[Context: ${action.label}]\n${JSON.stringify(mcpResponse.data, null, 2)}`;
+                } else {
+                  // Legacy format - parse as simple JSON for summary
+                  try {
+                    const parsed = JSON.parse(result.output);
+                    // Try to create a simple summary
+                    if (parsed.count !== undefined) {
+                      userVisibleMessage = `Found ${parsed.count} items`;
+                    } else if (parsed.message) {
+                      userVisibleMessage = parsed.message;
+                    } else {
+                      userVisibleMessage = `${action.label} completed`;
+                    }
+                  } catch {
+                    userVisibleMessage = `${action.label} completed`;
+                  }
+                  aiContext = `[Context: ${action.label}]\n${result.output}`;
+                }
+
+                // Send friendly message + hidden context for AI analysis
+                const contextMessage = `${action.prompt}\n\n**Result:** ${userVisibleMessage}\n\n${aiContext}\n\n${hint}`;
                 await sendMessage(contextMessage);
                 await refreshConversations();
               } else {
@@ -561,6 +624,29 @@ export function AIAssistantPage({
     [stopToolExecution]
   );
 
+  // Handle viewing full process output
+  const handleViewFullOutput = useCallback((processId: string) => {
+    setOutputDialogProcessId(processId);
+  }, []);
+
+  // Handle closing output dialog
+  const handleCloseOutputDialog = useCallback(() => {
+    setOutputDialogProcessId(null);
+  }, []);
+
+  // Handle stopping process from dialog or inline card
+  const handleStopProcess = useCallback(
+    async (processId: string): Promise<void> => {
+      await backgroundProcessManager.stopProcess(processId);
+    },
+    [backgroundProcessManager]
+  );
+
+  // Get process for output dialog
+  const outputDialogProcess = outputDialogProcessId
+    ? backgroundProcessManager.getProcessById(outputDialogProcessId)
+    : null;
+
   // Handle sidebar toggle
   const handleToggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev);
@@ -621,28 +707,68 @@ export function AIAssistantPage({
             />
           ) : (
             <>
-              {visibleMessages.map((message, index) => (
-                <ChatMessage
-                  key={message.id}
-                  message={message}
-                  isStreaming={
-                    isGenerating &&
-                    message.role === 'assistant' &&
-                    index === visibleMessages.length - 1
-                  }
-                  responseStatus={
-                    isGenerating &&
-                    message.role === 'assistant' &&
-                    index === visibleMessages.length - 1
-                      ? responseStatus
-                      : null
-                  }
-                  onApproveToolCall={handleApproveToolCall}
-                  onDenyToolCall={handleDenyToolCall}
-                  onStopToolExecution={handleStopToolExecution}
-                  executingToolIds={executingToolIds}
-                />
-              ))}
+              {visibleMessages.map((message, index) => {
+                // Check if any tool call in this message has an associated background process
+                // Backend stores tool_call_id as messageId in the process
+                const associatedProcesses = (message.toolCalls ?? [])
+                  .map((toolCall) => backgroundProcessManager.getProcessByMessageId(toolCall.id))
+                  .filter((p): p is NonNullable<typeof p> => p !== undefined);
+
+                // Count running processes for this message
+                const runningCount = associatedProcesses.filter(
+                  (p) => p.status === 'running' || p.status === 'starting'
+                ).length;
+
+                return (
+                  <div key={message.id}>
+                    <ChatMessage
+                      message={message}
+                      isStreaming={
+                        isGenerating &&
+                        message.role === 'assistant' &&
+                        index === visibleMessages.length - 1
+                      }
+                      responseStatus={
+                        isGenerating &&
+                        message.role === 'assistant' &&
+                        index === visibleMessages.length - 1
+                          ? responseStatus
+                          : null
+                      }
+                      onApproveToolCall={handleApproveToolCall}
+                      onDenyToolCall={handleDenyToolCall}
+                      onStopToolExecution={handleStopToolExecution}
+                      executingToolIds={executingToolIds}
+                    />
+                    {/* Minimal inline hint - click to expand panel */}
+                    {associatedProcesses.length > 0 && (
+                      <button
+                        onClick={() => backgroundProcessManager.setPanelState('expanded')}
+                        className={cn(
+                          'mt-2 ml-12 inline-flex items-center gap-2',
+                          'px-3 py-1.5 rounded-lg',
+                          'text-xs text-muted-foreground',
+                          'bg-muted/30 hover:bg-muted/50',
+                          'border border-border/50',
+                          'transition-colors'
+                        )}
+                      >
+                        <div className="relative">
+                          <Terminal className="w-3.5 h-3.5" />
+                          {runningCount > 0 && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                          )}
+                        </div>
+                        <span>
+                          {runningCount > 0
+                            ? `${runningCount} running`
+                            : `${associatedProcesses.length} process${associatedProcesses.length > 1 ? 'es' : ''}`}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </>
           )}
           <div ref={messagesEndRef} />
@@ -718,6 +844,49 @@ export function AIAssistantPage({
           autoFocus
           showCharCount
         />
+
+        {/* Background Process UI - Status Bar + Panel */}
+        {backgroundProcessManager.processes.size > 0 && (
+          <>
+            {/* Status Bar - Always visible when processes exist */}
+            <BackgroundProcessStatusBar
+              runningCount={backgroundProcessManager.runningCount}
+              totalCount={backgroundProcessManager.processes.size}
+              isPanelOpen={backgroundProcessManager.panelState === 'expanded'}
+              onTogglePanel={() =>
+                backgroundProcessManager.setPanelState(
+                  backgroundProcessManager.panelState === 'expanded' ? 'collapsed' : 'expanded'
+                )
+              }
+              onStopAll={backgroundProcessManager.stopAllProcesses}
+            />
+
+            {/* Panel - Shows when expanded */}
+            {backgroundProcessManager.panelState === 'expanded' && (
+              <BackgroundProcessPanel
+                processes={backgroundProcessManager.processes}
+                selectedProcessId={backgroundProcessManager.selectedProcessId}
+                panelState={backgroundProcessManager.panelState}
+                onPanelStateChange={backgroundProcessManager.setPanelState}
+                onSelectProcess={backgroundProcessManager.selectProcess}
+                onStopProcess={backgroundProcessManager.stopProcess}
+                onStopAllProcesses={backgroundProcessManager.stopAllProcesses}
+                onRemoveProcess={backgroundProcessManager.removeProcess}
+                onClearCompleted={backgroundProcessManager.clearCompletedProcesses}
+                onViewFullOutput={handleViewFullOutput}
+              />
+            )}
+          </>
+        )}
+
+        {/* Output Dialog - Full output viewer */}
+        {outputDialogProcess && (
+          <BackgroundProcessOutputDialog
+            process={outputDialogProcess}
+            onClose={handleCloseOutputDialog}
+            onStop={handleStopProcess}
+          />
+        )}
       </div>
     </div>
   );

@@ -390,19 +390,41 @@ pub async fn ai_list_templates(
         Err(e) => return Ok(ApiResponse::error(e)),
     };
 
-    // Ensure built-in templates exist in database
+    // Ensure built-in templates exist and are up-to-date in database
     let builtins = PromptTemplate::all_builtins();
     for builtin in builtins {
-        if !templates.iter().any(|t| t.id == builtin.id) {
-            // Save built-in template to database
+        if let Some(existing_idx) = templates.iter().position(|t| t.id == builtin.id) {
+            // Built-in template exists - check if it needs updating
+            // Compare template content to detect if code version is newer
+            let existing = &templates[existing_idx];
+            if existing.is_builtin && existing.template != builtin.template {
+                // Update the built-in template with new content from code
+                let updated = PromptTemplate {
+                    id: builtin.id.clone(),
+                    name: builtin.name.clone(),
+                    description: builtin.description.clone(),
+                    category: builtin.category.clone(),
+                    template: builtin.template.clone(),
+                    output_format: builtin.output_format.clone(),
+                    is_default: existing.is_default, // Preserve user's default setting
+                    is_builtin: true,
+                    created_at: existing.created_at,
+                    updated_at: chrono::Utc::now(),
+                };
+                if let Err(e) = repo.save_template(&updated) {
+                    eprintln!("Warning: Failed to update built-in template '{}': {}", builtin.name, e);
+                } else {
+                    templates[existing_idx] = updated;
+                }
+            }
+        } else {
+            // Built-in template doesn't exist - create it
             match repo.save_template(&builtin) {
                 Ok(()) => {
                     templates.insert(0, builtin);
                 }
                 Err(e) => {
-                    // Log error but don't fail the entire operation
                     eprintln!("Warning: Failed to save built-in template '{}': {}", builtin.name, e);
-                    // Still add to list for display (will be in memory only)
                     templates.insert(0, builtin);
                 }
             }
@@ -681,6 +703,7 @@ pub async fn ai_generate_commit_message(
 // ============================================================================
 
 /// Get raw diff text for a specific file (staged or unstaged)
+/// Also handles untracked (new) files by reading their content directly
 fn get_file_diff_text(
     repo_path: &Path,
     file_path: &str,
@@ -705,7 +728,101 @@ fn get_file_diff_text(
         return Err(format!("git diff failed: {}", stderr));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let diff_text = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // If diff is empty, check if it's an untracked file (for unstaged mode)
+    // or a newly added file (for staged mode with no diff output)
+    if diff_text.is_empty() {
+        return get_new_file_content_as_diff(repo_path, file_path, staged);
+    }
+
+    Ok(diff_text)
+}
+
+/// Get content of a new/untracked file formatted as a diff
+fn get_new_file_content_as_diff(
+    repo_path: &Path,
+    file_path: &str,
+    staged: bool,
+) -> Result<String, String> {
+    use crate::utils::path_resolver;
+
+    // First, check if file is untracked or newly staged
+    let status_output = path_resolver::create_command("git")
+        .args(["status", "--porcelain", "--", file_path])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to check file status: {}", e))?;
+
+    let status = String::from_utf8_lossy(&status_output.stdout);
+    let status_line = status.lines().next().unwrap_or("");
+
+    // Check if this is a new file
+    // "??" = untracked, "A " = staged new file, " A" = added in worktree
+    let is_new_file = status_line.starts_with("??")
+        || status_line.starts_with("A ")
+        || status_line.starts_with(" A");
+
+    if !is_new_file {
+        // Not a new file and no diff - truly no changes
+        return Ok(String::new());
+    }
+
+    // For staged new files, use git show :0:path to get staged content
+    // For untracked files, read directly from filesystem
+    let content = if staged && status_line.starts_with("A ") {
+        // Staged new file - get from staging area
+        let show_output = path_resolver::create_command("git")
+            .args(["show", &format!(":0:{}", file_path)])
+            .current_dir(repo_path)
+            .output()
+            .map_err(|e| format!("Failed to get staged file content: {}", e))?;
+
+        if show_output.status.success() {
+            String::from_utf8_lossy(&show_output.stdout).to_string()
+        } else {
+            // Fallback to reading from filesystem
+            let full_path = repo_path.join(file_path);
+            std::fs::read_to_string(&full_path)
+                .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?
+        }
+    } else {
+        // Untracked file - read from filesystem
+        let full_path = repo_path.join(file_path);
+        std::fs::read_to_string(&full_path)
+            .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?
+    };
+
+    // Check if file is binary
+    if content.contains('\0') {
+        return Ok(format!(
+            "diff --git a/{} b/{}\n\
+             new file mode 100644\n\
+             Binary file {} added\n",
+            file_path, file_path, file_path
+        ));
+    }
+
+    // Format as a diff for a new file
+    let lines: Vec<&str> = content.lines().collect();
+    let line_count = lines.len();
+
+    let mut diff = format!(
+        "diff --git a/{} b/{}\n\
+         new file mode 100644\n\
+         --- /dev/null\n\
+         +++ b/{}\n\
+         @@ -0,0 +1,{} @@\n",
+        file_path, file_path, file_path, line_count
+    );
+
+    for line in lines {
+        diff.push('+');
+        diff.push_str(line);
+        diff.push('\n');
+    }
+
+    Ok(diff)
 }
 
 /// Estimate the number of tokens in a text string

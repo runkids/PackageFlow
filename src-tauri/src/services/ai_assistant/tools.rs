@@ -12,8 +12,172 @@ use crate::models::ai_assistant::{ToolCall, ToolResult, ToolDefinition, Availabl
 use crate::models::ai::ChatToolDefinition;
 use crate::utils::path_resolver;
 use crate::utils::database::Database;
+use crate::repositories::{MCPRepository, McpLogEntry};
+use std::collections::HashMap;
+use chrono::Utc;
 
 use super::security::{PathSecurityValidator, ToolPermissionChecker, OutputSanitizer};
+
+// ============================================================================
+// MCP Tool Response Types (Dual-Layer Response Schema)
+// ============================================================================
+
+/// Display status for visual styling in UI
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DisplayStatus {
+    Success,
+    Warning,
+    Info,
+    Error,
+}
+
+/// Display item for list-style presentation
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayItem {
+    /// Label text
+    pub label: String,
+    /// Value text
+    pub value: String,
+    /// Optional icon name (from Lucide icons)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Optional action to trigger on click
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<DisplayAction>,
+}
+
+/// Action for display item click
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayAction {
+    pub tool: String,
+    pub args: serde_json::Value,
+}
+
+/// Human-readable display layer for MCP tool responses
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayLayer {
+    /// One-line summary for compact display (e.g., "Found 5 workflows")
+    pub summary: String,
+    /// Optional detailed message for expanded view
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Visual status hint for styling
+    pub status: DisplayStatus,
+    /// Optional items for list-style display
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<DisplayItem>>,
+}
+
+impl DisplayLayer {
+    /// Create a new success display layer with just a summary
+    pub fn success(summary: impl Into<String>) -> Self {
+        Self {
+            summary: summary.into(),
+            detail: None,
+            status: DisplayStatus::Success,
+            items: None,
+        }
+    }
+
+    /// Create a new info display layer
+    pub fn info(summary: impl Into<String>) -> Self {
+        Self {
+            summary: summary.into(),
+            detail: None,
+            status: DisplayStatus::Info,
+            items: None,
+        }
+    }
+
+    /// Create a new warning display layer
+    pub fn warning(summary: impl Into<String>) -> Self {
+        Self {
+            summary: summary.into(),
+            detail: None,
+            status: DisplayStatus::Warning,
+            items: None,
+        }
+    }
+
+    /// Create a new error display layer
+    pub fn error(summary: impl Into<String>) -> Self {
+        Self {
+            summary: summary.into(),
+            detail: None,
+            status: DisplayStatus::Error,
+            items: None,
+        }
+    }
+
+    /// Add detail message
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+
+    /// Add display items
+    pub fn with_items(mut self, items: Vec<DisplayItem>) -> Self {
+        self.items = Some(items);
+        self
+    }
+}
+
+/// Response metadata for tool chaining and orchestration
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResponseMeta {
+    /// Hint for the next logical tool call
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_tool_hint: Option<String>,
+    /// Reference IDs that can be used in subsequent calls
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_ids: Option<HashMap<String, String>>,
+    /// Execution duration in milliseconds
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+}
+
+/// Structured MCP tool response with dual-layer architecture
+/// - data: Machine-readable structured data for AI and programmatic use
+/// - display: Human-readable presentation layer for UI
+/// - meta: Optional metadata for orchestration
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MCPToolResponse<T: serde::Serialize> {
+    /// Machine-readable structured data
+    pub data: T,
+    /// Human-readable display layer
+    pub display: DisplayLayer,
+    /// Optional metadata for chaining and tracking
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<ResponseMeta>,
+}
+
+impl<T: serde::Serialize> MCPToolResponse<T> {
+    /// Create a new MCPToolResponse
+    pub fn new(data: T, display: DisplayLayer) -> Self {
+        Self {
+            data,
+            display,
+            meta: None,
+        }
+    }
+
+    /// Add metadata
+    pub fn with_meta(mut self, meta: ResponseMeta) -> Self {
+        self.meta = Some(meta);
+        self
+    }
+
+    /// Convert to JSON string for ToolResult output
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
+}
 
 /// Handles tool calls from AI responses
 pub struct MCPToolHandler {
@@ -327,7 +491,7 @@ impl MCPToolHandler {
             // npm script (alternative to run_script)
             ToolDefinition {
                 name: "run_npm_script".to_string(),
-                description: "Execute an npm/yarn/pnpm script from a project's package.json. If unsure which project/script, call list_projects then get_project first.".to_string(),
+                description: "Execute an npm/yarn/pnpm script from a project's package.json. Use runInBackground=true for long-running scripts like 'dev', 'start', 'watch' that don't exit. If unsure which project/script, call list_projects then get_project first.".to_string(),
                 parameters: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -344,9 +508,17 @@ impl MCPToolHandler {
                             "items": { "type": "string" },
                             "description": "Optional arguments to pass to the script"
                         },
+                        "runInBackground": {
+                            "type": "boolean",
+                            "description": "Run in background (default: false). Set to true for long-running scripts like 'dev', 'start', 'watch' that don't exit. Returns immediately with a process ID."
+                        },
+                        "successPattern": {
+                            "type": "string",
+                            "description": "Regex pattern to match in output indicating the process is ready (e.g., 'ready in \\\\d+' for Vite, 'compiled successfully' for webpack). Only used when runInBackground is true."
+                        },
                         "timeoutMs": {
                             "type": "integer",
-                            "description": "Timeout in milliseconds (default: 5 minutes)"
+                            "description": "Timeout in milliseconds (default: 5 minutes for foreground, 30 seconds for background success pattern matching)"
                         }
                     },
                     "required": ["projectPath", "scriptName"]
@@ -806,7 +978,12 @@ impl MCPToolHandler {
         log::info!("[AI Tool] execute_tool_call END: name={}, success={}, output_len={}",
             tool_call.name, result.success, result.output.len());
 
-        self.sanitize_result(result)
+        let sanitized = self.sanitize_result(result);
+
+        // Log to AI Activity
+        self.log_tool_execution(tool_call, &sanitized);
+
+        sanitized
     }
 
     /// Execute a confirmed tool call (for user-approved actions)
@@ -874,7 +1051,12 @@ impl MCPToolHandler {
             ),
         };
 
-        self.sanitize_result(result)
+        let sanitized = self.sanitize_result(result);
+
+        // Log to AI Activity
+        self.log_tool_execution(tool_call, &sanitized);
+
+        sanitized
     }
 
     /// Sanitize tool result output
@@ -890,6 +1072,38 @@ impl MCPToolHandler {
             }
         } else {
             result
+        }
+    }
+
+    /// Log tool execution to AI Activity (mcp_logs table)
+    /// This allows AI Assistant tool calls to appear in Settings > AI Activity
+    fn log_tool_execution(&self, tool_call: &ToolCall, result: &ToolResult) {
+        let Some(db) = &self.db else {
+            log::debug!("[AI Tool] No database connection, skipping activity log");
+            return;
+        };
+
+        let repo = MCPRepository::new(db.clone());
+
+        // Sanitize arguments - convert to string, sanitize, then back to JSON
+        let args_str = serde_json::to_string(&tool_call.arguments).unwrap_or_default();
+        let sanitized_str = OutputSanitizer::sanitize_output(&args_str);
+        let sanitized_args: serde_json::Value = serde_json::from_str(&sanitized_str)
+            .unwrap_or(tool_call.arguments.clone());
+
+        let log_entry = McpLogEntry {
+            id: None,
+            timestamp: Utc::now(),
+            tool: tool_call.name.clone(),
+            arguments: sanitized_args,
+            result: if result.success { "success".to_string() } else { "error".to_string() },
+            duration_ms: result.duration_ms.unwrap_or(0) as u64,
+            error: result.error.clone(),
+            source: Some("ai_assistant".to_string()),
+        };
+
+        if let Err(e) = repo.insert_log(&log_entry) {
+            log::warn!("[AI Tool] Failed to log tool execution: {}", e);
         }
     }
 
@@ -1217,7 +1431,38 @@ impl MCPToolHandler {
                     for (i, p) in filtered_projects.iter().enumerate() {
                         log::debug!("[AI Tool] Project {}: {} at {}", i + 1, p.name, p.path);
                     }
-                    let output = serde_json::json!({
+
+                    let count = filtered_projects.len();
+
+                    // Build display layer
+                    let summary = if count == 0 {
+                        "No projects registered".to_string()
+                    } else if count == 1 {
+                        format!("Found 1 project: {}", filtered_projects[0].name)
+                    } else {
+                        format!("Found {} registered projects", count)
+                    };
+
+                    let display_items: Vec<DisplayItem> = filtered_projects.iter().take(5).map(|p| {
+                        DisplayItem {
+                            label: p.name.clone(),
+                            value: p.path.clone(),
+                            icon: Some("folder".to_string()),
+                            action: Some(DisplayAction {
+                                tool: "get_project".to_string(),
+                                args: serde_json::json!({ "path": p.path }),
+                            }),
+                        }
+                    }).collect();
+
+                    let display = if count > 0 {
+                        DisplayLayer::success(summary).with_items(display_items)
+                    } else {
+                        DisplayLayer::info(summary)
+                            .with_detail("Register projects via the Projects panel")
+                    };
+
+                    let data = serde_json::json!({
                         "projects": filtered_projects.iter().map(|p| serde_json::json!({
                             "id": p.id,
                             "name": p.name,
@@ -1225,11 +1470,25 @@ impl MCPToolHandler {
                             "packageManager": p.package_manager,
                             "isMonorepo": p.is_monorepo,
                         })).collect::<Vec<_>>(),
-                        "count": filtered_projects.len()
+                        "count": count
                     });
+
+                    let response = MCPToolResponse::new(data, display);
+                    if count > 0 {
+                        let meta = ResponseMeta {
+                            next_tool_hint: Some("Use get_project to see details of a specific project".to_string()),
+                            ..Default::default()
+                        };
+                        return ToolResult::success(
+                            tool_call.id.clone(),
+                            response.with_meta(meta).to_json(),
+                            None,
+                        );
+                    }
+
                     return ToolResult::success(
                         tool_call.id.clone(),
-                        serde_json::to_string_pretty(&output).unwrap_or_default(),
+                        response.to_json(),
                         None,
                     );
                 }
@@ -1762,25 +2021,67 @@ impl MCPToolHandler {
     }
 
     /// Execute list_background_processes tool
-    /// Note: Background process management is handled by MCP Server binary.
-    /// This tool returns a message indicating that functionality.
     async fn execute_list_background_processes(&self, tool_call: &ToolCall) -> ToolResult {
-        // Background processes are managed by the MCP Server binary (packageflow-mcp)
-        // The AI Assistant doesn't have direct access to the MCP Server's process manager
-        let result = serde_json::json!({
-            "message": "Background process management is available through the MCP Server",
-            "hint": "Use 'run_npm_script' with 'runInBackground: true' via MCP Server",
-            "processes": []
+        use super::background_process::BACKGROUND_PROCESS_MANAGER;
+
+        let processes = BACKGROUND_PROCESS_MANAGER.list_processes().await;
+        let count = processes.len();
+
+        // Build display layer
+        let summary = if count == 0 {
+            "No background processes running".to_string()
+        } else if count == 1 {
+            format!("1 background process running: {}", processes[0].name)
+        } else {
+            format!("{} background processes running", count)
+        };
+
+        let display_items: Vec<DisplayItem> = processes.iter().map(|p| {
+            DisplayItem {
+                label: p.name.clone(),
+                value: p.status.to_string(),
+                icon: Some("activity".to_string()),
+                action: Some(DisplayAction {
+                    tool: "get_background_process_output".to_string(),
+                    args: serde_json::json!({ "processId": p.id }),
+                }),
+            }
+        }).collect();
+
+        let display = if count > 0 {
+            DisplayLayer::success(summary).with_items(display_items)
+        } else {
+            DisplayLayer::info(summary)
+        };
+
+        let data = serde_json::json!({
+            "success": true,
+            "count": count,
+            "processes": processes.iter().map(|p| {
+                serde_json::json!({
+                    "id": p.id,
+                    "pid": p.pid,
+                    "name": p.name,
+                    "projectPath": p.project_path,
+                    "status": p.status.to_string(),
+                    "startedAt": p.started_at,
+                    "command": p.command,
+                })
+            }).collect::<Vec<_>>()
         });
+
+        let response = MCPToolResponse::new(data, display);
         ToolResult::success(
             tool_call.id.clone(),
-            serde_json::to_string(&result).unwrap_or_default(),
+            response.to_json(),
             None,
         )
     }
 
     /// Execute get_background_process_output tool
     async fn execute_get_background_process_output(&self, tool_call: &ToolCall) -> ToolResult {
+        use super::background_process::BACKGROUND_PROCESS_MANAGER;
+
         let process_id = match tool_call.arguments.get("processId").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return ToolResult::failure(
@@ -1789,21 +2090,45 @@ impl MCPToolHandler {
             ),
         };
 
-        // Background processes are managed by the MCP Server binary
-        let result = serde_json::json!({
-            "message": "Background process output is available through the MCP Server",
-            "processId": process_id,
-            "hint": "This tool is for MCP Server integration"
-        });
-        ToolResult::success(
-            tool_call.id.clone(),
-            serde_json::to_string(&result).unwrap_or_default(),
-            None,
-        )
+        let tail_lines = tool_call.arguments
+            .get("tailLines")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+
+        match BACKGROUND_PROCESS_MANAGER.get_output(process_id, tail_lines).await {
+            Ok(output_lines) => {
+                // Build simplified output response
+                let result = serde_json::json!({
+                    "success": true,
+                    "processId": process_id,
+                    "outputLines": output_lines.iter().map(|line| {
+                        serde_json::json!({
+                            "content": line.content,
+                            "stream": line.stream,
+                            "timestamp": line.timestamp,
+                        })
+                    }).collect::<Vec<_>>(),
+                    "lineCount": output_lines.len(),
+                });
+                ToolResult::success(
+                    tool_call.id.clone(),
+                    serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    None,
+                )
+            }
+            Err(e) => {
+                ToolResult::failure(
+                    tool_call.id.clone(),
+                    format!("Failed to get process output: {}", e),
+                )
+            }
+        }
     }
 
     /// Execute stop_background_process tool
     async fn execute_stop_background_process(&self, tool_call: &ToolCall) -> ToolResult {
+        use super::background_process::BACKGROUND_PROCESS_MANAGER;
+
         let process_id = match tool_call.arguments.get("processId").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return ToolResult::failure(
@@ -1812,27 +2137,36 @@ impl MCPToolHandler {
             ),
         };
 
-        let _force = tool_call.arguments
+        let force = tool_call.arguments
             .get("force")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        // Background processes are managed by the MCP Server binary
-        let result = serde_json::json!({
-            "message": "Background process management is available through the MCP Server",
-            "processId": process_id,
-            "hint": "This tool is for MCP Server integration"
-        });
-        ToolResult::success(
-            tool_call.id.clone(),
-            serde_json::to_string(&result).unwrap_or_default(),
-            None,
-        )
+        match BACKGROUND_PROCESS_MANAGER.stop_process(process_id, force).await {
+            Ok(()) => {
+                let result = serde_json::json!({
+                    "success": true,
+                    "processId": process_id,
+                    "message": format!("Process {} stopped successfully", process_id),
+                });
+                ToolResult::success(
+                    tool_call.id.clone(),
+                    serde_json::to_string(&result).unwrap_or_default(),
+                    None,
+                )
+            }
+            Err(e) => {
+                ToolResult::failure(
+                    tool_call.id.clone(),
+                    format!("Failed to stop process: {}", e),
+                )
+            }
+        }
     }
 
     /// Execute run_npm_script tool
+    /// Supports both foreground (blocking) and background (non-blocking) execution
     async fn execute_run_npm_script(&self, tool_call: &ToolCall) -> ToolResult {
-        // This is similar to run_script but with different parameter names
         let project_path = match tool_call.arguments.get("projectPath").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return ToolResult::failure(
@@ -1849,13 +2183,220 @@ impl MCPToolHandler {
             ),
         };
 
-        // Forward to run_script with adjusted arguments
+        // Check if this should run in background
+        // Auto-detect long-running scripts if not explicitly set
+        let explicit_background = tool_call.arguments
+            .get("runInBackground")
+            .and_then(|v| v.as_bool());
+
+        // Helper function to check if a string contains long-running script patterns
+        fn contains_long_running_pattern(s: &str) -> bool {
+            let lower = s.to_lowercase();
+            // Script name patterns
+            lower.contains("dev") ||
+            lower.contains("start") ||
+            lower.contains("serve") ||
+            lower.contains("watch") ||
+            lower.contains("preview") ||
+            lower == "storybook" ||
+            // Command patterns (for script content)
+            lower.contains("vite") ||
+            lower.contains("next dev") ||
+            lower.contains("next start") ||
+            lower.contains("webpack serve") ||
+            lower.contains("webpack-dev-server") ||
+            lower.contains("react-scripts start") ||
+            lower.contains("ng serve") ||
+            lower.contains("vue-cli-service serve") ||
+            lower.contains("nuxt dev") ||
+            lower.contains("astro dev") ||
+            lower.contains("remix dev") ||
+            lower.contains("nodemon") ||
+            lower.contains("ts-node-dev") ||
+            lower.contains("concurrently") ||
+            lower.contains("run-p") ||  // npm-run-all parallel
+            lower.contains("npm run dev") ||
+            lower.contains("npm run start") ||
+            lower.contains("pnpm run dev") ||
+            lower.contains("pnpm run start") ||
+            lower.contains("pnpm dev") ||
+            lower.contains("pnpm start") ||
+            lower.contains("yarn dev") ||
+            lower.contains("yarn start")
+        }
+
+        // Check script name first
+        let is_long_running_by_name = contains_long_running_pattern(script_name);
+
+        // Try to read package.json to check the actual script content
+        let is_long_running_by_content = {
+            let package_json_path = std::path::Path::new(project_path).join("package.json");
+            if let Ok(content) = std::fs::read_to_string(&package_json_path) {
+                if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(script_content) = pkg
+                        .get("scripts")
+                        .and_then(|s| s.get(script_name))
+                        .and_then(|v| v.as_str())
+                    {
+                        contains_long_running_pattern(script_content)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
+        let is_long_running_script = is_long_running_by_name || is_long_running_by_content;
+
+        // Use explicit value if provided, otherwise auto-detect
+        let run_in_background = explicit_background.unwrap_or(is_long_running_script);
+
+        if run_in_background && explicit_background.is_none() {
+            log::info!(
+                "[run_npm_script] Auto-detected '{}' as long-running script (by_name={}, by_content={}), using background mode",
+                script_name,
+                is_long_running_by_name,
+                is_long_running_by_content
+            );
+        }
+
+        let success_pattern = tool_call.arguments
+            .get("successPattern")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let timeout_ms = tool_call.arguments
+            .get("timeoutMs")
+            .and_then(|v| v.as_u64());
+
+        // If running in background, use BackgroundProcessManager
+        if run_in_background {
+            return self.execute_run_npm_script_background(
+                tool_call,
+                project_path,
+                script_name,
+                success_pattern,
+                timeout_ms,
+            ).await;
+        }
+
+        // Otherwise, forward to run_script for foreground execution
         let mut modified_call = tool_call.clone();
         modified_call.arguments = serde_json::json!({
             "script_name": script_name,
             "project_path": project_path
         });
         self.execute_run_script(&modified_call).await
+    }
+
+    /// Execute npm script in background mode
+    async fn execute_run_npm_script_background(
+        &self,
+        tool_call: &ToolCall,
+        project_path: &str,
+        script_name: &str,
+        success_pattern: Option<String>,
+        timeout_ms: Option<u64>,
+    ) -> ToolResult {
+        use super::background_process::BACKGROUND_PROCESS_MANAGER;
+
+        // Security: Validate path is within a registered project
+        let validated_path = match self.validate_project_path(project_path) {
+            Ok(p) => p,
+            Err(e) => return ToolResult::failure(tool_call.id.clone(), e),
+        };
+
+        // Validate script exists in package.json
+        let package_json_path = validated_path.join("package.json");
+        let package_json_content = match std::fs::read_to_string(&package_json_path) {
+            Ok(c) => c,
+            Err(e) => return ToolResult::failure(
+                tool_call.id.clone(),
+                format!("Cannot read package.json: {}", e),
+            ),
+        };
+
+        let package_json: serde_json::Value = match serde_json::from_str(&package_json_content) {
+            Ok(j) => j,
+            Err(e) => return ToolResult::failure(
+                tool_call.id.clone(),
+                format!("Invalid package.json: {}", e),
+            ),
+        };
+
+        // Check if script exists
+        let scripts = package_json.get("scripts").and_then(|s| s.as_object());
+        let script_exists = scripts.map(|s| s.contains_key(script_name)).unwrap_or(false);
+
+        if !script_exists {
+            let available: Vec<&str> = scripts
+                .map(|s| s.keys().map(|k| k.as_str()).collect())
+                .unwrap_or_default();
+            return ToolResult::failure(
+                tool_call.id.clone(),
+                format!(
+                    "Script '{}' not found in package.json. Available scripts: {}",
+                    script_name,
+                    available.join(", ")
+                ),
+            );
+        }
+
+        // Detect package manager
+        let package_manager = if validated_path.join("pnpm-lock.yaml").exists() {
+            "pnpm"
+        } else if validated_path.join("yarn.lock").exists() {
+            "yarn"
+        } else {
+            "npm"
+        };
+
+        let cwd = validated_path.to_string_lossy().to_string();
+
+        // Start background process
+        match BACKGROUND_PROCESS_MANAGER.start_process(
+            script_name.to_string(),                        // name
+            package_manager.to_string(),                    // command
+            vec!["run".to_string(), script_name.to_string()], // args
+            cwd.clone(),                                    // cwd
+            project_path.to_string(),                       // project_path
+            success_pattern,                                // success_pattern
+            timeout_ms,                                     // success_timeout_ms
+            None,                                           // conversation_id
+            Some(tool_call.id.clone()),                     // tool_call_id
+        ).await {
+            Ok(info) => {
+                let output = serde_json::json!({
+                    "success": true,
+                    "backgroundProcess": true,
+                    "processId": info.id,
+                    "pid": info.pid,
+                    "scriptName": script_name,
+                    "projectPath": project_path,
+                    "packageManager": package_manager,
+                    "status": info.status.to_string(),
+                    "message": format!(
+                        "Background process started successfully. Process ID: {}. Use 'get_background_process_output' to check output or 'stop_background_process' to stop.",
+                        info.id
+                    )
+                });
+                ToolResult::success(
+                    tool_call.id.clone(),
+                    serde_json::to_string_pretty(&output).unwrap_or_default(),
+                    None,
+                )
+            }
+            Err(e) => {
+                ToolResult::failure(
+                    tool_call.id.clone(),
+                    format!("Failed to start background process: {}", e),
+                )
+            }
+        }
     }
 
     /// Execute create_workflow tool
@@ -2022,6 +2563,7 @@ impl MCPToolHandler {
     // =========================================================================
 
     /// Execute run_script tool (requires prior user confirmation)
+    /// Auto-detects long-running scripts and routes to background execution
     async fn execute_run_script(&self, tool_call: &ToolCall) -> ToolResult {
         let start_time = std::time::Instant::now();
 
@@ -2086,6 +2628,43 @@ impl MCPToolHandler {
                     available.join(", ")
                 ),
             );
+        }
+
+        // Auto-detect long-running scripts and route to background execution
+        fn contains_long_running_pattern(s: &str) -> bool {
+            let lower = s.to_lowercase();
+            lower.contains("dev") ||
+            lower.contains("start") ||
+            lower.contains("serve") ||
+            lower.contains("watch") ||
+            lower.contains("vite") ||
+            lower.contains("webpack") ||
+            lower.contains("nodemon") ||
+            lower.contains("next dev") ||
+            lower.contains("nuxt dev") ||
+            lower.contains("astro dev")
+        }
+
+        let is_long_running_by_name = contains_long_running_pattern(script_name);
+        let is_long_running_by_content = scripts
+            .and_then(|s| s.get(script_name))
+            .and_then(|v| v.as_str())
+            .map(|content| contains_long_running_pattern(content))
+            .unwrap_or(false);
+
+        if is_long_running_by_name || is_long_running_by_content {
+            log::info!(
+                "[run_script] Auto-detected '{}' as long-running script, redirecting to background execution",
+                script_name
+            );
+            // Redirect to run_npm_script with background mode
+            return self.execute_run_npm_script_background(
+                tool_call,
+                project_path,
+                script_name,
+                None, // success_pattern
+                None, // timeout_ms
+            ).await;
         }
 
         // Detect package manager

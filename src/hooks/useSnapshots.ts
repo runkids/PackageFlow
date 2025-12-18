@@ -12,6 +12,7 @@ import type {
   SnapshotStorageStats,
   SecurityInsight,
   InsightSummary,
+  TimeMachineSettings,
 } from '../types/snapshot';
 
 // =========================================================================
@@ -19,7 +20,7 @@ import type {
 // =========================================================================
 
 export interface UseSnapshotsOptions {
-  workflowId?: string;
+  /** Project path to filter snapshots - Feature 025 redesign */
   projectPath?: string;
   limit?: number;
   autoLoad?: boolean;
@@ -31,12 +32,12 @@ export interface UseSnapshotsReturn {
   error: string | null;
   loadSnapshots: (filter?: SnapshotFilter) => Promise<void>;
   deleteSnapshot: (snapshotId: string) => Promise<boolean>;
-  pruneSnapshots: (keepPerWorkflow?: number) => Promise<number>;
+  pruneSnapshots: (keepDays?: number) => Promise<number>;
   refresh: () => Promise<void>;
 }
 
 export function useSnapshots(options: UseSnapshotsOptions = {}): UseSnapshotsReturn {
-  const { workflowId, projectPath, limit = 50, autoLoad = true } = options;
+  const { projectPath, limit = 50, autoLoad = true } = options;
 
   const [snapshots, setSnapshots] = useState<SnapshotListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,7 +49,7 @@ export function useSnapshots(options: UseSnapshotsOptions = {}): UseSnapshotsRet
       setError(null);
       try {
         const result = await snapshotAPI.listSnapshots(
-          filter ?? { workflowId, projectPath, limit }
+          filter ?? { projectPath, limit }
         );
         setSnapshots(result);
       } catch (e) {
@@ -57,7 +58,7 @@ export function useSnapshots(options: UseSnapshotsOptions = {}): UseSnapshotsRet
         setLoading(false);
       }
     },
-    [workflowId, projectPath, limit]
+    [projectPath, limit]
   );
 
   const deleteSnapshot = useCallback(async (snapshotId: string) => {
@@ -173,7 +174,8 @@ export function useSnapshot(options: UseSnapshotOptions): UseSnapshotReturn {
 }
 
 // =========================================================================
-// useLatestSnapshot - Get the latest snapshot for a workflow
+// useLatestSnapshot - Get the latest snapshot for a project
+// Feature 025 redesign: Changed from workflowId to projectPath
 // =========================================================================
 
 export interface UseLatestSnapshotReturn {
@@ -183,13 +185,13 @@ export interface UseLatestSnapshotReturn {
   refresh: () => Promise<void>;
 }
 
-export function useLatestSnapshot(workflowId: string | null): UseLatestSnapshotReturn {
+export function useLatestSnapshot(projectPath: string | null): UseLatestSnapshotReturn {
   const [snapshot, setSnapshot] = useState<ExecutionSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!workflowId) {
+    if (!projectPath) {
       setSnapshot(null);
       return;
     }
@@ -197,14 +199,14 @@ export function useLatestSnapshot(workflowId: string | null): UseLatestSnapshotR
     setLoading(true);
     setError(null);
     try {
-      const result = await snapshotAPI.getLatestSnapshot(workflowId);
+      const result = await snapshotAPI.getLatestSnapshot(projectPath);
       setSnapshot(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [workflowId]);
+  }, [projectPath]);
 
   useEffect(() => {
     refresh();
@@ -282,7 +284,8 @@ export function useSnapshotDiff(): UseSnapshotDiffReturn {
 }
 
 // =========================================================================
-// useComparisonCandidates - Get comparison candidates for a workflow
+// useComparisonCandidates - Get comparison candidates for a project
+// Feature 025 redesign: Changed from workflowId to projectPath
 // =========================================================================
 
 export interface UseComparisonCandidatesReturn {
@@ -293,7 +296,7 @@ export interface UseComparisonCandidatesReturn {
 }
 
 export function useComparisonCandidates(
-  workflowId: string | null,
+  projectPath: string | null,
   limit = 10
 ): UseComparisonCandidatesReturn {
   const [candidates, setCandidates] = useState<ExecutionSnapshot[]>([]);
@@ -301,7 +304,7 @@ export function useComparisonCandidates(
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!workflowId) {
+    if (!projectPath) {
       setCandidates([]);
       return;
     }
@@ -309,14 +312,14 @@ export function useComparisonCandidates(
     setLoading(true);
     setError(null);
     try {
-      const result = await snapshotAPI.getComparisonCandidates(workflowId, limit);
+      const result = await snapshotAPI.getComparisonCandidates(projectPath, limit);
       setCandidates(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [workflowId, limit]);
+  }, [projectPath, limit]);
 
   useEffect(() => {
     refresh();
@@ -460,5 +463,142 @@ export function useSnapshotStorage(): UseSnapshotStorageReturn {
     error,
     refresh,
     cleanupOrphaned,
+  };
+}
+
+// =========================================================================
+// useTimeMachineSettings - Time Machine global settings
+// Feature 025: New hook for project-level lockfile monitoring settings
+// =========================================================================
+
+export interface UseTimeMachineSettingsReturn {
+  settings: TimeMachineSettings | null;
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+  updateSettings: (settings: Partial<TimeMachineSettings>) => Promise<boolean>;
+}
+
+export function useTimeMachineSettings(): UseTimeMachineSettingsReturn {
+  const [settings, setSettings] = useState<TimeMachineSettings | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await snapshotAPI.getTimeMachineSettings();
+      setSettings(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const updateSettings = useCallback(async (newSettings: Partial<TimeMachineSettings>) => {
+    try {
+      const merged = {
+        ...(settings ?? { autoWatchEnabled: true, debounceMs: 2000, updatedAt: new Date().toISOString() }),
+        ...newSettings,
+        updatedAt: new Date().toISOString(),
+      };
+      await snapshotAPI.updateTimeMachineSettings(merged);
+      setSettings(merged);
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return {
+    settings,
+    loading,
+    error,
+    refresh,
+    updateSettings,
+  };
+}
+
+// =========================================================================
+// useProjectSnapshots - Project-level snapshot hook
+// Feature 025: Simplified hook for project-centric snapshot access
+// =========================================================================
+
+export interface UseProjectSnapshotsReturn {
+  snapshots: SnapshotListItem[];
+  latestSnapshot: ExecutionSnapshot | null;
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+  captureManualSnapshot: () => Promise<ExecutionSnapshot | null>;
+}
+
+export function useProjectSnapshots(projectPath: string | null): UseProjectSnapshotsReturn {
+  const [snapshots, setSnapshots] = useState<SnapshotListItem[]>([]);
+  const [latestSnapshot, setLatestSnapshot] = useState<ExecutionSnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!projectPath) {
+      setSnapshots([]);
+      setLatestSnapshot(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const [snapshotList, latest] = await Promise.all([
+        snapshotAPI.listSnapshots({ projectPath, limit: 50 }),
+        snapshotAPI.getLatestSnapshot(projectPath),
+      ]);
+      setSnapshots(snapshotList);
+      setLatestSnapshot(latest);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectPath]);
+
+  const captureManualSnapshot = useCallback(async () => {
+    if (!projectPath) {
+      setError('No project path specified');
+      return null;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const snapshot = await snapshotAPI.captureManualSnapshot(projectPath);
+      await refresh();
+      return snapshot;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [projectPath, refresh]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return {
+    snapshots,
+    latestSnapshot,
+    loading,
+    error,
+    refresh,
+    captureManualSnapshot,
   };
 }

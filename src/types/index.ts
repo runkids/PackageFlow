@@ -212,7 +212,6 @@ export type {
   DependencyChange,
   PostinstallChange,
   DiffSummary,
-  TimingDiff,
   SnapshotDiff,
   CreateSnapshotRequest,
   SnapshotFilter,

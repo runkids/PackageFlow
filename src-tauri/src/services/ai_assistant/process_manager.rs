@@ -42,10 +42,29 @@ pub struct TrackedProcess {
     pub started_at: chrono::DateTime<chrono::Utc>,
     /// Child process handle (if still running)
     child: Option<Child>,
+    /// Process group ID (for proper termination of child processes)
+    #[cfg(unix)]
+    pgid: Option<i32>,
 }
 
 impl TrackedProcess {
-    fn new(tool_call_id: String, description: String, cwd: String, child: Child) -> Self {
+    #[cfg(unix)]
+    fn new(tool_call_id: String, description: String, cwd: String, child: Child, pgid: Option<i32>) -> Self {
+        Self {
+            tool_call_id,
+            description,
+            cwd,
+            status: ProcessStatus::Running,
+            output: String::new(),
+            error_output: String::new(),
+            started_at: chrono::Utc::now(),
+            child: Some(child),
+            pgid,
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn new(tool_call_id: String, description: String, cwd: String, child: Child, _pgid: Option<i32>) -> Self {
         Self {
             tool_call_id,
             description,
@@ -79,6 +98,7 @@ impl ProcessManager {
     }
 
     /// Spawn a process and track it by tool call ID
+    /// Uses process groups on Unix for proper child process termination
     pub async fn spawn_tracked(
         &self,
         tool_call_id: String,
@@ -95,9 +115,9 @@ impl ProcessManager {
             format!("{} {}", command, args.join(" "))
         };
 
-        // Spawn the process with proper environment for macOS GUI apps
-        let mut cmd = Command::new(command);
-        cmd.args(args)
+        // Build std::process::Command first to set process_group on Unix
+        let mut std_cmd = std::process::Command::new(command);
+        std_cmd.args(args)
             .current_dir(cwd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -105,35 +125,50 @@ impl ProcessManager {
         // Set essential environment variables (critical for macOS GUI apps)
         if let Some(home) = dirs::home_dir() {
             let home_str = home.to_string_lossy().to_string();
-            cmd.env("HOME", &home_str);
+            std_cmd.env("HOME", &home_str);
 
             // Volta support
             let volta_home = format!("{}/.volta", home_str);
             if std::path::Path::new(&volta_home).exists() {
-                cmd.env("VOLTA_HOME", &volta_home);
+                std_cmd.env("VOLTA_HOME", &volta_home);
             }
 
             // fnm support
             let fnm_dir = format!("{}/.fnm", home_str);
             if std::path::Path::new(&fnm_dir).exists() {
-                cmd.env("FNM_DIR", &fnm_dir);
+                std_cmd.env("FNM_DIR", &fnm_dir);
             }
         }
 
         // Set PATH so child processes can find tools
-        cmd.env("PATH", path_resolver::get_path());
+        std_cmd.env("PATH", path_resolver::get_path());
 
         // Set LANG for proper encoding
-        cmd.env("LANG", "en_US.UTF-8");
-        cmd.env("LC_ALL", "en_US.UTF-8");
+        std_cmd.env("LANG", "en_US.UTF-8");
+        std_cmd.env("LC_ALL", "en_US.UTF-8");
 
         // Terminal settings
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("FORCE_COLOR", "1");
-        cmd.env("CI", "false");
+        std_cmd.env("TERM", "xterm-256color");
+        std_cmd.env("FORCE_COLOR", "1");
+        std_cmd.env("CI", "false");
 
-        let child = cmd.spawn()
+        // Create new process group on Unix for proper child termination
+        // This allows us to kill all child processes when stopping
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            std_cmd.process_group(0); // Creates new process group with leader = child PID
+        }
+
+        // Convert to tokio Command and spawn
+        let child = Command::from(std_cmd).spawn()
             .map_err(|e| format!("Failed to spawn process: {}", e))?;
+
+        // On Unix, process group ID equals the process leader's PID
+        #[cfg(unix)]
+        let pgid = child.id().map(|pid| pid as i32);
+        #[cfg(not(unix))]
+        let pgid: Option<i32> = None;
 
         // Track it
         let process = TrackedProcess::new(
@@ -141,6 +176,7 @@ impl ProcessManager {
             description,
             cwd.to_string(),
             child,
+            pgid,
         );
 
         let mut processes = self.processes.write().await;
@@ -150,34 +186,56 @@ impl ProcessManager {
     }
 
     /// Stop a process by tool call ID
+    /// Terminates the entire process group on Unix to ensure child processes are also killed
     pub async fn stop_process(&self, tool_call_id: &str) -> Result<(), String> {
         let mut processes = self.processes.write().await;
 
         if let Some(process) = processes.get_mut(tool_call_id) {
             if let Some(mut child) = process.child.take() {
-                // Try graceful termination first
+                // On Unix, kill the entire process group for proper child termination
                 #[cfg(unix)]
                 {
-                    if let Some(pid) = child.id() {
-                        // Send SIGTERM
+                    if let Some(pgid) = process.pgid {
+                        // Send SIGTERM to entire process group (negative PID)
+                        log::info!("[ProcessManager] Sending SIGTERM to process group {}", pgid);
+                        unsafe {
+                            libc::kill(-pgid, libc::SIGTERM);
+                        }
+
+                        // Wait for graceful shutdown
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+                        // Check if process is still running
+                        if let Ok(None) = child.try_wait() {
+                            // Force kill entire process group if still running
+                            log::info!("[ProcessManager] Force killing process group {}", pgid);
+                            unsafe {
+                                libc::kill(-pgid, libc::SIGKILL);
+                            }
+                        }
+                    } else if let Some(pid) = child.id() {
+                        // Fallback: kill single process if pgid not available
+                        log::warn!("[ProcessManager] No pgid, killing single process {}", pid);
                         unsafe {
                             libc::kill(pid as i32, libc::SIGTERM);
                         }
-                        // Wait briefly for graceful shutdown
                         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     }
                 }
 
-                // Force kill if still running
-                if let Err(e) = child.kill().await {
-                    // Process might have already exited, which is fine
-                    log::debug!("Process may have already exited: {}", e);
+                // On non-Unix, just kill the main process
+                #[cfg(not(unix))]
+                {
+                    if let Err(e) = child.kill().await {
+                        log::debug!("Process may have already exited: {}", e);
+                    }
                 }
 
                 // Wait for process to fully terminate
                 let _ = child.wait().await;
 
                 process.status = ProcessStatus::Stopped;
+                log::info!("[ProcessManager] Process {} stopped successfully", tool_call_id);
                 Ok(())
             } else {
                 Err("Process already completed or stopped".to_string())

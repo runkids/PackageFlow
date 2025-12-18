@@ -54,6 +54,17 @@ impl AnthropicProvider {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers
     }
+
+    fn fallback_models() -> Vec<ModelInfo> {
+        FALLBACK_MODELS
+            .iter()
+            .map(|&name| ModelInfo {
+                name: name.to_string(),
+                size: None,
+                modified_at: None,
+            })
+            .collect()
+    }
 }
 
 // Anthropic API types
@@ -153,8 +164,23 @@ struct AnthropicErrorDetail {
     message: String,
 }
 
-/// List of Claude models that are commonly used
-const COMMON_MODELS: &[&str] = &[
+/// Response from GET /models endpoint
+#[derive(Debug, Deserialize)]
+struct AnthropicModelsResponse {
+    data: Vec<AnthropicModelInfo>,
+}
+
+/// Model info from API
+#[derive(Debug, Deserialize)]
+struct AnthropicModelInfo {
+    id: String,
+}
+
+/// Fallback list of Claude models
+const FALLBACK_MODELS: &[&str] = &[
+    "claude-sonnet-4-20250514",
+    "claude-opus-4-20250514",
+    "claude-3-7-sonnet-20250219",
     "claude-3-5-sonnet-20241022",
     "claude-3-5-haiku-20241022",
     "claude-3-opus-20240229",
@@ -173,16 +199,45 @@ impl AIProvider for AnthropicProvider {
     }
 
     async fn list_models(&self) -> AIResult<Vec<ModelInfo>> {
-        // Anthropic doesn't have a models listing endpoint
-        // Return a static list of common Claude models
-        Ok(COMMON_MODELS
-            .iter()
-            .map(|&name| ModelInfo {
-                name: name.to_string(),
-                size: None,
-                modified_at: None,
-            })
-            .collect())
+        let url = self.api_url("/models");
+
+        let response = self.client
+            .get(&url)
+            .headers(self.auth_headers())
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                if let Ok(models_response) = serde_json::from_str::<AnthropicModelsResponse>(&body) {
+                    let models: Vec<ModelInfo> = models_response
+                        .data
+                        .into_iter()
+                        .map(|m| ModelInfo {
+                            name: m.id,
+                            size: None,
+                            modified_at: None,
+                        })
+                        .collect();
+
+                    if !models.is_empty() {
+                        return Ok(models);
+                    }
+                }
+                log::warn!("Failed to parse Anthropic models response, using fallback list");
+                Ok(Self::fallback_models())
+            }
+            Ok(resp) => {
+                log::warn!("Anthropic models API returned {}, using fallback list", resp.status());
+                Ok(Self::fallback_models())
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch Anthropic models: {}, using fallback list", e);
+                Ok(Self::fallback_models())
+            }
+        }
     }
 
     async fn chat_completion(
@@ -338,6 +393,7 @@ impl AIProvider for AnthropicProvider {
                             name: name.clone(),
                             arguments: input.to_string(),
                         },
+                        thought_signature: None, // Anthropic doesn't use thought signatures
                     });
                 }
             }
@@ -470,12 +526,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_models_returns_common_models() {
+    async fn test_list_models_returns_fallback_on_invalid_key() {
         let config = create_test_config();
-        let provider = AnthropicProvider::new(config, "test-key".to_string());
+        let provider = AnthropicProvider::new(config, "invalid-test-key".to_string());
+        // With an invalid key, it should fall back to static list
         let models = provider.list_models().await.unwrap();
 
         assert!(!models.is_empty());
+        // Should contain fallback models
+        assert!(models.iter().any(|m| m.name.contains("claude")));
+    }
+
+    #[test]
+    fn test_fallback_models() {
+        let models = AnthropicProvider::fallback_models();
+        assert!(!models.is_empty());
         assert!(models.iter().any(|m| m.name.contains("claude-3")));
+        assert!(models.iter().any(|m| m.name.contains("sonnet")));
     }
 }

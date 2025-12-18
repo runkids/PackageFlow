@@ -13,7 +13,6 @@ import {
   Users,
   Bot,
   FileText,
-  Server,
   Palette,
   Keyboard,
   ArrowLeftRight,
@@ -22,7 +21,9 @@ import {
   Wrench,
   Bell,
   Info,
+  Activity,
 } from 'lucide-react';
+import { McpIcon } from '../ui/McpIcon';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { cn } from '../../lib/utils';
 import type { SettingsSection } from '../../types/settings';
@@ -57,6 +58,9 @@ const PromptTemplatePanel = lazy(() =>
 const McpSettingsFullPanel = lazy(() =>
   import('./panels/McpSettingsFullPanel').then((m) => ({ default: m.McpSettingsFullPanel }))
 );
+const AIActivityPanel = lazy(() =>
+  import('./panels/AIActivityPanel').then((m) => ({ default: m.AIActivityPanel }))
+);
 const ToolchainPreferencesPanel = lazy(() =>
   import('./panels/ToolchainPreferencesPanel').then((m) => ({
     default: m.ToolchainPreferencesPanel,
@@ -87,7 +91,8 @@ const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
   'deploy-accounts': Users,
   'ai-providers': Bot,
   prompts: FileText,
-  mcp: Server,
+  'ai-activity': Activity,
+  mcp: McpIcon,
   appearance: Palette,
   notifications: Bell,
   shortcuts: Keyboard,
@@ -105,6 +110,7 @@ const SECTION_PANELS: Record<
   'deploy-accounts': DeployAccountsPanel,
   'ai-providers': AIProviderSettingsPanel,
   prompts: PromptTemplatePanel,
+  'ai-activity': AIActivityPanel,
   mcp: McpSettingsFullPanel,
   appearance: AppearanceSettingsPanel,
   notifications: NotificationSettingsPanel,
@@ -124,7 +130,7 @@ const SIDEBAR_CATEGORIES: { id: SettingsCategory; label: string; sections: Setti
   {
     id: 'ai',
     label: 'AI & Automation',
-    sections: ['ai-providers', 'prompts', 'mcp'],
+    sections: ['ai-providers', 'prompts', 'ai-activity', 'mcp'],
   },
   {
     id: 'preferences',

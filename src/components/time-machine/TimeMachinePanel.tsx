@@ -1,29 +1,32 @@
 // Time Machine Panel Component
 // Main panel for viewing and comparing execution snapshots
+// Feature 025 redesign: Project-level lockfile change detection
 
 import { useState, useCallback, useEffect } from 'react';
-import { Clock, GitCompare, RefreshCw, Settings2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Clock, GitCompare, RefreshCw, Settings2, ArrowLeft, Camera, AlertTriangle } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { SnapshotTimeline } from './SnapshotTimeline';
-import { SnapshotDetail } from './SnapshotDetail';
+import { SnapshotDetailPanel } from './SnapshotDetailPanel';
 import { SnapshotDiffView } from './SnapshotDiffView';
-import { useSnapshots, useSnapshot, useSnapshotDiff } from '../../hooks/useSnapshots';
-import type { SnapshotListItem } from '../../types/snapshot';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { useSnapshots, useSnapshot, useSnapshotDiff, useProjectSnapshots } from '../../hooks/useSnapshots';
+import type { SnapshotListItem, TriggerSource } from '../../types/snapshot';
 import { cn } from '../../lib/utils';
 
 interface TimeMachinePanelProps {
-  workflowId: string;
-  projectPath?: string;
+  /** Project path - required for project-level snapshots (Feature 025 redesign) */
+  projectPath: string;
   showHeader?: boolean;
   className?: string;
 }
 
 type ViewMode = 'timeline' | 'detail' | 'compare';
 
-interface SnapshotCapturedEvent {
-  workflowId: string;
-  executionId: string;
+/** Snapshot auto-captured event - Feature 025 redesign */
+interface SnapshotAutoCapturedEvent {
+  projectPath: string;
   snapshotId: string;
+  triggerSource: TriggerSource;
   status: string;
   totalDependencies: number;
   securityScore: number | null;
@@ -31,7 +34,7 @@ interface SnapshotCapturedEvent {
   errorMessage: string | null;
 }
 
-export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, className }: TimeMachinePanelProps) {
+export function TimeMachinePanel({ projectPath, showHeader = true, className }: TimeMachinePanelProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('timeline');
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
@@ -40,15 +43,32 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
     snapshotB: SnapshotListItem | null;
   }>({ snapshotA: null, snapshotB: null });
 
-  // Fetch snapshots for this workflow
+  // Dialog states for delete and prune confirmations
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pruneDialogOpen, setPruneDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isPruning, setIsPruning] = useState(false);
+
+  // Reset view when project changes
+  useEffect(() => {
+    setViewMode('timeline');
+    setSelectedSnapshotId(null);
+    setCompareMode(false);
+    setCompareSnapshots({ snapshotA: null, snapshotB: null });
+  }, [projectPath]);
+
+  // Fetch snapshots for this project - Feature 025 redesign
   const {
     snapshots,
     loading: snapshotsLoading,
     error: snapshotsError,
     refresh: refetchSnapshots,
-    deleteSnapshot,
-    pruneSnapshots,
-  } = useSnapshots({ workflowId, limit: 50 });
+    captureManualSnapshot,
+  } = useProjectSnapshots(projectPath);
+
+  // For delete and prune, use the old hook
+  const { deleteSnapshot, pruneSnapshots } = useSnapshots({ projectPath, autoLoad: false });
 
   // Fetch selected snapshot details
   const {
@@ -71,11 +91,11 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
     }
   }, [compareSnapshots.snapshotA, compareSnapshots.snapshotB, compareDiff]);
 
-  // Listen for snapshot captured events
+  // Listen for snapshot auto-captured events - Feature 025 redesign
   useEffect(() => {
-    const unlisten = listen<SnapshotCapturedEvent>('snapshot_captured', (event) => {
-      if (event.payload.workflowId === workflowId) {
-        console.log('[TimeMachine] Snapshot captured:', event.payload);
+    const unlisten = listen<SnapshotAutoCapturedEvent>('snapshot:auto-captured', (event) => {
+      if (event.payload.projectPath === projectPath) {
+        console.log('[TimeMachine] Snapshot auto-captured:', event.payload);
         refetchSnapshots();
       }
     });
@@ -83,7 +103,60 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [workflowId, refetchSnapshots]);
+  }, [projectPath, refetchSnapshots]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Don't handle if dialogs are open
+      if (deleteDialogOpen || pruneDialogOpen) {
+        return;
+      }
+
+      switch (e.key) {
+        case 'Escape':
+          // ESC: Return to timeline from detail/compare view
+          if (viewMode !== 'timeline') {
+            e.preventDefault();
+            setViewMode('timeline');
+            setSelectedSnapshotId(null);
+            setCompareSnapshots({ snapshotA: null, snapshotB: null });
+          } else if (compareMode) {
+            // Exit compare mode if in timeline
+            e.preventDefault();
+            setCompareMode(false);
+          }
+          break;
+
+        case 'r':
+        case 'R':
+          // R: Refresh snapshots
+          if (!e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            refetchSnapshots();
+          }
+          break;
+
+        case 'c':
+        case 'C':
+          // C: Toggle compare mode (only in timeline view)
+          if (!e.metaKey && !e.ctrlKey && viewMode === 'timeline') {
+            e.preventDefault();
+            setCompareMode((prev) => !prev);
+            setCompareSnapshots({ snapshotA: null, snapshotB: null });
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewMode, compareMode, deleteDialogOpen, pruneDialogOpen, refetchSnapshots]);
 
   // Handle snapshot selection
   const handleSelectSnapshot = useCallback((snapshot: SnapshotListItem) => {
@@ -106,26 +179,48 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
     setCompareMode(false);
   }, []);
 
-  // Handle delete
-  const handleDelete = useCallback(
-    async (snapshotId: string) => {
-      if (window.confirm('Are you sure you want to delete this snapshot?')) {
-        await deleteSnapshot(snapshotId);
-        if (selectedSnapshotId === snapshotId) {
-          setSelectedSnapshotId(null);
-          setViewMode('timeline');
-        }
-      }
-    },
-    [deleteSnapshot, selectedSnapshotId]
-  );
+  // Handle delete - opens confirmation dialog
+  const handleDelete = useCallback((snapshotId: string) => {
+    setPendingDeleteId(snapshotId);
+    setDeleteDialogOpen(true);
+  }, []);
 
-  // Handle prune
-  const handlePrune = useCallback(async () => {
-    if (window.confirm('Delete snapshots older than 30 days?')) {
-      await pruneSnapshots(30);
+  // Confirm delete - executes after dialog confirmation
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDeleteId) return;
+    setIsDeleting(true);
+    try {
+      await deleteSnapshot(pendingDeleteId);
+      // Refresh the list after deletion
+      await refetchSnapshots();
+      if (selectedSnapshotId === pendingDeleteId) {
+        setSelectedSnapshotId(null);
+        setViewMode('timeline');
+      }
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      setPendingDeleteId(null);
     }
-  }, [pruneSnapshots]);
+  }, [deleteSnapshot, pendingDeleteId, selectedSnapshotId, refetchSnapshots]);
+
+  // Handle prune - opens confirmation dialog
+  const handlePrune = useCallback(() => {
+    setPruneDialogOpen(true);
+  }, []);
+
+  // Confirm prune - executes after dialog confirmation
+  const confirmPrune = useCallback(async () => {
+    setIsPruning(true);
+    try {
+      await pruneSnapshots(30);
+      // Refresh the list after pruning
+      await refetchSnapshots();
+    } finally {
+      setIsPruning(false);
+      setPruneDialogOpen(false);
+    }
+  }, [pruneSnapshots, refetchSnapshots]);
 
   // Back to timeline
   const handleBackToTimeline = useCallback(() => {
@@ -140,16 +235,13 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
     setCompareSnapshots({ snapshotA: null, snapshotB: null });
   }, []);
 
-  // No project path - show message
-  if (!projectPath) {
-    return (
-      <div className={cn('flex flex-col items-center justify-center py-8', className)}>
-        <AlertCircle className="text-gray-400 mb-2" size={32} />
-        <p className="text-gray-500 text-sm">Time Machine requires a project with lockfile</p>
-        <p className="text-gray-400 text-xs mt-1">Associate this workflow with a project to enable snapshots</p>
-      </div>
-    );
-  }
+  // Handle manual snapshot capture
+  const handleCaptureSnapshot = useCallback(async () => {
+    const snapshot = await captureManualSnapshot();
+    if (snapshot) {
+      console.log('[TimeMachine] Manual snapshot captured:', snapshot.id);
+    }
+  }, [captureManualSnapshot]);
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
@@ -166,6 +258,26 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
           <div className="flex items-center gap-2">
             {viewMode === 'timeline' && (
               <>
+                {/* Manual snapshot capture button - Feature 025 */}
+                <button
+                  onClick={handleCaptureSnapshot}
+                  disabled={snapshotsLoading}
+                  className={cn(
+                    'group flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg',
+                    'transition-all duration-200',
+                    'border backdrop-blur-sm',
+                    'bg-emerald-500/10 dark:bg-emerald-500/15',
+                    'border-emerald-500/30 dark:border-emerald-500/40',
+                    'text-emerald-600 dark:text-emerald-400',
+                    'hover:bg-emerald-500/20 dark:hover:bg-emerald-500/25',
+                    'hover:border-emerald-500/50 dark:hover:border-emerald-500/60',
+                    'disabled:opacity-50'
+                  )}
+                  title="Capture manual snapshot"
+                >
+                  <Camera size={14} className="transition-transform duration-200 group-hover:scale-110" />
+                  Capture
+                </button>
                 <button
                   onClick={toggleCompareMode}
                   className={cn(
@@ -206,14 +318,12 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
               className={cn(
                 'group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
                 'transition-all duration-200',
-                'border backdrop-blur-sm',
-                'bg-cyan-500/10 dark:bg-cyan-500/15',
-                'border-cyan-500/30 dark:border-cyan-500/40',
-                'text-cyan-600 dark:text-cyan-400',
-                'hover:bg-cyan-500/20 dark:hover:bg-cyan-500/25',
-                'hover:border-cyan-500/50 dark:hover:border-cyan-500/60',
-                'hover:shadow-sm hover:shadow-cyan-500/10',
-                'focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:ring-offset-1'
+                'border',
+                'bg-muted/50 dark:bg-muted/30',
+                'border-border',
+                'text-muted-foreground',
+                'hover:bg-muted hover:text-foreground',
+                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1'
               )}
             >
               <ArrowLeft
@@ -238,6 +348,26 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
           <div className="flex items-center gap-2">
             {viewMode === 'timeline' && (
               <>
+                {/* Manual snapshot capture button */}
+                <button
+                  onClick={handleCaptureSnapshot}
+                  disabled={snapshotsLoading}
+                  className={cn(
+                    'group flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg',
+                    'transition-all duration-200',
+                    'border backdrop-blur-sm',
+                    'bg-emerald-500/10 dark:bg-emerald-500/15',
+                    'border-emerald-500/30 dark:border-emerald-500/40',
+                    'text-emerald-600 dark:text-emerald-400',
+                    'hover:bg-emerald-500/20 dark:hover:bg-emerald-500/25',
+                    'hover:border-emerald-500/50 dark:hover:border-emerald-500/60',
+                    'disabled:opacity-50'
+                  )}
+                  title="Capture manual snapshot"
+                >
+                  <Camera size={14} className="transition-transform duration-200 group-hover:scale-110" />
+                  Capture
+                </button>
                 <button
                   onClick={toggleCompareMode}
                   className={cn(
@@ -269,14 +399,12 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
                 className={cn(
                   'group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
                   'transition-all duration-200',
-                  'border backdrop-blur-sm',
-                  'bg-cyan-500/10 dark:bg-cyan-500/15',
-                  'border-cyan-500/30 dark:border-cyan-500/40',
-                  'text-cyan-600 dark:text-cyan-400',
-                  'hover:bg-cyan-500/20 dark:hover:bg-cyan-500/25',
-                  'hover:border-cyan-500/50 dark:hover:border-cyan-500/60',
-                  'hover:shadow-sm hover:shadow-cyan-500/10',
-                  'focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:ring-offset-1'
+                  'border',
+                  'bg-muted/50 dark:bg-muted/30',
+                  'border-border',
+                  'text-muted-foreground',
+                  'hover:bg-muted hover:text-foreground',
+                  'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1'
                 )}
               >
                 <ArrowLeft
@@ -293,8 +421,33 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
         {snapshotsError && (
-          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-600 dark:text-red-400">
-            Error loading snapshots: {snapshotsError}
+          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-red-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                  Failed to load snapshots
+                </p>
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {snapshotsError}
+                </p>
+              </div>
+              <button
+                onClick={() => refetchSnapshots()}
+                disabled={snapshotsLoading}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg',
+                  'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+                  'hover:bg-red-200 dark:hover:bg-red-900/60',
+                  'disabled:opacity-50'
+                )}
+              >
+                <RefreshCw size={12} className={snapshotsLoading ? 'animate-spin' : ''} />
+                Retry
+              </button>
+            </div>
           </div>
         )}
 
@@ -311,15 +464,22 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
         )}
 
         {viewMode === 'detail' && selectedSnapshot && (
-          <SnapshotDetail
+          <SnapshotDetailPanel
             snapshot={selectedSnapshot}
             dependencies={selectedDependencies ?? undefined}
             loading={detailLoading}
+            onBackToTimeline={handleBackToTimeline}
+            allSnapshots={snapshots}
+            onCompare={handleCompare}
           />
         )}
 
         {viewMode === 'compare' && diff && (
-          <SnapshotDiffView diff={diff} />
+          <SnapshotDiffView
+            diff={diff}
+            olderDate={compareSnapshots.snapshotA?.createdAt}
+            newerDate={compareSnapshots.snapshotB?.createdAt}
+          />
         )}
 
         {viewMode === 'compare' && !diff && !diffLoading && (
@@ -329,6 +489,30 @@ export function TimeMachinePanel({ workflowId, projectPath, showHeader = true, c
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        variant="destructive"
+        title="Delete Snapshot"
+        description="Are you sure you want to delete this snapshot? This action cannot be undone."
+        confirmText="Delete"
+        onConfirm={confirmDelete}
+        isLoading={isDeleting}
+      />
+
+      {/* Prune Confirmation Dialog */}
+      <ConfirmDialog
+        open={pruneDialogOpen}
+        onOpenChange={setPruneDialogOpen}
+        variant="warning"
+        title="Prune Old Snapshots"
+        description="This will delete all snapshots older than 30 days. This action cannot be undone."
+        confirmText="Prune"
+        onConfirm={confirmPrune}
+        isLoading={isPruning}
+      />
     </div>
   );
 }

@@ -27,6 +27,8 @@ import {
   Workflow,
   Zap,
 } from 'lucide-react';
+import { ToolResultFormatter } from './ToolResultFormatter';
+import { parseMCPToolResponse } from '../../types/ai-assistant';
 
 interface QuickActionResultCardProps {
   /** Tool name that was executed */
@@ -66,7 +68,14 @@ function formatResult(toolName: string, result: unknown): React.ReactNode {
     return <pre className="text-xs whitespace-pre-wrap">{String(result)}</pre>;
   }
 
-  const data = result as Record<string, unknown>;
+  const rawData = result as Record<string, unknown>;
+
+  // Handle MCPToolResponse format - extract actual data from data.data
+  // MCPToolResponse has: { data: {...}, display: {...}, meta?: {...} }
+  const data =
+    rawData.display && rawData.data && typeof rawData.data === 'object'
+      ? (rawData.data as Record<string, unknown>)
+      : rawData;
 
   // Handle common patterns
   switch (toolName) {
@@ -219,16 +228,24 @@ function formatResult(toolName: string, result: unknown): React.ReactNode {
       );
     }
 
-    default:
-      // Generic display for unknown tools
+    default: {
+      // Try to use MCPToolResponse display layer first
+      const output = JSON.stringify(result);
+      const mcpResponse = parseMCPToolResponse(output);
+
+      if (mcpResponse?.display) {
+        // Use ToolResultFormatter for MCPToolResponse format
+        return <ToolResultFormatter toolName={toolName} output={output} />;
+      }
+
+      // Legacy format - try to show message or use smart formatter
       if (data.message) {
         return <p className="text-sm">{data.message as string}</p>;
       }
-      return (
-        <pre className="text-xs whitespace-pre-wrap overflow-auto max-h-40">
-          {JSON.stringify(result, null, 2)}
-        </pre>
-      );
+
+      // Use ToolResultFormatter for smart fallback
+      return <ToolResultFormatter toolName={toolName} output={output} />;
+    }
   }
 }
 

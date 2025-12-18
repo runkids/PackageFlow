@@ -42,6 +42,17 @@ impl GeminiProvider {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers
     }
+
+    fn fallback_models() -> Vec<ModelInfo> {
+        FALLBACK_MODELS
+            .iter()
+            .map(|&name| ModelInfo {
+                name: name.to_string(),
+                size: None,
+                modified_at: None,
+            })
+            .collect()
+    }
 }
 
 // Gemini API types
@@ -71,6 +82,9 @@ struct GeminiPart {
     function_call: Option<GeminiFunctionCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     function_response: Option<GeminiFunctionResponse>,
+    /// Thought signature for preserving reasoning context (Gemini 2.5+ requirement)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thought_signature: Option<String>,
 }
 
 /// Tool definition for Gemini
@@ -140,12 +154,29 @@ struct GeminiErrorDetail {
     status: Option<String>,
 }
 
-/// List of Gemini models commonly used for chat
-const COMMON_MODELS: &[&str] = &[
+/// Response from GET /models endpoint
+#[derive(Debug, Deserialize)]
+struct GeminiModelsResponse {
+    models: Option<Vec<GeminiModelInfo>>,
+}
+
+/// Model info from API
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiModelInfo {
+    /// Resource name like "models/gemini-1.5-flash"
+    name: String,
+    /// Supported generation methods (e.g., "generateContent")
+    supported_generation_methods: Option<Vec<String>>,
+}
+
+/// Fallback static list if API call fails
+const FALLBACK_MODELS: &[&str] = &[
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
     "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
     "gemini-1.5-pro",
-    "gemini-2.0-flash-exp",
 ];
 
 /// Convert ChatMessage role to Gemini role
@@ -168,15 +199,58 @@ impl AIProvider for GeminiProvider {
     }
 
     async fn list_models(&self) -> AIResult<Vec<ModelInfo>> {
-        // Return static list of common models for simplicity
-        Ok(COMMON_MODELS
-            .iter()
-            .map(|&name| ModelInfo {
-                name: name.to_string(),
-                size: None,
-                modified_at: None,
-            })
-            .collect())
+        let url = self.api_url("/models");
+
+        let response = self.client
+            .get(&url)
+            .headers(self.content_headers())
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                if let Ok(models_response) = serde_json::from_str::<GeminiModelsResponse>(&body) {
+                    let models: Vec<ModelInfo> = models_response
+                        .models
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|m| {
+                            // Only include models that support generateContent (chat)
+                            m.supported_generation_methods
+                                .as_ref()
+                                .map(|methods| methods.iter().any(|method| method == "generateContent"))
+                                .unwrap_or(false)
+                        })
+                        .map(|m| {
+                            // Extract model ID from "models/gemini-1.5-flash" format
+                            let model_id = m.name.strip_prefix("models/").unwrap_or(&m.name);
+                            ModelInfo {
+                                name: model_id.to_string(),
+                                size: None,
+                                modified_at: None,
+                            }
+                        })
+                        .collect();
+
+                    if !models.is_empty() {
+                        return Ok(models);
+                    }
+                }
+                // Fallback to static list if parsing failed or no models returned
+                log::warn!("Failed to parse Gemini models response, using fallback list");
+                Ok(Self::fallback_models())
+            }
+            Ok(resp) => {
+                log::warn!("Gemini models API returned {}, using fallback list", resp.status());
+                Ok(Self::fallback_models())
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch Gemini models: {}, using fallback list", e);
+                Ok(Self::fallback_models())
+            }
+        }
     }
 
     async fn chat_completion(
@@ -210,6 +284,7 @@ impl AIProvider for GeminiProvider {
                             name: func_name,
                             response: serde_json::json!({ "result": msg.content.unwrap_or_default() }),
                         }),
+                        thought_signature: None,
                     }],
                 });
             } else if msg.role == "assistant" && msg.tool_calls.is_some() {
@@ -223,11 +298,12 @@ impl AIProvider for GeminiProvider {
                             text: Some(text.clone()),
                             function_call: None,
                             function_response: None,
+                            thought_signature: None,
                         });
                     }
                 }
 
-                // Add function calls
+                // Add function calls with thought_signature if present
                 for tc in msg.tool_calls.unwrap_or_default() {
                     let args: serde_json::Value = serde_json::from_str(&tc.function.arguments)
                         .unwrap_or(serde_json::json!({}));
@@ -238,6 +314,8 @@ impl AIProvider for GeminiProvider {
                             args,
                         }),
                         function_response: None,
+                        // Include thought_signature for Gemini 2.5+ models
+                        thought_signature: tc.thought_signature,
                     });
                 }
 
@@ -262,6 +340,7 @@ impl AIProvider for GeminiProvider {
                         text: Some(content),
                         function_call: None,
                         function_response: None,
+                        thought_signature: None,
                     }],
                 });
             }
@@ -369,6 +448,8 @@ impl AIProvider for GeminiProvider {
                             name: fc.name.clone(),
                             arguments: fc.args.to_string(),
                         },
+                        // Capture thought_signature for Gemini 2.5+ models
+                        thought_signature: part.thought_signature.clone(),
                     });
                 }
             }
@@ -480,12 +561,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_models_returns_common_models() {
+    async fn test_list_models_returns_fallback_on_invalid_key() {
         let config = create_test_config();
-        let provider = GeminiProvider::new(config, "test-key".to_string());
+        let provider = GeminiProvider::new(config, "invalid-test-key".to_string());
+        // With an invalid key, it should fall back to static list
         let models = provider.list_models().await.unwrap();
 
         assert!(!models.is_empty());
+        // Should contain fallback models
+        assert!(models.iter().any(|m| m.name == "gemini-1.5-flash" || m.name == "gemini-2.5-flash"));
+    }
+
+    #[test]
+    fn test_fallback_models() {
+        let models = GeminiProvider::fallback_models();
+        assert!(!models.is_empty());
+        assert!(models.iter().any(|m| m.name == "gemini-2.5-flash"));
         assert!(models.iter().any(|m| m.name == "gemini-1.5-flash"));
     }
 

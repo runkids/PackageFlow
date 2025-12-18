@@ -334,6 +334,7 @@ impl AIProvider for OllamaProvider {
                         name: tc.function.name,
                         arguments: tc.function.arguments.to_string(),
                     },
+                    thought_signature: None, // Ollama doesn't use thought signatures
                 }
             }).collect()
         });

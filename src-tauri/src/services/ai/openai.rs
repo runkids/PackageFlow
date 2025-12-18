@@ -47,6 +47,38 @@ impl OpenAIProvider {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers
     }
+
+    fn fallback_models() -> Vec<ModelInfo> {
+        FALLBACK_MODELS
+            .iter()
+            .map(|&name| ModelInfo {
+                name: name.to_string(),
+                size: None,
+                modified_at: None,
+            })
+            .collect()
+    }
+
+    /// Check if a model ID is suitable for chat completions
+    fn is_chat_model(model_id: &str) -> bool {
+        // Include GPT models (gpt-4, gpt-4o, gpt-4.1, etc.)
+        // Include o-series reasoning models (o1, o3)
+        // Exclude embedding, whisper, dall-e, tts, etc.
+        let id = model_id.to_lowercase();
+
+        // Exclude non-chat models
+        if id.contains("embed") || id.contains("whisper") ||
+           id.contains("dall-e") || id.contains("tts") ||
+           id.contains("davinci") || id.contains("curie") ||
+           id.contains("babbage") || id.contains("ada") ||
+           id.contains("moderation") || id.contains("text-") {
+            return false;
+        }
+
+        // Include chat models
+        id.starts_with("gpt-") || id.starts_with("o1") || id.starts_with("o3") ||
+        id.starts_with("chatgpt")
+    }
 }
 
 // OpenAI API types
@@ -142,13 +174,32 @@ struct OpenAIErrorDetail {
     code: Option<String>,
 }
 
-/// List of GPT models that are commonly used for chat
-const COMMON_MODELS: &[&str] = &[
+/// Response from GET /models endpoint
+#[derive(Debug, Deserialize)]
+struct OpenAIModelsResponse {
+    data: Vec<OpenAIModelInfo>,
+}
+
+/// Model info from API
+#[derive(Debug, Deserialize)]
+struct OpenAIModelInfo {
+    id: String,
+}
+
+/// Fallback list of GPT models for chat
+const FALLBACK_MODELS: &[&str] = &[
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4.1-nano",
     "gpt-4o",
     "gpt-4o-mini",
     "gpt-4-turbo",
     "gpt-4",
     "gpt-3.5-turbo",
+    "o1",
+    "o1-mini",
+    "o1-preview",
+    "o3-mini",
 ];
 
 #[async_trait]
@@ -162,17 +213,49 @@ impl AIProvider for OpenAIProvider {
     }
 
     async fn list_models(&self) -> AIResult<Vec<ModelInfo>> {
-        // For OpenAI, we return a static list of common chat models
-        // The full /models endpoint returns many models (including embeddings, etc.)
-        // which isn't useful for chat completion
-        Ok(COMMON_MODELS
-            .iter()
-            .map(|&name| ModelInfo {
-                name: name.to_string(),
-                size: None,
-                modified_at: None,
-            })
-            .collect())
+        let url = self.api_url("/models");
+
+        let response = self.client
+            .get(&url)
+            .headers(self.auth_headers())
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                if let Ok(models_response) = serde_json::from_str::<OpenAIModelsResponse>(&body) {
+                    let mut models: Vec<ModelInfo> = models_response
+                        .data
+                        .into_iter()
+                        .filter(|m| Self::is_chat_model(&m.id))
+                        .map(|m| ModelInfo {
+                            name: m.id,
+                            size: None,
+                            modified_at: None,
+                        })
+                        .collect();
+
+                    // Sort by name for better UX
+                    models.sort_by(|a, b| a.name.cmp(&b.name));
+
+                    if !models.is_empty() {
+                        return Ok(models);
+                    }
+                }
+                log::warn!("Failed to parse OpenAI models response, using fallback list");
+                Ok(Self::fallback_models())
+            }
+            Ok(resp) => {
+                log::warn!("OpenAI models API returned {}, using fallback list", resp.status());
+                Ok(Self::fallback_models())
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch OpenAI models: {}, using fallback list", e);
+                Ok(Self::fallback_models())
+            }
+        }
     }
 
     async fn chat_completion(
@@ -305,6 +388,7 @@ impl AIProvider for OpenAIProvider {
                         name: tc.function.name,
                         arguments: tc.function.arguments,
                     },
+                    thought_signature: None, // OpenAI doesn't use thought signatures
                 }).collect()
             });
 
@@ -394,12 +478,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_models_returns_common_models() {
+    async fn test_list_models_returns_fallback_on_invalid_key() {
         let config = create_test_config();
-        let provider = OpenAIProvider::new(config, "test-key".to_string());
+        let provider = OpenAIProvider::new(config, "invalid-test-key".to_string());
+        // With an invalid key, it should fall back to static list
         let models = provider.list_models().await.unwrap();
 
         assert!(!models.is_empty());
-        assert!(models.iter().any(|m| m.name == "gpt-4o-mini"));
+        // Should contain fallback models
+        assert!(models.iter().any(|m| m.name == "gpt-4o-mini" || m.name == "gpt-4o"));
+    }
+
+    #[test]
+    fn test_fallback_models() {
+        let models = OpenAIProvider::fallback_models();
+        assert!(!models.is_empty());
+        assert!(models.iter().any(|m| m.name == "gpt-4o"));
+    }
+
+    #[test]
+    fn test_is_chat_model() {
+        // Should include chat models
+        assert!(OpenAIProvider::is_chat_model("gpt-4o"));
+        assert!(OpenAIProvider::is_chat_model("gpt-4o-mini"));
+        assert!(OpenAIProvider::is_chat_model("gpt-4-turbo"));
+        assert!(OpenAIProvider::is_chat_model("o1"));
+        assert!(OpenAIProvider::is_chat_model("o1-mini"));
+        assert!(OpenAIProvider::is_chat_model("o3-mini"));
+
+        // Should exclude non-chat models
+        assert!(!OpenAIProvider::is_chat_model("text-embedding-ada-002"));
+        assert!(!OpenAIProvider::is_chat_model("whisper-1"));
+        assert!(!OpenAIProvider::is_chat_model("dall-e-3"));
+        assert!(!OpenAIProvider::is_chat_model("tts-1"));
     }
 }

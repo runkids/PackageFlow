@@ -9,6 +9,9 @@ export type LockfileType = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 export type SnapshotStatus = 'capturing' | 'completed' | 'failed';
 
+/** Trigger source for snapshots - Feature 025 redesign */
+export type TriggerSource = 'lockfile_change' | 'manual';
+
 export type DependencyChangeType = 'added' | 'removed' | 'updated' | 'unchanged';
 
 export type InsightType =
@@ -44,10 +47,10 @@ export interface SnapshotDependency {
 
 export interface ExecutionSnapshot {
   id: string;
-  workflowId: string;
-  executionId: string;
   projectPath: string;
   status: SnapshotStatus;
+  /** Trigger source: lockfile_change (auto) or manual - Feature 025 */
+  triggerSource: TriggerSource;
   lockfileType?: LockfileType;
   lockfileHash?: string;
   dependencyTreeHash?: string;
@@ -59,16 +62,16 @@ export interface ExecutionSnapshot {
   postinstallCount: number;
   storagePath?: string;
   compressedSize?: number;
-  executionDurationMs?: number;
   errorMessage?: string;
   createdAt: string;
 }
 
 export interface SnapshotListItem {
   id: string;
-  workflowId: string;
-  executionId: string;
+  projectPath: string;
   status: SnapshotStatus;
+  /** Trigger source: lockfile_change (auto) or manual - Feature 025 */
+  triggerSource: TriggerSource;
   lockfileType?: LockfileType;
   totalDependencies: number;
   securityScore?: number;
@@ -173,18 +176,10 @@ export interface DiffSummary {
   securityScoreChange?: number;
 }
 
-export interface TimingDiff {
-  oldDurationMs?: number;
-  newDurationMs?: number;
-  diffMs?: number;
-  diffPercentage?: number;
-}
-
 export interface SnapshotDiff {
   snapshotAId: string;
   snapshotBId: string;
   summary: DiffSummary;
-  timing: TimingDiff;
   dependencyChanges: DependencyChange[];
   postinstallChanges: PostinstallChange[];
   lockfileTypeChanged: boolean;
@@ -197,19 +192,38 @@ export interface SnapshotDiff {
 // =========================================================================
 
 export interface CreateSnapshotRequest {
-  workflowId: string;
-  executionId: string;
   projectPath: string;
+  triggerSource?: TriggerSource;
 }
 
 export interface SnapshotFilter {
-  workflowId?: string;
   projectPath?: string;
+  triggerSource?: TriggerSource;
   status?: SnapshotStatus;
   fromDate?: string;
   toDate?: string;
   limit?: number;
   offset?: number;
+}
+
+// =========================================================================
+// Time Machine Settings Types - Feature 025
+// =========================================================================
+
+/** Lockfile watcher state for a project */
+export interface LockfileState {
+  projectPath: string;
+  lockfileType?: LockfileType;
+  lockfileHash: string;
+  lastSnapshotId?: string;
+  updatedAt: string;
+}
+
+/** Time Machine global settings */
+export interface TimeMachineSettings {
+  autoWatchEnabled: boolean;
+  debounceMs: number;
+  updatedAt: string;
 }
 
 export interface SnapshotStorageStats {
@@ -248,9 +262,9 @@ export interface DependencyHealth {
 // =========================================================================
 
 export interface SnapshotCapturedEvent {
-  workflowId: string;
-  executionId: string;
   snapshotId: string;
+  projectPath: string;
+  triggerSource: TriggerSource;
   status: 'completed' | 'failed';
   totalDependencies: number;
   securityScore: number | null;
@@ -396,7 +410,7 @@ export interface ReplayMismatch {
 
 export interface ReplayPreparation {
   snapshotId: string;
-  workflowId: string;
+  projectPath: string;
   readyToReplay: boolean;
   hasMismatch: boolean;
   mismatchDetails?: ReplayMismatch;
@@ -451,7 +465,7 @@ export interface SnapshotSearchCriteria {
   packageName?: string;
   packageVersion?: string;
   projectPath?: string;
-  workflowId?: string;
+  triggerSource?: TriggerSource;
   fromDate?: string;
   toDate?: string;
   hasPostinstall?: boolean;
@@ -486,8 +500,8 @@ export interface SearchResponse {
 
 export interface TimelineEntry {
   snapshotId: string;
-  workflowId: string;
   projectPath: string;
+  triggerSource: TriggerSource;
   createdAt: string;
   status: SnapshotStatus;
   totalDependencies: number;

@@ -1,7 +1,7 @@
 /**
  * MCP Settings Full Panel
  * Redesigned with improved UX, better visual hierarchy, and reduced cognitive load
- * Features: Server status, tabbed content (Overview/Permissions/Actions/Activity/Setup)
+ * Features: Server status, tabbed content (Overview/Permissions/Actions/Setup)
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -9,9 +9,6 @@ import {
   Server,
   AlertCircle,
   FileText,
-  Trash2,
-  RefreshCw,
-  Clock,
   Settings2,
   Terminal,
   Eye,
@@ -19,7 +16,6 @@ import {
   Shield,
   Wrench,
   Zap,
-  History,
   FolderGit2,
   GitBranch,
   Workflow,
@@ -33,11 +29,11 @@ import {
   Sparkles,
   Lock,
 } from 'lucide-react';
+import { McpIcon } from '../../ui/McpIcon';
 import {
   mcpAPI,
   type McpServerInfo,
   type McpServerConfig,
-  type McpLogsResponse,
   type McpHealthCheckResult,
   type McpToolInfo,
 } from '../../../lib/tauri-api';
@@ -53,7 +49,6 @@ import {
   PermissionQuickModeSelector,
   QuickSetupSection,
   MCPActionSettings,
-  MCPActionHistory,
 } from '../mcp';
 import {
   type PermissionQuickMode,
@@ -908,257 +903,6 @@ const SetupTab: React.FC<SetupTabProps> = ({ serverInfo, tools }) => {
 };
 
 // ============================================================================
-// Activity Tab Content (Combined History + Logs)
-// ============================================================================
-
-interface ActivityTabProps {
-  logsResponse: McpLogsResponse | null;
-  isLoadingLogs: boolean;
-  onLoadLogs: () => void;
-  onClearLogs: () => void;
-}
-
-/** Status configuration for log entries */
-const LOG_STATUS_CONFIG = {
-  success: {
-    dotColor: 'bg-emerald-500',
-    bgColor: 'bg-emerald-500/5 dark:bg-emerald-500/10',
-    borderColor: 'border-emerald-500/20',
-    label: 'Success',
-  },
-  permission_denied: {
-    dotColor: 'bg-amber-500',
-    bgColor: 'bg-amber-500/5 dark:bg-amber-500/10',
-    borderColor: 'border-amber-500/20',
-    label: 'Denied',
-  },
-  error: {
-    dotColor: 'bg-red-500',
-    bgColor: 'bg-red-500/5 dark:bg-red-500/10',
-    borderColor: 'border-red-500/20',
-    label: 'Error',
-  },
-} as const;
-
-/** Server Logs Panel Component */
-const ServerLogsPanel: React.FC<{
-  logsResponse: McpLogsResponse | null;
-  isLoadingLogs: boolean;
-  onLoadLogs: () => void;
-  onClearLogs: () => void;
-}> = ({ logsResponse, isLoadingLogs, onLoadLogs, onClearLogs }) => {
-  const formatTimestamp = (timestamp: string): string => {
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-    } catch {
-      return timestamp;
-    }
-  };
-
-  const formatDuration = (ms: number): string => {
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(2)}s`;
-  };
-
-  return (
-    <div className="space-y-3">
-      {/* Header with actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">Server Logs</span>
-          {logsResponse && (
-            <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded bg-muted">
-              {logsResponse.entries.length} / {logsResponse.totalCount}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={onLoadLogs}
-            disabled={isLoadingLogs}
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium',
-              'bg-primary/10 text-primary border border-primary/20',
-              'hover:bg-primary/20 transition-colors',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
-          >
-            <RefreshCw className={cn('w-3 h-3', isLoadingLogs && 'animate-spin')} />
-            <span>{isLoadingLogs ? 'Loading...' : 'Refresh'}</span>
-          </button>
-          <button
-            onClick={onClearLogs}
-            disabled={!logsResponse || logsResponse.entries.length === 0}
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium',
-              'text-destructive border border-destructive/20',
-              'hover:bg-destructive/10 transition-colors',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
-          >
-            <Trash2 className="w-3 h-3" />
-            <span>Clear</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Logs container */}
-      <div className="border border-border rounded-lg overflow-hidden bg-card/30">
-        {!logsResponse ? (
-          <div className="py-12 text-center">
-            <FileText className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Click Refresh to load server logs</p>
-          </div>
-        ) : logsResponse.entries.length === 0 ? (
-          <div className="py-12 text-center">
-            <FileText className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No logs recorded yet</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">
-              Logs will appear here when MCP tools are executed
-            </p>
-          </div>
-        ) : (
-          <div className="max-h-[350px] overflow-y-auto">
-            {logsResponse.entries.map((entry, idx) => {
-              const statusConfig =
-                LOG_STATUS_CONFIG[entry.result as keyof typeof LOG_STATUS_CONFIG] ||
-                LOG_STATUS_CONFIG.error;
-              return (
-                <div
-                  key={idx}
-                  className={cn(
-                    'px-3 py-2.5 border-b border-border/50 last:border-b-0',
-                    'transition-colors hover:bg-muted/30',
-                    statusConfig.bgColor
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    {/* Left: Status indicator + Tool name */}
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <span
-                        className={cn('w-2 h-2 rounded-full flex-shrink-0', statusConfig.dotColor)}
-                        title={statusConfig.label}
-                      />
-                      <code className="text-xs font-mono font-medium text-foreground truncate">
-                        {entry.tool}
-                      </code>
-                    </div>
-
-                    {/* Right: Duration + Timestamp */}
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        {formatDuration(entry.durationMs)}
-                      </span>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {formatTimestamp(entry.timestamp)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Error message if present */}
-                  {entry.error && (
-                    <div className="mt-1.5 ml-4.5 pl-2 border-l-2 border-destructive/30">
-                      <p className="text-xs text-destructive truncate" title={entry.error}>
-                        {entry.error}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Summary stats */}
-      {logsResponse && logsResponse.entries.length > 0 && (
-        <div className="flex items-center justify-center gap-4 py-2 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <span className={cn('w-1.5 h-1.5 rounded-full', LOG_STATUS_CONFIG.success.dotColor)} />
-            {logsResponse.entries.filter((e) => e.result === 'success').length} success
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                'w-1.5 h-1.5 rounded-full',
-                LOG_STATUS_CONFIG.permission_denied.dotColor
-              )}
-            />
-            {logsResponse.entries.filter((e) => e.result === 'permission_denied').length} denied
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className={cn('w-1.5 h-1.5 rounded-full', LOG_STATUS_CONFIG.error.dotColor)} />
-            {logsResponse.entries.filter((e) => e.result === 'error').length} errors
-          </span>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const ActivityTab: React.FC<ActivityTabProps> = ({
-  logsResponse,
-  isLoadingLogs,
-  onLoadLogs,
-  onClearLogs,
-}) => {
-  const [hasLoadedLogs, setHasLoadedLogs] = useState(false);
-
-  // Handle tab change - auto-load logs when logs tab is first selected
-  const handleTabChange = useCallback(
-    (value: string) => {
-      if (value === 'logs' && !hasLoadedLogs && !isLoadingLogs) {
-        setHasLoadedLogs(true);
-        onLoadLogs();
-      }
-    },
-    [hasLoadedLogs, isLoadingLogs, onLoadLogs]
-  );
-
-  return (
-    <div className="space-y-4">
-      {/* Nested tabs for History and Logs */}
-      <Tabs defaultValue="history" className="space-y-4" onValueChange={handleTabChange}>
-        <TabsList className="w-fit">
-          <TabsTrigger value="history" className="flex items-center gap-1.5">
-            <History className="w-3.5 h-3.5" />
-            <span>Action History</span>
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="flex items-center gap-1.5">
-            <FileText className="w-3.5 h-3.5" />
-            <span>Server Logs</span>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="history">
-          <MCPActionHistory maxHeight="400px" />
-        </TabsContent>
-
-        <TabsContent value="logs">
-          <ServerLogsPanel
-            logsResponse={logsResponse}
-            isLoadingLogs={isLoadingLogs}
-            onLoadLogs={onLoadLogs}
-            onClearLogs={onClearLogs}
-          />
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-};
-
-// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -1177,10 +921,6 @@ export function McpSettingsFullPanel() {
   const [permissionMatrix, setPermissionMatrix] = useState<ToolPermissionMatrixType>({});
   const [quickMode, setQuickMode] = useState<PermissionQuickMode>('read_only');
   const [devServerMode, setDevServerMode] = useState<DevServerMode>('mcp_managed');
-
-  // Logs state
-  const [logsResponse, setLogsResponse] = useState<McpLogsResponse | null>(null);
-  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
   // Health check state
   const [healthCheckStatus, setHealthCheckStatus] = useState<HealthCheckStatus>('idle');
@@ -1398,29 +1138,6 @@ export function McpSettingsFullPanel() {
     [config, isSaving, permissionMatrix]
   );
 
-  // Load logs
-  const handleLoadLogs = useCallback(async () => {
-    setIsLoadingLogs(true);
-    try {
-      const response = await mcpAPI.getLogs(50);
-      setLogsResponse(response);
-    } catch (err) {
-      console.error('Failed to load logs:', err);
-    } finally {
-      setIsLoadingLogs(false);
-    }
-  }, []);
-
-  // Clear logs
-  const handleClearLogs = useCallback(async () => {
-    try {
-      await mcpAPI.clearLogs();
-      setLogsResponse((prev) => (prev ? { ...prev, entries: [], totalCount: 0 } : null));
-    } catch (err) {
-      console.error('Failed to clear logs:', err);
-    }
-  }, []);
-
   // Test MCP connection
   const handleTestConnection = useCallback(async () => {
     setHealthCheckStatus('testing');
@@ -1458,7 +1175,7 @@ export function McpSettingsFullPanel() {
   const renderHeader = () => (
     <div>
       <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-        <Server className="w-5 h-5" />
+        <McpIcon className="w-5 h-5" />
         MCP Integration
       </h2>
       <p className="text-sm text-muted-foreground mt-1">
@@ -1519,7 +1236,7 @@ export function McpSettingsFullPanel() {
         <Tabs defaultValue="overview" className="flex flex-col flex-1 min-h-0">
           {/* Sticky TabsList */}
           <div className="shrink-0 pb-4">
-            <TabsList className="w-full grid grid-cols-5">
+            <TabsList className="w-full grid grid-cols-4">
               <TabsTrigger value="overview" className="flex items-center gap-1.5">
                 <Settings2 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Overview</span>
@@ -1531,10 +1248,6 @@ export function McpSettingsFullPanel() {
               <TabsTrigger value="actions" className="flex items-center gap-1.5">
                 <Zap className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Actions</span>
-              </TabsTrigger>
-              <TabsTrigger value="activity" className="flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Activity</span>
               </TabsTrigger>
               <TabsTrigger value="setup" className="flex items-center gap-1.5">
                 <Terminal className="w-3.5 h-3.5" />
@@ -1569,15 +1282,6 @@ export function McpSettingsFullPanel() {
               <MCPActionSettings />
             </TabsContent>
 
-            <TabsContent value="activity" className="mt-0">
-              <ActivityTab
-                logsResponse={logsResponse}
-                isLoadingLogs={isLoadingLogs}
-                onLoadLogs={handleLoadLogs}
-                onClearLogs={handleClearLogs}
-              />
-            </TabsContent>
-
             <TabsContent value="setup" className="mt-0">
               <SetupTab serverInfo={serverInfo} tools={tools} />
             </TabsContent>
@@ -1594,7 +1298,7 @@ export function McpSettingsFullPanel() {
 
           <div className="relative">
             <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gradient-to-br from-blue-500/10 via-amber-500/10 to-rose-500/10 flex items-center justify-center">
-              <Server className="w-6 h-6 text-muted-foreground" />
+              <McpIcon className="w-6 h-6 text-muted-foreground" />
             </div>
             <p className="text-sm text-muted-foreground">
               Enable the MCP server to configure permissions and set up AI assistant integrations.

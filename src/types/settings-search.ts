@@ -81,6 +81,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchIndexItem[] = [
     ],
   },
   {
+    id: 'ai-activity',
+    category: 'ai',
+    title: 'AI Activity',
+    description: 'View AI assistant and MCP tool execution history',
+    keywords: ['activity', 'history', 'log', 'timeline', 'execution', 'mcp', 'tool', 'ai'],
+  },
+  {
     id: 'mcp',
     category: 'ai',
     title: 'MCP Integration',
@@ -153,6 +160,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
       'deploy-accounts',
       'ai-providers',
       'prompts',
+      'ai-activity',
       'mcp',
       'appearance',
       'notifications',
@@ -170,7 +178,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
   {
     id: 'ai',
     label: 'AI & Automation',
-    sections: ['ai-providers', 'prompts', 'mcp'],
+    sections: ['ai-providers', 'prompts', 'ai-activity', 'mcp'],
   },
   {
     id: 'preferences',

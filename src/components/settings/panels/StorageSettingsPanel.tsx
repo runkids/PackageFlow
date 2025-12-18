@@ -23,6 +23,8 @@ import {
   Trash2,
   RefreshCw,
   Archive,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { settingsAPI, snapshotAPI } from '../../../lib/tauri-api';
@@ -32,7 +34,7 @@ import { Skeleton } from '../../ui/Skeleton';
 import { cn } from '../../../lib/utils';
 import { useSettings } from '../../../contexts/SettingsContext';
 import type { StorePathInfo } from '../../../types/tauri';
-import type { SnapshotStorageStats } from '../../../types/snapshot';
+import type { SnapshotStorageStats, TimeMachineSettings } from '../../../types/snapshot';
 
 export const StorageSettingsPanel: React.FC = () => {
   const { formatPath } = useSettings();
@@ -43,10 +45,15 @@ export const StorageSettingsPanel: React.FC = () => {
   // Time Machine storage state
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStorageStats | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
-  const [keepPerWorkflow, setKeepPerWorkflow] = useState(10);
+  const [keepPerProject, setKeepPerProject] = useState(10);
   const [isPruning, setIsPruning] = useState(false);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
   const [pruneResult, setPruneResult] = useState<{ count: number; type: string } | null>(null);
+
+  // Time Machine auto-watch settings
+  const [timeMachineSettings, setTimeMachineSettings] = useState<TimeMachineSettings | null>(null);
+  const [isLoadingTMSettings, setIsLoadingTMSettings] = useState(true);
+  const [isSavingTMSettings, setIsSavingTMSettings] = useState(false);
 
   // Formatted storage path for display (respects Compact Paths setting)
   const displayPath = useMemo(() => {
@@ -94,12 +101,67 @@ export const StorageSettingsPanel: React.FC = () => {
     loadSnapshotStats();
   }, [loadSnapshotStats]);
 
+  // Load Time Machine settings
+  const loadTimeMachineSettings = useCallback(async () => {
+    try {
+      setIsLoadingTMSettings(true);
+      const settings = await snapshotAPI.getTimeMachineSettings();
+      setTimeMachineSettings(settings);
+    } catch (error) {
+      console.error('Failed to load Time Machine settings:', error);
+    } finally {
+      setIsLoadingTMSettings(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTimeMachineSettings();
+  }, [loadTimeMachineSettings]);
+
+  // Handle toggle auto-watch
+  const handleToggleAutoWatch = useCallback(async () => {
+    if (!timeMachineSettings) return;
+    try {
+      setIsSavingTMSettings(true);
+      const newSettings: TimeMachineSettings = {
+        ...timeMachineSettings,
+        autoWatchEnabled: !timeMachineSettings.autoWatchEnabled,
+        updatedAt: new Date().toISOString(),
+      };
+      await snapshotAPI.updateTimeMachineSettings(newSettings);
+      setTimeMachineSettings(newSettings);
+    } catch (error) {
+      console.error('Failed to update auto-watch setting:', error);
+    } finally {
+      setIsSavingTMSettings(false);
+    }
+  }, [timeMachineSettings]);
+
+  // Handle update debounce
+  const handleUpdateDebounce = useCallback(async (newDebounceMs: number) => {
+    if (!timeMachineSettings) return;
+    try {
+      setIsSavingTMSettings(true);
+      const newSettings: TimeMachineSettings = {
+        ...timeMachineSettings,
+        debounceMs: newDebounceMs,
+        updatedAt: new Date().toISOString(),
+      };
+      await snapshotAPI.updateTimeMachineSettings(newSettings);
+      setTimeMachineSettings(newSettings);
+    } catch (error) {
+      console.error('Failed to update debounce setting:', error);
+    } finally {
+      setIsSavingTMSettings(false);
+    }
+  }, [timeMachineSettings]);
+
   // Handle prune snapshots
   const handlePruneSnapshots = useCallback(async () => {
     try {
       setIsPruning(true);
       setPruneResult(null);
-      const deleted = await snapshotAPI.pruneSnapshots(keepPerWorkflow);
+      const deleted = await snapshotAPI.pruneSnapshots(keepPerProject);
       setPruneResult({ count: deleted, type: 'prune' });
       // Reload stats after pruning
       await loadSnapshotStats();
@@ -108,7 +170,7 @@ export const StorageSettingsPanel: React.FC = () => {
     } finally {
       setIsPruning(false);
     }
-  }, [keepPerWorkflow, loadSnapshotStats]);
+  }, [keepPerProject, loadSnapshotStats]);
 
   // Handle cleanup orphaned storage
   const handleCleanupOrphaned = useCallback(async () => {
@@ -282,10 +344,88 @@ export const StorageSettingsPanel: React.FC = () => {
           description="Manage execution snapshots and storage usage"
           icon={<Clock className="w-4 h-4" />}
         >
-          {isLoadingStats ? (
+          {isLoadingStats || isLoadingTMSettings ? (
             <TimeMachineStorageSkeleton />
           ) : (
             <div className="space-y-4">
+              {/* Auto-Watch Setting */}
+              {timeMachineSettings && (
+                <div
+                  className={cn(
+                    'p-4 rounded-lg',
+                    'bg-gradient-to-r from-cyan-500/5 via-transparent to-transparent',
+                    'border border-cyan-500/20'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        'p-2.5 rounded-lg',
+                        timeMachineSettings.autoWatchEnabled
+                          ? 'bg-cyan-500/10 text-cyan-500'
+                          : 'bg-muted text-muted-foreground'
+                      )}>
+                        {timeMachineSettings.autoWatchEnabled ? (
+                          <Eye className="w-5 h-5" />
+                        ) : (
+                          <EyeOff className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-foreground">
+                          Auto-Watch Lockfiles
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {timeMachineSettings.autoWatchEnabled
+                            ? 'Automatically capture snapshots when lockfiles change'
+                            : 'Manual snapshot capture only'}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant={timeMachineSettings.autoWatchEnabled ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={handleToggleAutoWatch}
+                      disabled={isSavingTMSettings}
+                      className={cn(
+                        timeMachineSettings.autoWatchEnabled && 'bg-cyan-500 hover:bg-cyan-600'
+                      )}
+                    >
+                      {isSavingTMSettings ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : timeMachineSettings.autoWatchEnabled ? (
+                        'Enabled'
+                      ) : (
+                        'Disabled'
+                      )}
+                    </Button>
+                  </div>
+                  {/* Debounce setting (only shown when auto-watch is enabled) */}
+                  {timeMachineSettings.autoWatchEnabled && (
+                    <div className="mt-3 pt-3 border-t border-cyan-500/20 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs text-muted-foreground">Debounce delay</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="500"
+                          max="10000"
+                          step="500"
+                          value={timeMachineSettings.debounceMs}
+                          onChange={(e) => {
+                            const value = Math.max(500, Math.min(10000, parseInt(e.target.value) || 2000));
+                            handleUpdateDebounce(value);
+                          }}
+                          className="w-20 px-2 py-1 text-sm text-center rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                        <span className="text-xs text-muted-foreground">ms</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Storage Stats */}
               {snapshotStats && (
                 <div
@@ -328,7 +468,7 @@ export const StorageSettingsPanel: React.FC = () => {
                   <div>
                     <h4 className="text-sm font-medium text-foreground">Snapshot Retention</h4>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Keep the most recent snapshots per workflow
+                      Keep the most recent snapshots per project
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -337,11 +477,11 @@ export const StorageSettingsPanel: React.FC = () => {
                       type="number"
                       min="1"
                       max="100"
-                      value={keepPerWorkflow}
-                      onChange={(e) => setKeepPerWorkflow(Math.max(1, parseInt(e.target.value) || 1))}
+                      value={keepPerProject}
+                      onChange={(e) => setKeepPerProject(Math.max(1, parseInt(e.target.value) || 1))}
                       className="w-16 px-2 py-1 text-sm text-center rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     />
-                    <span className="text-xs text-muted-foreground">per workflow</span>
+                    <span className="text-xs text-muted-foreground">per project</span>
                   </div>
                 </div>
                 <Button

@@ -27,6 +27,8 @@ import {
   Copy,
   Check,
   Bot, // Feature 024: AI Assistant icon
+  History, // Feature 025: Time Machine icon
+  MessageSquare, // Feature: Project AI Chats tab
 } from 'lucide-react';
 import type { Project, WorkspacePackage, PackageManager, MonorepoTool } from '../../types/project';
 import type { Workflow } from '../../types/workflow';
@@ -69,8 +71,10 @@ import { ToolchainConflictDialog } from './ToolchainConflictDialog';
 import type { ToolchainStrategy } from '../../types/toolchain';
 import { Button } from '../ui/Button';
 import { EmptyState } from '../ui/EmptyState';
+import { TimeMachinePanel } from '../time-machine';
+import { ProjectAIChatsTab } from './ProjectAIChatsTab';
 
-type TabType = 'scripts' | 'workspaces' | 'workflows' | 'builds' | 'security' | 'git' | 'deploy';
+type TabType = 'scripts' | 'workspaces' | 'workflows' | 'builds' | 'security' | 'git' | 'deploy' | 'snapshots' | 'ai-chats';
 
 interface ProjectExplorerProps {
   project: Project | null;
@@ -101,6 +105,8 @@ interface ProjectExplorerProps {
   onOpenSettings?: (section?: SettingsSection) => void;
   /** Feature 024: Open AI Assistant with this project's context */
   onOpenAIAssistant?: (projectPath: string) => void;
+  /** Feature: Open AI conversation in AI Assistant page */
+  onOpenAIConversation?: (conversationId: string, projectPath: string) => void;
 }
 
 const packageManagerLabels: Record<PackageManager, string> = {
@@ -149,6 +155,7 @@ export function ProjectExplorer({
   onOpenSettings,
   onNavigateToWorkflow,
   onOpenAIAssistant,
+  onOpenAIConversation,
 }: ProjectExplorerProps) {
   const [activeTab, setActiveTab] = useState<TabType>('scripts');
   const [hasIpaFiles, setHasIpaFiles] = useState(false);
@@ -835,6 +842,19 @@ export function ProjectExplorer({
               </span>
             )}
           </Button>
+          {/* Feature 025: Time Machine Tab */}
+          <Button
+            variant="ghost"
+            onClick={() => setActiveTab('snapshots')}
+            className={`gap-1.5 h-auto px-4 py-2 rounded-none border-b-2 ${
+              activeTab === 'snapshots'
+                ? 'text-blue-400 border-blue-400'
+                : 'text-muted-foreground border-transparent hover:text-foreground'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            Snapshots
+          </Button>
           <Button
             variant="ghost"
             onClick={() => setActiveTab('deploy')}
@@ -846,6 +866,19 @@ export function ProjectExplorer({
           >
             <Rocket className="w-4 h-4" />
             Deploy
+          </Button>
+          {/* Feature: Project AI Chats Tab */}
+          <Button
+            variant="ghost"
+            onClick={() => setActiveTab('ai-chats')}
+            className={`gap-1.5 h-auto px-4 py-2 rounded-none border-b-2 ${
+              activeTab === 'ai-chats'
+                ? 'text-purple-400 border-purple-400'
+                : 'text-muted-foreground border-transparent hover:text-foreground'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            AI Chats
           </Button>
         </div>
       </div>
@@ -948,6 +981,17 @@ export function ProjectExplorer({
             projectId={project.id}
             projectName={project.name}
             projectPath={project.path}
+          />
+        )}
+        {/* Feature 025: Time Machine Tab Content */}
+        {activeTab === 'snapshots' && (
+          <TimeMachinePanel projectPath={project.path} className="-m-4" />
+        )}
+        {/* Feature: Project AI Chats Tab Content */}
+        {activeTab === 'ai-chats' && onOpenAIConversation && (
+          <ProjectAIChatsTab
+            projectPath={project.path}
+            onOpenConversation={onOpenAIConversation}
           />
         )}
       </div>

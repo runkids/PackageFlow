@@ -568,7 +568,7 @@ function ShortcutRow({ shortcut, searchQuery, highlightText, isFocused }: Shortc
   );
 }
 
-/** Floating button component */
+/** Floating button component with drag support */
 interface FloatingButtonProps {
   onClick: () => void;
   position?: 'bottom-left' | 'bottom-right';
@@ -576,29 +576,192 @@ interface FloatingButtonProps {
   bottomOffset?: number;
 }
 
+const FLOATING_BUTTON_POSITION_KEY = 'keyboard-shortcuts-floating-button-position';
+
+interface ButtonPosition {
+  x: number;
+  y: number;
+}
+
 export function KeyboardShortcutsFloatingButton({
   onClick,
   position = 'bottom-right',
   bottomOffset = 64,
 }: FloatingButtonProps) {
+  const [buttonPosition, setButtonPosition] = React.useState<ButtonPosition | null>(null);
+  const isDragging = React.useRef(false);
+  const dragStart = React.useRef({ x: 0, y: 0 });
+  const hasMoved = React.useRef(false);
+
+  // Load position from localStorage on mount
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(FLOATING_BUTTON_POSITION_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as ButtonPosition;
+        // Validate position is within viewport
+        const maxX = window.innerWidth - 48;
+        const maxY = window.innerHeight - 48;
+        setButtonPosition({
+          x: Math.max(0, Math.min(parsed.x, maxX)),
+          y: Math.max(0, Math.min(parsed.y, maxY)),
+        });
+      }
+    } catch {
+      // Invalid stored position, use default
+    }
+  }, []);
+
+  // Handle window resize to keep button in viewport
+  React.useEffect(() => {
+    if (!buttonPosition) return;
+
+    const handleResize = () => {
+      setButtonPosition((prev) => {
+        if (!prev) return prev;
+        const maxX = window.innerWidth - 48;
+        const maxY = window.innerHeight - 48;
+        return {
+          x: Math.max(0, Math.min(prev.x, maxX)),
+          y: Math.max(0, Math.min(prev.y, maxY)),
+        };
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [buttonPosition]);
+
+  // Drag handlers
+  const handleMouseDown = React.useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return; // Only left click
+
+      // If no saved position, calculate current position from default (bottom-right)
+      let currentX = buttonPosition?.x ?? 0;
+      let currentY = buttonPosition?.y ?? 0;
+
+      if (!buttonPosition) {
+        // Calculate actual position from bottom/right positioning
+        const buttonSize = 44; // p-2.5 = ~44px
+        if (position === 'bottom-left') {
+          currentX = 16;
+          currentY = window.innerHeight - bottomOffset - buttonSize;
+        } else {
+          currentX = window.innerWidth - 16 - buttonSize;
+          currentY = window.innerHeight - bottomOffset - buttonSize;
+        }
+        // Set initial position so subsequent moves work correctly
+        setButtonPosition({ x: currentX, y: currentY });
+      }
+
+      isDragging.current = true;
+      hasMoved.current = false;
+      dragStart.current = {
+        x: e.clientX - currentX,
+        y: e.clientY - currentY,
+      };
+      e.preventDefault();
+    },
+    [buttonPosition, position, bottomOffset]
+  );
+
+  const handleMouseMove = React.useCallback(
+    (e: MouseEvent) => {
+      if (!isDragging.current) return;
+
+      const newX = e.clientX - dragStart.current.x;
+      const newY = e.clientY - dragStart.current.y;
+
+      // Check if moved more than 5 pixels to differentiate from click
+      if (!hasMoved.current) {
+        const deltaX = Math.abs(e.clientX - (dragStart.current.x + (buttonPosition?.x ?? 0)));
+        const deltaY = Math.abs(e.clientY - (dragStart.current.y + (buttonPosition?.y ?? 0)));
+        if (deltaX > 5 || deltaY > 5) {
+          hasMoved.current = true;
+        }
+      }
+
+      // Constrain to viewport
+      const maxX = window.innerWidth - 48;
+      const maxY = window.innerHeight - 48;
+
+      setButtonPosition({
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY)),
+      });
+    },
+    [buttonPosition]
+  );
+
+  const handleMouseUp = React.useCallback(() => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+
+    // Save position to localStorage
+    if (buttonPosition && hasMoved.current) {
+      try {
+        localStorage.setItem(FLOATING_BUTTON_POSITION_KEY, JSON.stringify(buttonPosition));
+      } catch {
+        // Storage full or unavailable
+      }
+    }
+  }, [buttonPosition]);
+
+  // Attach global mouse events for dragging
+  React.useEffect(() => {
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [handleMouseMove, handleMouseUp]);
+
+  // Handle button click - only trigger if not dragged
+  const handleButtonClick = React.useCallback(() => {
+    if (!hasMoved.current) {
+      onClick();
+    }
+  }, [onClick]);
+
+  // Handle double click to reset position
+  const handleDoubleClick = React.useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setButtonPosition(null);
+      localStorage.removeItem(FLOATING_BUTTON_POSITION_KEY);
+    },
+    []
+  );
+
+  // Calculate default position (bottom-right)
+  const defaultStyle =
+    position === 'bottom-left'
+      ? { left: 16, bottom: bottomOffset }
+      : { right: 16, bottom: bottomOffset };
+
   return (
     <button
-      onClick={onClick}
-      style={{ bottom: bottomOffset }}
+      onClick={handleButtonClick}
+      onDoubleClick={handleDoubleClick}
+      onMouseDown={handleMouseDown}
+      style={buttonPosition ? { left: buttonPosition.x, top: buttonPosition.y } : defaultStyle}
       className={cn(
         'fixed z-40 p-2.5',
         'bg-card/80 hover:bg-card',
         'border border-border/50 hover:border-cyan-500/30',
         'rounded-xl shadow-lg hover:shadow-xl',
-        'transition-all duration-200 group',
+        'transition-shadow duration-200 group',
         'opacity-80 hover:opacity-100',
         'focus:outline-none focus:ring-2 focus:ring-cyan-500/50',
-        position === 'bottom-left' ? 'left-4' : 'right-4 translate-y-9'
+        'select-none cursor-grab active:cursor-grabbing'
       )}
-      title="Show keyboard shortcuts (Cmd+/)"
+      title="Keyboard shortcuts (Cmd+/) | Drag to move | Double-click to reset"
       aria-label="Show keyboard shortcuts"
     >
-      <Keyboard className="w-4 h-4 text-muted-foreground group-hover:text-cyan-400 transition-colors" />
+      <Keyboard className="w-4 h-4 text-muted-foreground group-hover:text-cyan-400 transition-colors pointer-events-none" />
     </button>
   );
 }

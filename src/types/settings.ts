@@ -10,6 +10,7 @@ export type SettingsSection =
   | 'shortcuts'
   | 'ai-providers'
   | 'prompts'
+  | 'ai-activity'
   | 'mcp'
   | 'toolchain'
   | 'data'

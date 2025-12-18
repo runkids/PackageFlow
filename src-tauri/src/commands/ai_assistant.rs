@@ -255,6 +255,7 @@ pub async fn ai_assistant_send_message(
                                 name: tc.name.clone(),
                                 arguments: tc.arguments.to_string(),
                             },
+                            thought_signature: tc.thought_signature.clone(),
                         }
                     }).collect();
                     chat_messages.push(ChatMessage::assistant_with_tool_calls(
@@ -590,6 +591,7 @@ pub async fn ai_assistant_send_message(
                                             arguments: serde_json::from_str(&tc.function.arguments)
                                                 .unwrap_or(serde_json::json!({})),
                                             status: if success { ToolCallStatus::Completed } else { ToolCallStatus::Failed },
+                                            thought_signature: tc.thought_signature.clone(),
                                         }
                                     })
                                     .collect();
@@ -1011,6 +1013,7 @@ pub async fn ai_assistant_approve_tool_call(
                     } else {
                         ToolCallStatus::Failed
                     },
+                    thought_signature: tc.thought_signature.clone(),
                 }
             } else {
                 tc.clone()
@@ -1229,6 +1232,7 @@ pub async fn ai_assistant_deny_tool_call(
                     name: tc.name.clone(),
                     arguments: tc.arguments.clone(),
                     status: ToolCallStatus::Denied,
+                    thought_signature: tc.thought_signature.clone(),
                 }
             } else {
                 tc.clone()
@@ -1335,6 +1339,7 @@ pub async fn ai_assistant_continue_after_tool(
                                 name: tc.name.clone(),
                                 arguments: tc.arguments.to_string(),
                             },
+                            thought_signature: tc.thought_signature.clone(),
                         }
                     }).collect();
                     chat_messages.push(ChatMessage::assistant_with_tool_calls(
@@ -1824,6 +1829,65 @@ pub async fn ai_assistant_get_suggestions(
                 requires_project: Some(true), // Feature 024
             });
 
+            // Time Machine actions - Only show if project has a lockfile
+            let has_lockfile = project_path_obj.join("pnpm-lock.yaml").exists()
+                || project_path_obj.join("package-lock.json").exists()
+                || project_path_obj.join("yarn.lock").exists()
+                || project_path_obj.join("bun.lockb").exists();
+
+            if has_lockfile {
+                // Time Machine - Capture snapshot
+                suggestions.push(SuggestedAction {
+                    id: "capture-snapshot".to_string(),
+                    label: "Capture Snapshot".to_string(),
+                    prompt: "Capture a snapshot of the current dependency state".to_string(),
+                    icon: Some("Camera".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("project".to_string()),
+                    mode: QuickActionMode::Instant,
+                    tool: Some(QuickActionTool {
+                        name: "capture_snapshot".to_string(),
+                        args: serde_json::json!({ "project_path": path }),
+                    }),
+                    summary_hint: None,
+                    requires_project: Some(true),
+                });
+
+                // Time Machine - View snapshots
+                suggestions.push(SuggestedAction {
+                    id: "view-snapshots".to_string(),
+                    label: "View Snapshots".to_string(),
+                    prompt: "Show Time Machine snapshots for this project".to_string(),
+                    icon: Some("History".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("project".to_string()),
+                    mode: QuickActionMode::Smart,
+                    tool: Some(QuickActionTool {
+                        name: "list_snapshots".to_string(),
+                        args: serde_json::json!({ "project_path": path }),
+                    }),
+                    summary_hint: Some("Summarize the snapshot history. Highlight any significant dependency changes.".to_string()),
+                    requires_project: Some(true),
+                });
+
+                // Time Machine - Check integrity
+                suggestions.push(SuggestedAction {
+                    id: "check-integrity".to_string(),
+                    label: "Check Integrity".to_string(),
+                    prompt: "Check dependency integrity against the latest snapshot".to_string(),
+                    icon: Some("ShieldCheck".to_string()),
+                    variant: Some("default".to_string()),
+                    category: Some("security".to_string()),
+                    mode: QuickActionMode::Smart,
+                    tool: Some(QuickActionTool {
+                        name: "check_dependency_integrity".to_string(),
+                        args: serde_json::json!({ "project_path": path }),
+                    }),
+                    summary_hint: Some("Analyze the integrity check results. Report any mismatches or potential security concerns.".to_string()),
+                    requires_project: Some(true),
+                });
+            }
+
             // File search - AI mode (needs user input)
             suggestions.push(SuggestedAction {
                 id: "search-files".to_string(),
@@ -2149,6 +2213,7 @@ pub async fn ai_assistant_execute_tool_direct(
         name: tool_name.clone(),
         arguments: tool_args,
         status: ToolCallStatus::Pending,
+        thought_signature: None,
     };
 
     // Validate the tool exists
@@ -2189,6 +2254,7 @@ fn convert_chat_tool_call_to_internal(chat_tool_call: &ChatToolCall) -> ToolCall
         name: chat_tool_call.function.name.clone(),
         arguments,
         status: ToolCallStatus::Pending,
+        thought_signature: chat_tool_call.thought_signature.clone(),
     }
 }
 
@@ -2506,4 +2572,153 @@ pub async fn ai_assistant_summarize_context(
         recent_tool_calls: prepared.recent_tool_calls,
         messages_summarized: messages.len(),
     })
+}
+
+// ============================================================================
+// Background Process Commands
+// Feature: AI Assistant Background Script Execution
+// ============================================================================
+
+use crate::services::ai_assistant::background_process::{
+    BACKGROUND_PROCESS_MANAGER, BackgroundProcessInfo,
+};
+
+/// Request to spawn a background process
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnBackgroundProcessRequest {
+    /// Display name for the process
+    pub name: String,
+    /// Command to execute
+    pub command: String,
+    /// Command arguments
+    pub args: Vec<String>,
+    /// Working directory
+    pub cwd: String,
+    /// Project path for context
+    pub project_path: String,
+    /// Project name for display (reserved for future use)
+    #[allow(dead_code)]
+    pub project_name: Option<String>,
+    /// Associated conversation ID
+    pub conversation_id: Option<String>,
+    /// Associated message ID
+    pub message_id: Option<String>,
+    /// Environment variables to add (reserved for future use)
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+}
+
+/// Response for spawn background process
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnBackgroundProcessResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Response for stop background process
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StopBackgroundProcessResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Spawn a background process for AI Assistant
+/// This allows running long-running scripts (like dev servers) without blocking the conversation
+#[tauri::command]
+pub async fn ai_assistant_spawn_background_process(
+    app: AppHandle,
+    request: SpawnBackgroundProcessRequest,
+) -> Result<SpawnBackgroundProcessResponse, String> {
+    log::info!(
+        "[AI Background] Spawning process: {} {} in {}",
+        request.command,
+        request.args.join(" "),
+        request.cwd
+    );
+
+    // Ensure app handle is set for event emission
+    BACKGROUND_PROCESS_MANAGER.set_app_handle(app).await;
+
+    // Start the background process
+    match BACKGROUND_PROCESS_MANAGER
+        .start_process(
+            request.name,
+            request.command,
+            request.args,
+            request.cwd,
+            request.project_path,
+            None, // success_pattern - not used from frontend currently
+            None, // success_timeout_ms
+            request.conversation_id,
+            request.message_id, // Using message_id as tool_call_id
+        )
+        .await
+    {
+        Ok(info) => {
+            log::info!("[AI Background] Process spawned with ID: {}", info.id);
+            Ok(SpawnBackgroundProcessResponse {
+                success: true,
+                process_id: Some(info.id),
+                error: None,
+            })
+        }
+        Err(e) => {
+            log::error!("[AI Background] Failed to spawn process: {}", e);
+            Ok(SpawnBackgroundProcessResponse {
+                success: false,
+                process_id: None,
+                error: Some(e),
+            })
+        }
+    }
+}
+
+/// Stop a background process
+#[tauri::command]
+pub async fn ai_assistant_stop_background_process(
+    process_id: String,
+) -> Result<StopBackgroundProcessResponse, String> {
+    log::info!("[AI Background] Stopping process: {}", process_id);
+
+    match BACKGROUND_PROCESS_MANAGER.stop_process(&process_id, false).await {
+        Ok(()) => {
+            log::info!("[AI Background] Process {} stopped", process_id);
+            Ok(StopBackgroundProcessResponse {
+                success: true,
+                error: None,
+            })
+        }
+        Err(e) => {
+            log::error!("[AI Background] Failed to stop process {}: {}", process_id, e);
+            Ok(StopBackgroundProcessResponse {
+                success: false,
+                error: Some(e),
+            })
+        }
+    }
+}
+
+/// List all background processes
+#[tauri::command]
+pub async fn ai_assistant_list_background_processes() -> Result<Vec<BackgroundProcessInfo>, String> {
+    Ok(BACKGROUND_PROCESS_MANAGER.list_processes().await)
+}
+
+/// Get a specific background process by ID
+#[tauri::command]
+pub async fn ai_assistant_get_background_process(
+    process_id: String,
+) -> Result<Option<BackgroundProcessInfo>, String> {
+    match BACKGROUND_PROCESS_MANAGER.get_process(&process_id).await {
+        Ok(info) => Ok(Some(info)),
+        Err(_) => Ok(None),
+    }
 }

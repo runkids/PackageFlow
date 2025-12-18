@@ -336,9 +336,9 @@ Use markdown formatting."#.to_string(),
         Self {
             id: "builtin-code-review".to_string(),
             name: "Code Review".to_string(),
-            description: Some("Review code changes and provide suggestions".to_string()),
+            description: Some("Review code changes with comprehensive security analysis".to_string()),
             category: TemplateCategory::CodeReview,
-            template: r#"You are a senior developer conducting a code review.
+            template: r#"You are a senior security-focused developer conducting a comprehensive code review.
 Review the following code changes and provide constructive feedback.
 
 File: {file_path}
@@ -346,14 +346,72 @@ File: {file_path}
 Changes:
 {diff}
 
-Provide feedback on:
-1. Code quality and readability
-2. Potential bugs or issues
-3. Performance considerations
-4. Security concerns if any
-5. Suggestions for improvement
+## Review Categories
 
-Be constructive and specific. Use markdown formatting."#.to_string(),
+### 1. Code Quality & Readability
+- Code structure and organization
+- Naming conventions and clarity
+- Error handling completeness
+- Code duplication or redundancy
+
+### 2. Potential Bugs
+- Logic errors or edge cases
+- Null/undefined handling
+- Race conditions or async issues
+- Resource leaks (memory, file handles, connections)
+
+### 3. Performance
+- Algorithm efficiency
+- Unnecessary iterations or computations
+- Memory usage concerns
+- Database query optimization
+
+### 4. Security Analysis (CRITICAL)
+Check thoroughly for these vulnerabilities:
+
+**Injection Attacks:**
+- SQL Injection: Unsanitized input in SQL queries
+- Command Injection: Shell command execution with user input
+- XSS (Cross-Site Scripting): Unescaped user content in HTML/JS output
+- LDAP/XPath Injection: Unsanitized input in directory queries
+- Template Injection: User input in template engines
+
+**Authentication & Authorization:**
+- Hardcoded credentials, API keys, passwords, or secrets
+- Weak authentication mechanisms
+- Missing or improper authorization checks
+- Session management issues
+- JWT validation flaws
+
+**Data Exposure:**
+- Sensitive data in logs (passwords, tokens, PII)
+- Secrets committed to code (API keys, connection strings)
+- Information leakage in error messages
+- Unencrypted sensitive data storage or transmission
+
+**Other Security Issues:**
+- Path Traversal: File operations with user-controlled paths
+- SSRF (Server-Side Request Forgery): User-controlled URLs in server requests
+- CSRF (Cross-Site Request Forgery): Missing CSRF protection
+- Insecure Deserialization: Deserializing untrusted data
+- XML External Entity (XXE): XML parsing without proper configuration
+- Improper input validation or sanitization
+- Insecure cryptographic practices
+- Missing security headers or CORS misconfiguration
+
+### 5. Suggestions for Improvement
+- Better approaches or patterns
+- Modern language features to utilize
+- Refactoring opportunities
+
+## Output Format
+For each finding, specify:
+- **Severity**: Critical / High / Medium / Low / Info
+- **Location**: Line number or code section
+- **Issue**: Clear description of the problem
+- **Recommendation**: How to fix it
+
+Prioritize security issues. Be specific and actionable. Use markdown formatting."#.to_string(),
             output_format: None,
             is_default: true,
             is_builtin: true,
@@ -565,6 +623,9 @@ pub struct ChatToolCall {
     pub tool_type: String,
     /// Function call details
     pub function: ChatFunctionCall,
+    /// Thought signature for Gemini 2.5+ models (preserves reasoning context)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// Function call within a tool call

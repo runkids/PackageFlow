@@ -2661,7 +2661,6 @@ import type {
   SnapshotWithDependencies,
   SnapshotFilter,
   SnapshotDiff,
-  CreateSnapshotRequest,
   SnapshotStorageStats,
   SecurityInsight,
   InsightSummary,
@@ -2679,6 +2678,7 @@ import type {
   TimelineEntry,
   SecurityAuditReport,
   ExportFormat,
+  TimeMachineSettings,
 } from '../types/snapshot';
 
 export const snapshotAPI = {
@@ -2695,25 +2695,22 @@ export const snapshotAPI = {
   getSnapshotWithDependencies: (snapshotId: string): Promise<SnapshotWithDependencies | null> =>
     invoke<SnapshotWithDependencies | null>('get_snapshot_with_dependencies', { snapshotId }),
 
-  /** Get the latest snapshot for a workflow */
-  getLatestSnapshot: (workflowId: string): Promise<ExecutionSnapshot | null> =>
-    invoke<ExecutionSnapshot | null>('get_latest_snapshot', { workflowId }),
+  /** Get the latest snapshot for a project - Feature 025 redesign */
+  getLatestSnapshot: (projectPath: string): Promise<ExecutionSnapshot | null> =>
+    invoke<ExecutionSnapshot | null>('get_latest_snapshot', { projectPath }),
 
   /** Delete a snapshot */
   deleteSnapshot: (snapshotId: string): Promise<boolean> =>
     invoke<boolean>('delete_snapshot', { snapshotId }),
 
-  /** Prune old snapshots (keep last N per workflow) */
-  pruneSnapshots: (keepPerWorkflow?: number): Promise<number> =>
-    invoke<number>('prune_snapshots', { keepPerWorkflow }),
+  /** Prune old snapshots (keep snapshots newer than N days) - Feature 025 redesign */
+  pruneSnapshots: (keepDays?: number): Promise<number> =>
+    invoke<number>('prune_snapshots', { keepDays }),
 
   // Snapshot capture
-  /** Capture a new snapshot for a workflow execution */
-  captureSnapshot: (
-    request: CreateSnapshotRequest,
-    durationMs?: number
-  ): Promise<ExecutionSnapshot> =>
-    invoke<ExecutionSnapshot>('capture_snapshot', { request, durationMs }),
+  /** Capture a manual snapshot for a project - Feature 025 redesign */
+  captureManualSnapshot: (projectPath: string): Promise<ExecutionSnapshot> =>
+    invoke<ExecutionSnapshot>('capture_manual_snapshot', { projectPath }),
 
   // Snapshot comparison
   /** Compare two snapshots */
@@ -2724,9 +2721,9 @@ export const snapshotAPI = {
   getDiffAiPrompt: (snapshotAId: string, snapshotBId: string): Promise<string> =>
     invoke<string>('get_diff_ai_prompt', { snapshotAId, snapshotBId }),
 
-  /** Get comparison candidates (latest N snapshots for a workflow) */
-  getComparisonCandidates: (workflowId: string, limit?: number): Promise<ExecutionSnapshot[]> =>
-    invoke<ExecutionSnapshot[]>('get_comparison_candidates', { workflowId, limit }),
+  /** Get comparison candidates (latest N snapshots for a project) - Feature 025 redesign */
+  getComparisonCandidates: (projectPath: string, limit?: number): Promise<ExecutionSnapshot[]> =>
+    invoke<ExecutionSnapshot[]>('get_comparison_candidates', { projectPath, limit }),
 
   // Security insights
   /** Get security insights for a snapshot */
@@ -2763,12 +2760,9 @@ export const snapshotAPI = {
     invoke<PatternAnalysisResult>('analyze_diff_patterns', { snapshotAId, snapshotBId }),
 
   // Dependency Integrity (US3 - Security Guardian)
-  /** Check dependency integrity against reference snapshot */
-  checkDependencyIntegrity: (
-    projectPath: string,
-    workflowId?: string
-  ): Promise<IntegrityCheckResult> =>
-    invoke<IntegrityCheckResult>('check_dependency_integrity', { projectPath, workflowId }),
+  /** Check dependency integrity against reference snapshot - Feature 025: removed workflowId */
+  checkDependencyIntegrity: (projectPath: string): Promise<IntegrityCheckResult> =>
+    invoke<IntegrityCheckResult>('check_dependency_integrity', { projectPath }),
 
   /** Check a package name for potential typosquatting */
   checkTyposquatting: (packageName: string): Promise<TyposquattingCheckResult> =>
@@ -2808,6 +2802,32 @@ export const snapshotAPI = {
   /** Export a security report in the specified format */
   exportSecurityReport: (report: SecurityAuditReport, format: ExportFormat): Promise<string> =>
     invoke<string>('export_security_report', { report, format }),
+
+  // Time Machine Settings (Feature 025)
+  /** Get Time Machine global settings */
+  getTimeMachineSettings: (): Promise<TimeMachineSettings> =>
+    invoke<TimeMachineSettings>('get_time_machine_settings'),
+
+  /** Update Time Machine global settings */
+  updateTimeMachineSettings: (settings: TimeMachineSettings): Promise<void> =>
+    invoke<void>('update_time_machine_settings', { settings }),
+
+  // Lockfile Watcher (Feature 025)
+  /** Start watching lockfile for a project */
+  startLockfileWatching: (projectPath: string): Promise<void> =>
+    invoke<void>('start_lockfile_watching', { projectPath }),
+
+  /** Stop watching lockfile for a project */
+  stopLockfileWatching: (projectPath: string): Promise<void> =>
+    invoke<void>('stop_lockfile_watching', { projectPath }),
+
+  /** Check if lockfile is being watched for a project */
+  getLockfileWatcherStatus: (projectPath: string): Promise<boolean> =>
+    invoke<boolean>('get_lockfile_watcher_status', { projectPath }),
+
+  /** Get list of projects with active lockfile watchers */
+  getLockfileWatchedProjects: (): Promise<string[]> =>
+    invoke<string[]>('get_lockfile_watched_projects'),
 };
 
 export const tauriAPI = {

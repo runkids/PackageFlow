@@ -103,12 +103,18 @@ export function useConversations(options: UseConversationsOptions = {}): UseConv
     [projectPath, initialLimit, offset]
   );
 
-  // Auto-fetch on mount
+  // Auto-fetch on mount and when projectPath changes
   useEffect(() => {
     if (autoFetch) {
+      // Clear existing conversations immediately when projectPath changes
+      setConversations([]);
+      setTotal(0);
+      setHasMore(false);
+      setOffset(0);
       fetchConversations(true);
     }
-  }, [autoFetch]); // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFetch, projectPath]); // Re-fetch when projectPath changes
 
   // Create a new conversation
   const createConversation = useCallback(

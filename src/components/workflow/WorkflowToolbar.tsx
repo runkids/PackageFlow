@@ -19,7 +19,6 @@ import {
   Workflow,
   Terminal,
   History,
-  Clock,
   MoreHorizontal,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -53,10 +52,6 @@ interface WorkflowToolbarProps {
   // Execution history
   onHistory?: () => void;
   historyCount?: number;
-  // Time Machine (Feature 025)
-  onTimeMachine?: () => void;
-  snapshotCount?: number;
-  hasProject?: boolean;
 }
 
 /**
@@ -129,9 +124,6 @@ export function WorkflowToolbar({
   hasIncomingWebhook,
   onHistory,
   historyCount,
-  onTimeMachine,
-  snapshotCount,
-  hasProject,
 }: WorkflowToolbarProps) {
   const hasAnyWebhook = hasOutgoingWebhook || hasIncomingWebhook;
   const isRunning = executionStatus === 'running';
@@ -286,22 +278,6 @@ export function WorkflowToolbar({
               </DropdownItem>
             )}
 
-            {/* Time Machine (Feature 025) */}
-            {onTimeMachine && hasProject && (
-              <>
-                {onHistory && <DropdownSeparator />}
-                <DropdownItem onClick={onTimeMachine} icon={<Clock className="w-4 h-4" />}>
-                  <span className="flex items-center gap-2">
-                    Time Machine
-                    {snapshotCount !== undefined && snapshotCount > 0 && (
-                      <span className="px-1.5 py-0.5 text-xs bg-cyan-500/20 text-cyan-500 rounded-full">
-                        {snapshotCount}
-                      </span>
-                    )}
-                  </span>
-                </DropdownItem>
-              </>
-            )}
           </Dropdown>
         )}
 

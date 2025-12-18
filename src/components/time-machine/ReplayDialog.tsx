@@ -26,7 +26,8 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onViewDiff?: () => void;
-  onExecuteWorkflow?: (workflowId: string) => void;
+  /** Callback when replay is successful - Feature 025: changed to project-based */
+  onReplaySuccess?: (projectPath: string) => void;
 }
 
 export function ReplayDialog({
@@ -34,7 +35,7 @@ export function ReplayDialog({
   isOpen,
   onClose,
   onViewDiff,
-  onExecuteWorkflow,
+  onReplaySuccess,
 }: Props) {
   const {
     isPreparing,
@@ -73,9 +74,9 @@ export function ReplayDialog({
     setSelectedOption(option);
     const result = await executeReplay(snapshotId, option);
 
-    if (result?.success && result.isVerifiedReplay && preparation && onExecuteWorkflow) {
-      // Ready for verified replay - trigger workflow execution
-      onExecuteWorkflow(preparation.workflowId);
+    if (result?.success && result.isVerifiedReplay && preparation && onReplaySuccess) {
+      // Replay successful - Feature 025: use projectPath instead of workflowId
+      onReplaySuccess(preparation.projectPath);
       onClose();
     }
   };
@@ -223,15 +224,15 @@ export function ReplayDialog({
               {result.success && (
                 <button
                   onClick={() => {
-                    if (preparation && onExecuteWorkflow) {
-                      onExecuteWorkflow(preparation.workflowId);
+                    if (preparation && onReplaySuccess) {
+                      onReplaySuccess(preparation.projectPath);
                     }
                     onClose();
                   }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-medium transition-colors"
                 >
-                  <Play className="h-4 w-4" />
-                  Execute Workflow
+                  <CheckCircle className="h-4 w-4" />
+                  Close
                 </button>
               )}
             </div>

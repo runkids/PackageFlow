@@ -20,8 +20,9 @@ export function useSecurityGuardian() {
     lastCheckedAt: null,
   });
 
+  // Feature 025: Removed workflowId parameter - now project-level only
   const checkIntegrity = useCallback(
-    async (projectPath: string, workflowId?: string): Promise<IntegrityCheckResult | null> => {
+    async (projectPath: string): Promise<IntegrityCheckResult | null> => {
       setState((prev) => ({
         ...prev,
         isChecking: true,
@@ -29,7 +30,7 @@ export function useSecurityGuardian() {
       }));
 
       try {
-        const result = await snapshotAPI.checkDependencyIntegrity(projectPath, workflowId);
+        const result = await snapshotAPI.checkDependencyIntegrity(projectPath);
         setState({
           isChecking: false,
           lastResult: result,

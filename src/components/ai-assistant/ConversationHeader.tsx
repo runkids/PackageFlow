@@ -434,6 +434,7 @@ export function ConversationHeader({
           currentProjectPath={effectiveProjectPath ?? undefined}
           onProjectChange={onProjectContextChange ?? (() => {})}
           disabled={isGenerating}
+          isConversationBound={!!conversation?.projectPath}
         />
       </div>
 

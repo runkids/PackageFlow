@@ -331,6 +331,7 @@ impl AIProvider for LMStudioProvider {
                         name: tc.function.name,
                         arguments: tc.function.arguments,
                     },
+                    thought_signature: None, // LM Studio doesn't use thought signatures
                 }).collect()
             });
 

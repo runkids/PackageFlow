@@ -274,6 +274,9 @@ pub struct ToolCall {
     pub arguments: serde_json::Value,
     /// Call status
     pub status: ToolCallStatus,
+    /// Thought signature for Gemini 2.5+ models (preserves reasoning context)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 impl ToolCall {
@@ -284,6 +287,18 @@ impl ToolCall {
             name,
             arguments,
             status: ToolCallStatus::Pending,
+            thought_signature: None,
+        }
+    }
+
+    /// Create a new pending tool call with thought signature (for Gemini 2.5+)
+    pub fn new_with_signature(name: String, arguments: serde_json::Value, thought_signature: Option<String>) -> Self {
+        Self {
+            id: format!("tc_{}", Uuid::new_v4().to_string().replace("-", "")[..12].to_string()),
+            name,
+            arguments,
+            status: ToolCallStatus::Pending,
+            thought_signature,
         }
     }
 }

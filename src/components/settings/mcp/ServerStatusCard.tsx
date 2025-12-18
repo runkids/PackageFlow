@@ -6,8 +6,9 @@
  */
 
 import React from 'react';
-import { Server, CheckCircle2, XCircle, Loader2, Activity } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Activity } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { McpIcon } from '../../ui/McpIcon';
 import { Toggle } from '../../ui/Toggle';
 import { useSettings } from '../../../contexts/SettingsContext';
 import type { McpHealthCheckResult } from '../../../lib/tauri-api';
@@ -86,31 +87,10 @@ export const ServerStatusCard: React.FC<ServerStatusCardProps> = ({
               : 'bg-muted'
           )}
         >
-          {isEnabled ? (
-            <svg
-              className="w-6 h-6"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="url(#rew-gradient)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <defs>
-                <linearGradient id="rew-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#3b82f6" />
-                  <stop offset="50%" stopColor="#f59e0b" />
-                  <stop offset="100%" stopColor="#f43f5e" />
-                </linearGradient>
-              </defs>
-              <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
-              <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
-              <line x1="6" x2="6.01" y1="6" y2="6" />
-              <line x1="6" x2="6.01" y1="18" y2="18" />
-            </svg>
-          ) : (
-            <Server className="w-6 h-6 text-muted-foreground" />
-          )}
+          <McpIcon
+            className={cn('w-6 h-6', !isEnabled && 'text-muted-foreground')}
+            rewGradient={isEnabled}
+          />
         </div>
 
         {/* Info */}

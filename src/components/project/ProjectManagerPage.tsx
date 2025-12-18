@@ -36,6 +36,8 @@ interface ProjectManagerPageProps {
   onOpenSettings?: (section?: SettingsSection) => void;
   /** Feature 024: Callback to open AI Assistant with project context */
   onOpenAIAssistant?: (projectPath: string) => void;
+  /** Feature: Open AI conversation in AI Assistant page */
+  onOpenAIConversation?: (conversationId: string, projectPath: string) => void;
 }
 
 export function ProjectManagerPage({
@@ -46,6 +48,7 @@ export function ProjectManagerPage({
   onToggleTerminalCollapse,
   onOpenSettings,
   onOpenAIAssistant,
+  onOpenAIConversation,
 }: ProjectManagerPageProps) {
   // Project state
   const {
@@ -528,6 +531,7 @@ export function ProjectManagerPage({
             onOpenSettings={onOpenSettings}
             onNavigateToWorkflow={onNavigateToWorkflow}
             onOpenAIAssistant={onOpenAIAssistant}
+            onOpenAIConversation={onOpenAIConversation}
           />
           {/* PTY Terminal Portal container - Terminal renders here via Portal */}
           <div id="terminal-portal-container" />

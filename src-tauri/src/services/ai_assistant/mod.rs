@@ -12,6 +12,7 @@
 // - Interactive element parsing (023-US3)
 // - Context management for long conversations (023-US5)
 
+pub mod background_process;
 pub mod context_manager;
 pub mod interactive;
 pub mod process_manager;
