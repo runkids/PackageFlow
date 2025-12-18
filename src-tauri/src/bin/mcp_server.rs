@@ -22,6 +22,8 @@ use mcp::{
     Project, Workflow, WorkflowNode, CustomStepTemplate,
     // Background process management
     BackgroundProcessStatus, BACKGROUND_PROCESS_MANAGER, CLEANUP_INTERVAL_SECS,
+    // Instance management (smart multi-instance support)
+    InstanceManager,
 };
 
 use std::collections::HashMap;
@@ -4101,27 +4103,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Kill other packageflow-mcp instances to avoid conflicts
-    // This ensures only one instance runs at a time
-    let current_pid = std::process::id();
-    #[cfg(unix)]
-    {
-        use std::process::Command;
-        // Find and kill other instances (excluding self)
-        if let Ok(output) = Command::new("pgrep").arg("-f").arg("packageflow-mcp").output() {
-            let pids = String::from_utf8_lossy(&output.stdout);
-            for pid_str in pids.lines() {
-                if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                    if pid != current_pid {
-                        eprintln!("[MCP Server] Killing stale instance (PID: {})", pid);
-                        let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
-                    }
-                }
+    // Initialize smart instance manager (only kills stale instances, allows multi-instance)
+    let mut instance_manager = InstanceManager::new();
+    match instance_manager.initialize().await {
+        Ok(result) => {
+            eprintln!("[MCP Server] Instance manager initialized");
+            if result.stale_killed > 0 {
+                eprintln!("[MCP Server] Cleaned up {} stale instances", result.stale_killed);
             }
+            if result.orphaned_cleaned > 0 {
+                eprintln!("[MCP Server] Cleaned up {} orphaned instances", result.orphaned_cleaned);
+            }
+            if result.active_count > 0 {
+                eprintln!("[MCP Server] {} other active instances running", result.active_count);
+            }
+        }
+        Err(e) => {
+            eprintln!("[MCP Server] Warning: Instance manager init failed: {}", e);
+            // Continue anyway - this is non-fatal
         }
     }
 
     // Debug: Log startup info
+    let current_pid = std::process::id();
     eprintln!("[MCP Server] Starting PackageFlow MCP Server (PID: {})...", current_pid);
 
     // Debug: Check database at startup
@@ -4187,6 +4191,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Stop all background processes before shutdown
     BACKGROUND_PROCESS_MANAGER.shutdown().await;
+
+    // Cleanup instance manager (release lock, remove heartbeat files)
+    instance_manager.shutdown().await;
 
     eprintln!("[MCP Server] Shutdown complete");
     Ok(())

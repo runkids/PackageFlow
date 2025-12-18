@@ -12,6 +12,7 @@
 //! - `store`: Database access and local data types (~370 lines)
 //! - `background/`: Background process management (~595 lines)
 //! - `tools_registry`: Centralized tool definitions (~300 lines)
+//! - `instance_manager`: Smart multi-instance management with heartbeat (~400 lines)
 //!
 //! The main tool implementations remain in `mcp_server.rs` due to
 //! `rmcp` crate's requirement that all `#[tool]` methods be in a
@@ -25,6 +26,7 @@ pub mod templates;
 pub mod store;
 pub mod background;
 pub mod tools_registry;
+pub mod instance_manager;
 
 // Re-export commonly used items
 pub use security::{ToolCategory, get_tool_category, is_tool_allowed};
@@ -38,6 +40,7 @@ pub use store::{
 pub use background::{
     BackgroundProcessStatus, BACKGROUND_PROCESS_MANAGER, CLEANUP_INTERVAL_SECS,
 };
+pub use instance_manager::InstanceManager;
 
 // Test module (only compiled in test builds)
 #[cfg(test)]
