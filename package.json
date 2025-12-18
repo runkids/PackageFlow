@@ -10,7 +10,7 @@
     "build": "tsc && vite build",
     "build:tauri": "tauri build --bundles dmg",
     "build:mcp": "cargo build -p packageflow-mcp && node scripts/ensure-mcp-alias.mjs --profile=debug",
-    "build:mcp:release": "cargo build -p packageflow-mcp --release && node scripts/ensure-mcp-alias.mjs --profile=release",
+    "build:mcp:release": "[ -n \"$CI\" ] && [ -f target/release/packageflow-mcp ] && echo 'Skipping MCP build in CI (pre-built and signed)' || (cargo build -p packageflow-mcp --release && node scripts/ensure-mcp-alias.mjs --profile=release)",
     "prebuild:tauri": "pnpm test:mcp && pnpm build:mcp:release",
     "predev:tauri": "pkill -f packageflow-mcp || true; pnpm build:mcp",
     "preview": "vite preview",
