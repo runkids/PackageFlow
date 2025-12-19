@@ -73,10 +73,11 @@ fn parse_version_output(output: &str, tool_type: CLIToolType) -> Option<String> 
 
     match tool_type {
         CLIToolType::ClaudeCode => {
-            // Claude CLI: "claude 1.0.0" or similar
+            // Claude CLI: "2.0.73 (Claude Code)" - version is the first word
+            // Find the first token that looks like a version number (starts with digit)
             output
                 .split_whitespace()
-                .nth(1)
+                .find(|s| s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
                 .map(|s| s.to_string())
                 .or_else(|| Some(output.to_string()))
         }
@@ -188,13 +189,20 @@ mod tests {
 
     #[test]
     fn test_parse_version_claude() {
+        // New format: "2.0.73 (Claude Code)"
         assert_eq!(
-            parse_version_output("claude 1.0.0", CLIToolType::ClaudeCode),
-            Some("1.0.0".to_string())
+            parse_version_output("2.0.73 (Claude Code)", CLIToolType::ClaudeCode),
+            Some("2.0.73".to_string())
         );
+        // Plain version
         assert_eq!(
             parse_version_output("1.2.3", CLIToolType::ClaudeCode),
             Some("1.2.3".to_string())
+        );
+        // Old format (just in case)
+        assert_eq!(
+            parse_version_output("claude 1.0.0", CLIToolType::ClaudeCode),
+            Some("1.0.0".to_string())
         );
     }
 

@@ -196,7 +196,7 @@ export function SnapshotTimeline({
   }
 
   return (
-    <div className={cn('flex h-full -m-4 animate-in fade-in-0 duration-200', className)}>
+    <div className={cn('flex h-full -m-4', className)}>
       {/* Left Sidebar */}
       <div className="w-56 flex-shrink-0 bg-card rounded-lg overflow-hidden m-4 mr-0 self-start">
         <div className="p-3 border-b border-border">

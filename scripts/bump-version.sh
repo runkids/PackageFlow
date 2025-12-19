@@ -11,6 +11,8 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # Files that contain version
 PACKAGE_JSON="$PROJECT_ROOT/package.json"
 CARGO_TOML="$PROJECT_ROOT/src-tauri/Cargo.toml"
+CARGO_LOCK="$PROJECT_ROOT/src-tauri/Cargo.lock"
+CARGO_LOCK_ROOT="$PROJECT_ROOT/Cargo.lock"
 TAURI_CONF="$PROJECT_ROOT/src-tauri/tauri.conf.json"
 
 # Colors for output
@@ -93,6 +95,19 @@ update_cargo_toml() {
     fi
 }
 
+update_cargo_lock() {
+    local new_version=$1
+    local current_version=$2
+    local lock_file=$3
+    # Update version for PackageFlow package in Cargo.lock
+    # Pattern: name = "PackageFlow" followed by version = "x.x.x"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' '/^name = "PackageFlow"$/,/^$/{s/^version = "'"$current_version"'"/version = "'"$new_version"'"/;}' "$lock_file"
+    else
+        sed -i '/^name = "PackageFlow"$/,/^$/{s/^version = "'"$current_version"'"/version = "'"$new_version"'"/;}' "$lock_file"
+    fi
+}
+
 update_tauri_conf() {
     local new_version=$1
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -113,6 +128,10 @@ verify_update() {
             ;;
         *Cargo.toml)
             actual=$(grep '^version = ' "$file" | head -1 | sed 's/version = "\([^"]*\)"/\1/')
+            ;;
+        *Cargo.lock)
+            # Find PackageFlow package and extract its version
+            actual=$(awk '/^name = "PackageFlow"$/{getline; if(/^version = "([^"]*)"/) {gsub(/version = "|"/, ""); print; exit}}' "$file")
             ;;
         *tauri.conf.json)
             actual=$(grep '"version":' "$file" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
@@ -214,6 +233,8 @@ do_update() {
     echo -e "  ${DIM}Files to update:${NC}"
     echo -e "    • package.json"
     echo -e "    • src-tauri/Cargo.toml"
+    echo -e "    • src-tauri/Cargo.lock"
+    echo -e "    • Cargo.lock"
     echo -e "    • src-tauri/tauri.conf.json"
     echo ""
 
@@ -238,6 +259,8 @@ do_update() {
 
     update_package_json "$new_version"
     update_cargo_toml "$new_version"
+    update_cargo_lock "$new_version" "$current_version" "$CARGO_LOCK"
+    update_cargo_lock "$new_version" "$current_version" "$CARGO_LOCK_ROOT"
     update_tauri_conf "$new_version"
 
     # Verify
@@ -247,6 +270,8 @@ do_update() {
     all_success=true
     verify_update "$new_version" "$PACKAGE_JSON" || all_success=false
     verify_update "$new_version" "$CARGO_TOML" || all_success=false
+    verify_update "$new_version" "$CARGO_LOCK" || all_success=false
+    verify_update "$new_version" "$CARGO_LOCK_ROOT" || all_success=false
     verify_update "$new_version" "$TAURI_CONF" || all_success=false
 
     echo ""
@@ -300,6 +325,8 @@ case "$1" in
         echo -e "  ${DIM}Version synced in:${NC}"
         echo -e "    • package.json"
         echo -e "    • src-tauri/Cargo.toml"
+        echo -e "    • src-tauri/Cargo.lock"
+        echo -e "    • Cargo.lock"
         echo -e "    • src-tauri/tauri.conf.json"
         echo ""
         exit 0
