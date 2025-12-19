@@ -2,7 +2,7 @@
   "name": "packageflow",
   "private": true,
   "license": "mit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,7 +28,9 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "audit": "pnpm audit",
-    "audit:fix": "pnpm audit --fix"
+    "audit:fix": "pnpm audit --fix",
+    "version:bump": "./scripts/bump-version.sh",
+    "version:check": "./scripts/bump-version.sh --check"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
