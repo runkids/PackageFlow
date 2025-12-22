@@ -5,7 +5,7 @@
 
 import type { SettingsSection } from './settings';
 
-export type SettingsCategory = 'project' | 'ai' | 'preferences' | 'data' | 'about';
+export type SettingsCategory = 'project' | 'security' | 'ai' | 'preferences' | 'data' | 'about';
 
 export interface SettingsSearchIndexItem {
   id: SettingsSection;
@@ -133,6 +133,24 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchIndexItem[] = [
     ],
   },
   {
+    id: 'lockfile-validation',
+    category: 'security',
+    title: 'Lockfile Validation',
+    description: 'Configure lockfile security validation rules',
+    keywords: [
+      'lockfile',
+      'security',
+      'validation',
+      'integrity',
+      'registry',
+      'typosquatting',
+      'blocked',
+      'packages',
+      'supply chain',
+      'homoglyph',
+    ],
+  },
+  {
     id: 'data',
     category: 'data',
     title: 'Import / Export',
@@ -158,6 +176,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
     sections: [
       'storage',
       'deploy-accounts',
+      'lockfile-validation',
       'ai-providers',
       'prompts',
       'ai-activity',
@@ -174,6 +193,11 @@ export const SETTINGS_CATEGORIES: SettingsCategoryInfo[] = [
     id: 'project',
     label: 'Project',
     sections: ['storage', 'deploy-accounts'],
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    sections: ['lockfile-validation'],
   },
   {
     id: 'ai',

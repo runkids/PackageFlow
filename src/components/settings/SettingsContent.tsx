@@ -34,6 +34,11 @@ const ToolchainPreferencesPanel = lazy(() =>
     default: m.ToolchainPreferencesPanel,
   }))
 );
+const LockfileValidationPanel = lazy(() =>
+  import('./panels/LockfileValidationPanel').then((m) => ({
+    default: m.LockfileValidationPanel,
+  }))
+);
 const DataSettingsPanel = lazy(() =>
   import('./panels/DataSettingsPanel').then((m) => ({ default: m.DataSettingsPanel }))
 );
@@ -66,6 +71,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
       {section === 'prompts' && <PromptTemplatePanel />}
       {section === 'mcp' && <McpSettingsFullPanel />}
       {section === 'toolchain' && <ToolchainPreferencesPanel />}
+      {section === 'lockfile-validation' && <LockfileValidationPanel />}
       {section === 'data' && <DataSettingsPanel onExport={onExport} onImport={onImport} />}
     </Suspense>
   );

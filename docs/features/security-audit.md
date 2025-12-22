@@ -216,3 +216,61 @@ If no fix is available:
 1. Open an issue with the package maintainer
 2. Consider alternatives to the vulnerable package
 3. Implement workarounds if possible
+
+## Lockfile Validation
+
+PackageFlow includes supply chain security validation for lockfiles. This feature detects potential security issues before they become problems.
+
+### Configuring Validation
+
+1. Go to **Settings** → **Security** → **Lockfile Validation**
+2. Enable/disable validation globally
+3. Choose strictness level:
+   - **Permissive**: Only critical issues
+   - **Moderate**: Balanced detection (recommended)
+   - **Strict**: Maximum protection
+
+### Validation Rules
+
+| Rule | Description |
+|------|-------------|
+| **Insecure Protocol** | Detects packages resolved via insecure protocols (git://, http://) |
+| **Unexpected Registry** | Flags packages from non-whitelisted registries |
+| **Manifest Mismatch** | Detects when lockfile doesn't match package.json |
+| **Blocked Package** | Alerts when a blocked package is detected |
+| **Missing Integrity** | Flags packages without integrity hashes |
+| **Typosquatting Detection** | Identifies potential typosquatting attempts |
+
+### Registry Whitelist
+
+Manage allowed registries:
+
+1. Go to **Settings** → **Security** → **Lockfile Validation**
+2. Add trusted registries (e.g., `https://registry.npmjs.org`)
+3. Remove untrusted registries
+
+### Blocked Packages
+
+Maintain a blocklist of packages:
+
+1. Add package names to block
+2. Provide a reason for blocking
+3. Snapshots will flag these packages automatically
+
+### Typosquatting Detection
+
+PackageFlow detects three types of typosquatting:
+
+- **Name similarity**: Levenshtein distance analysis against popular packages
+- **Scope confusion**: Detects `@scope/pkg` vs `scope-pkg` patterns
+- **Homoglyph attacks**: Identifies lookalike Unicode characters
+
+### Validation Insights
+
+Validation issues appear as security insights in:
+
+- Time Machine snapshots
+- Security tab overview
+- Project dashboard
+
+Each insight shows severity (critical, high, medium, low, info) and recommended action.

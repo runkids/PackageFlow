@@ -208,3 +208,61 @@ PackageFlow 可以提醒您定期掃描：
 1. 向套件維護者提交 issue
 2. 考慮有漏洞套件的替代方案
 3. 如果可能實作繞過方案
+
+## Lockfile 驗證
+
+PackageFlow 包含供應鏈安全驗證功能。此功能可在問題發生前偵測潛在的安全風險。
+
+### 設定驗證
+
+1. 前往**設定** → **安全** → **Lockfile 驗證**
+2. 啟用/停用驗證功能
+3. 選擇嚴格等級：
+   - **寬鬆**：僅 Critical 問題
+   - **標準**：平衡檢測（建議）
+   - **嚴格**：最大保護
+
+### 驗證規則
+
+| 規則 | 說明 |
+|------|------|
+| **不安全協定** | 偵測透過不安全協定解析的套件（git://、http://） |
+| **非預期 Registry** | 標記來自非白名單 registry 的套件 |
+| **Manifest 不一致** | 偵測 lockfile 與 package.json 不符 |
+| **封鎖套件** | 偵測到封鎖清單中的套件時警示 |
+| **缺少 Integrity** | 標記缺少 integrity hash 的套件 |
+| **Typosquatting 偵測** | 識別潛在的名稱仿冒攻擊 |
+
+### Registry 白名單
+
+管理允許的 registry：
+
+1. 前往**設定** → **安全** → **Lockfile 驗證**
+2. 新增信任的 registry（如 `https://registry.npmjs.org`）
+3. 移除不信任的 registry
+
+### 封鎖套件
+
+維護封鎖清單：
+
+1. 新增要封鎖的套件名稱
+2. 提供封鎖原因
+3. 快照會自動標記這些套件
+
+### Typosquatting 偵測
+
+PackageFlow 偵測三種類型的仿冒：
+
+- **名稱相似度**：對熱門套件進行 Levenshtein 距離分析
+- **Scope 混淆**：偵測 `@scope/pkg` vs `scope-pkg` 模式
+- **同形字攻擊**：識別相似的 Unicode 字元
+
+### 驗證結果
+
+驗證問題會顯示在：
+
+- Time Machine 快照的 Security 分頁
+- 安全分頁總覽
+- 專案儀表板
+
+每個問題顯示嚴重程度（critical、high、medium、low、info）和建議操作。

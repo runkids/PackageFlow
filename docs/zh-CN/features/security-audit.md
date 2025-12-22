@@ -208,3 +208,61 @@ PackageFlow 可以提醒您定期扫描：
 1. 向包维护者提交 issue
 2. 考虑有漏洞包的替代方案
 3. 如果可能实现绕过方案
+
+## Lockfile 验证
+
+PackageFlow 包含供应链安全验证功能。此功能可在问题发生前检测潜在的安全风险。
+
+### 配置验证
+
+1. 前往**设置** → **安全** → **Lockfile 验证**
+2. 启用/禁用验证功能
+3. 选择严格等级：
+   - **宽松**：仅 Critical 问题
+   - **标准**：平衡检测（推荐）
+   - **严格**：最大保护
+
+### 验证规则
+
+| 规则 | 说明 |
+|------|------|
+| **不安全协议** | 检测通过不安全协议解析的包（git://、http://） |
+| **非预期 Registry** | 标记来自非白名单 registry 的包 |
+| **Manifest 不一致** | 检测 lockfile 与 package.json 不符 |
+| **封禁包** | 检测到封禁列表中的包时警示 |
+| **缺少 Integrity** | 标记缺少 integrity hash 的包 |
+| **Typosquatting 检测** | 识别潜在的名称仿冒攻击 |
+
+### Registry 白名单
+
+管理允许的 registry：
+
+1. 前往**设置** → **安全** → **Lockfile 验证**
+2. 添加信任的 registry（如 `https://registry.npmjs.org`）
+3. 移除不信任的 registry
+
+### 封禁包
+
+维护封禁列表：
+
+1. 添加要封禁的包名称
+2. 提供封禁原因
+3. 快照会自动标记这些包
+
+### Typosquatting 检测
+
+PackageFlow 检测三种类型的仿冒：
+
+- **名称相似度**：对热门包进行 Levenshtein 距离分析
+- **Scope 混淆**：检测 `@scope/pkg` vs `scope-pkg` 模式
+- **同形字攻击**：识别相似的 Unicode 字符
+
+### 验证结果
+
+验证问题会显示在：
+
+- Time Machine 快照的 Security 标签
+- 安全标签概览
+- 项目仪表板
+
+每个问题显示严重程度（critical、high、medium、low、info）和建议操作。

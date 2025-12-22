@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Package,
   Shield,
+  ShieldAlert,
   History,
   GitCompare,
   Search,
@@ -15,13 +16,16 @@ import {
   HardDrive,
   Hash,
   ChevronDown,
+  Info,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { SecurityBadge } from './SecurityBadge';
+import { SecurityBadge, SeverityBadge } from './SecurityBadge';
 import { cn } from '../../lib/utils';
-import type { ExecutionSnapshot, SnapshotDependency, SnapshotListItem } from '../../types/snapshot';
+import { snapshotAPI } from '../../lib/tauri-api';
+import { getInsightTypeConfig, getSeverityColors } from '../../lib/insight-helpers';
+import type { ExecutionSnapshot, SnapshotDependency, SnapshotListItem, SecurityInsight } from '../../types/snapshot';
 
-type SnapshotTab = 'overview' | 'dependencies' | 'integrity' | 'compare';
+type SnapshotTab = 'overview' | 'dependencies' | 'security' | 'integrity' | 'compare';
 
 interface SnapshotDetailPanelProps {
   snapshot: ExecutionSnapshot;
@@ -55,6 +59,28 @@ export function SnapshotDetailPanel({
   // Compare state
   const [selectedCompareId, setSelectedCompareId] = useState<string>('');
 
+  // Security insights state
+  const [insights, setInsights] = useState<SecurityInsight[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+
+  // Fetch security insights when snapshot changes
+  useEffect(() => {
+    const fetchInsights = async () => {
+      if (!snapshot.id) return;
+      setInsightsLoading(true);
+      try {
+        const data = await snapshotAPI.getSecurityInsights(snapshot.id);
+        setInsights(data);
+      } catch (err) {
+        console.error('Failed to load security insights:', err);
+        setInsights([]);
+      } finally {
+        setInsightsLoading(false);
+      }
+    };
+    fetchInsights();
+  }, [snapshot.id]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -79,10 +105,16 @@ export function SnapshotDetailPanel({
         case '3':
           if (!e.metaKey && !e.ctrlKey) {
             e.preventDefault();
-            setActiveTab('integrity');
+            setActiveTab('security');
           }
           break;
         case '4':
+          if (!e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            setActiveTab('integrity');
+          }
+          break;
+        case '5':
           if (!e.metaKey && !e.ctrlKey) {
             e.preventDefault();
             setActiveTab('compare');
@@ -160,6 +192,13 @@ export function SnapshotDetailPanel({
       description: 'Packages list',
       icon: Package,
       badge: dependencies.length || undefined,
+    },
+    {
+      id: 'security',
+      label: 'Security',
+      description: 'Validation insights',
+      icon: ShieldAlert,
+      badge: insights.length || undefined,
     },
     { id: 'integrity', label: 'Integrity', description: 'Hash verification', icon: Shield },
     { id: 'compare', label: 'Compare', description: 'Diff with other', icon: GitCompare },
@@ -249,6 +288,11 @@ export function SnapshotDetailPanel({
             devDeps={devDeps}
             transitiveDeps={transitiveDeps}
           />
+        </div>
+
+        {/* Security Tab */}
+        <div className={cn(activeTab !== 'security' && 'hidden')}>
+          <SecurityTabContent insights={insights} loading={insightsLoading} />
         </div>
 
         {/* Integrity Tab */}
@@ -910,6 +954,168 @@ function CompareTabContent({
           </Button>
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Security Tab Content
+// ============================================================================
+
+interface SecurityTabContentProps {
+  insights: SecurityInsight[];
+  loading: boolean;
+}
+
+function SecurityTabContent({ insights, loading }: SecurityTabContentProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div
+          className={cn(
+            'flex items-center gap-2 px-4 py-2 rounded-lg',
+            'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+            'text-sm'
+          )}
+        >
+          <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
+          Loading security insights...
+        </div>
+      </div>
+    );
+  }
+
+  if (insights.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Security Insights</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Lockfile validation and security analysis results
+          </p>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <div
+            className={cn(
+              'w-16 h-16 rounded-2xl mb-4',
+              'bg-emerald-500/10',
+              'flex items-center justify-center'
+            )}
+          >
+            <Shield size={28} className="text-emerald-500" />
+          </div>
+          <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+            No security issues detected
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            This snapshot passed all validation checks
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Group insights by severity
+  const criticalInsights = insights.filter((i) => i.severity === 'critical');
+  const highInsights = insights.filter((i) => i.severity === 'high');
+  const mediumInsights = insights.filter((i) => i.severity === 'medium');
+  const lowInsights = insights.filter((i) => i.severity === 'low');
+  const infoInsights = insights.filter((i) => i.severity === 'info');
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">Security Insights</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          {insights.length} issue{insights.length !== 1 ? 's' : ''} detected during validation
+        </p>
+      </div>
+
+      {/* Summary */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {criticalInsights.length > 0 && (
+          <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500/10 text-red-500 text-xs font-medium">
+            <AlertTriangle size={12} />
+            {criticalInsights.length} Critical
+          </span>
+        )}
+        {highInsights.length > 0 && (
+          <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-500/10 text-orange-500 text-xs font-medium">
+            <ShieldAlert size={12} />
+            {highInsights.length} High
+          </span>
+        )}
+        {mediumInsights.length > 0 && (
+          <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-yellow-500/10 text-yellow-500 text-xs font-medium">
+            <Shield size={12} />
+            {mediumInsights.length} Medium
+          </span>
+        )}
+        {lowInsights.length > 0 && (
+          <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 text-blue-500 text-xs font-medium">
+            <Info size={12} />
+            {lowInsights.length} Low
+          </span>
+        )}
+        {infoInsights.length > 0 && (
+          <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-500/10 text-gray-500 text-xs font-medium">
+            <Info size={12} />
+            {infoInsights.length} Info
+          </span>
+        )}
+      </div>
+
+      {/* Insights List */}
+      <div className="space-y-3">
+        {insights.map((insight) => (
+          <InsightCard key={insight.id} insight={insight} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InsightCard({ insight }: { insight: SecurityInsight }) {
+  const config = getInsightTypeConfig(insight.insightType);
+  const severityColors = getSeverityColors(insight.severity);
+
+  return (
+    <div
+      className={cn(
+        'p-4 rounded-xl',
+        'border',
+        severityColors.bg,
+        severityColors.border
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className={cn('flex-shrink-0 mt-0.5', severityColors.text)}>
+          <ShieldAlert size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={cn('text-sm font-medium', severityColors.text)}>
+              {insight.title}
+            </span>
+            <SeverityBadge severity={insight.severity} />
+            <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded">
+              {config.label}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">{insight.description}</p>
+          {insight.packageName && (
+            <p className="text-xs font-mono text-muted-foreground mt-2 bg-muted/50 px-2 py-1 rounded inline-block">
+              {insight.packageName}
+            </p>
+          )}
+          {insight.recommendation && (
+            <p className="text-xs text-muted-foreground mt-2 border-l-2 border-muted pl-2">
+              {insight.recommendation}
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

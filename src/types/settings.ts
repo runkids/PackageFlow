@@ -13,6 +13,7 @@ export type SettingsSection =
   | 'ai-activity'
   | 'mcp'
   | 'toolchain'
+  | 'lockfile-validation'
   | 'data'
   | 'about';
 
@@ -46,6 +47,13 @@ export const SETTINGS_SECTIONS: SettingsSidebarSection[] = [
       { id: 'notifications', label: 'Notifications', icon: 'Bell' },
       { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: 'Keyboard' },
       { id: 'toolchain', label: 'Toolchain', icon: 'Wrench' },
+    ],
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    items: [
+      { id: 'lockfile-validation', label: 'Lockfile Validation', icon: 'ShieldCheck' },
     ],
   },
   {

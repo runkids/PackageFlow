@@ -4,7 +4,7 @@
 use rusqlite::{Connection, params};
 
 /// Current schema version
-pub const CURRENT_VERSION: i32 = 6;
+pub const CURRENT_VERSION: i32 = 7;
 
 /// Migration struct containing version and SQL statements
 struct Migration {
@@ -828,6 +828,74 @@ const MIGRATIONS: &[Migration] = &[
             VALUES (1, 1, 2000, datetime('now'));
         "#,
     },
+    Migration {
+        version: 7,
+        description: "Add lockfile validation insight types to security_insights",
+        up: r#"
+            -- SQLite doesn't support ALTER TABLE to modify CHECK constraints
+            -- We need to recreate the table with the new constraint
+
+            -- Create temp table with new constraint
+            CREATE TABLE security_insights_new (
+                id TEXT PRIMARY KEY,
+                snapshot_id TEXT NOT NULL,
+                insight_type TEXT NOT NULL CHECK(insight_type IN (
+                    'new_dependency', 'removed_dependency', 'version_change',
+                    'postinstall_added', 'postinstall_removed', 'postinstall_changed',
+                    'integrity_mismatch', 'typosquatting_suspect', 'frequent_updater',
+                    'suspicious_script',
+                    'insecure_protocol', 'unexpected_registry', 'manifest_mismatch',
+                    'blocked_package', 'missing_integrity', 'scope_confusion', 'homoglyph_suspect'
+                )),
+                severity TEXT NOT NULL CHECK(severity IN ('info', 'low', 'medium', 'high', 'critical')),
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                package_name TEXT,
+                previous_value TEXT,
+                current_value TEXT,
+                recommendation TEXT,
+                metadata TEXT,
+                is_dismissed INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (snapshot_id) REFERENCES execution_snapshots(id) ON DELETE CASCADE
+            );
+
+            -- Copy existing data
+            INSERT INTO security_insights_new SELECT * FROM security_insights;
+
+            -- Drop old table
+            DROP TABLE security_insights;
+
+            -- Rename new table
+            ALTER TABLE security_insights_new RENAME TO security_insights;
+
+            -- Recreate indexes
+            CREATE INDEX idx_insights_snapshot ON security_insights(snapshot_id);
+            CREATE INDEX idx_insights_type ON security_insights(insight_type);
+            CREATE INDEX idx_insights_severity ON security_insights(severity);
+            CREATE INDEX idx_insights_package ON security_insights(package_name);
+
+            -- Create lockfile_validation_config table for storing validation settings
+            CREATE TABLE IF NOT EXISTS lockfile_validation_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER DEFAULT 0,
+                strictness TEXT DEFAULT 'standard' CHECK(strictness IN ('relaxed', 'standard', 'strict')),
+                require_integrity INTEGER DEFAULT 1,
+                require_https_resolved INTEGER DEFAULT 1,
+                check_allowed_registries INTEGER DEFAULT 0,
+                check_blocked_packages INTEGER DEFAULT 1,
+                check_manifest_consistency INTEGER DEFAULT 1,
+                enhanced_typosquatting INTEGER DEFAULT 0,
+                allowed_registries TEXT DEFAULT '[]',
+                blocked_packages TEXT DEFAULT '[]',
+                updated_at TEXT NOT NULL
+            );
+
+            -- Initialize default validation config
+            INSERT OR IGNORE INTO lockfile_validation_config (id, updated_at)
+            VALUES (1, datetime('now'));
+        "#,
+    },
 ];
 
 /// Run all pending migrations using Database wrapper
@@ -942,6 +1010,8 @@ mod tests {
         assert!(table_exists(&conn, "snapshot_dependencies").unwrap());
         assert!(table_exists(&conn, "security_insights").unwrap());
         assert!(table_exists(&conn, "snapshot_diff_cache").unwrap());
+        // Lockfile validation config table (v7)
+        assert!(table_exists(&conn, "lockfile_validation_config").unwrap());
     }
 
     #[test]

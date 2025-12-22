@@ -6,12 +6,14 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
+use crate::models::security_insight::{InsightType, SecurityInsight};
 use crate::models::snapshot::{
     CreateSnapshotRequest, ExecutionSnapshot, LockfileType, PostinstallEntry, SecurityContext,
     SnapshotDependency, SnapshotStatus, TriggerSource, TyposquattingAlert,
 };
-use crate::repositories::SnapshotRepository;
+use crate::repositories::{LockfileValidationRepository, SnapshotRepository};
 use crate::services::snapshot::storage::SnapshotStorage;
+use crate::services::snapshot::validation::{ValidationEngine, ValidationFailure};
 use crate::utils::database::Database;
 
 /// Service for capturing execution snapshots
@@ -60,12 +62,15 @@ impl SnapshotCaptureService {
 
         // Capture the snapshot data
         match self.capture_snapshot_data(&mut snapshot) {
-            Ok(dependencies) => {
+            Ok((dependencies, package_json)) => {
                 snapshot.status = SnapshotStatus::Completed;
                 repo.update_snapshot(&snapshot)?;
 
                 // Store dependencies
                 repo.add_dependencies(&dependencies)?;
+
+                // Run lockfile validation if enabled
+                self.run_validation_and_store_insights(&snapshot.id, &dependencies, package_json.as_ref())?;
 
                 Ok(snapshot)
             }
@@ -103,10 +108,11 @@ impl SnapshotCaptureService {
     }
 
     /// Capture snapshot data from the project
+    /// Returns (dependencies, package_json) for validation
     fn capture_snapshot_data(
         &self,
         snapshot: &mut ExecutionSnapshot,
-    ) -> Result<Vec<SnapshotDependency>, String> {
+    ) -> Result<(Vec<SnapshotDependency>, Option<serde_json::Value>), String> {
         let project_path = Path::new(&snapshot.project_path);
 
         // Detect lockfile type and read lockfile
@@ -125,12 +131,15 @@ impl SnapshotCaptureService {
         snapshot.storage_path = Some(self.storage.get_snapshot_path(&snapshot.id).to_string_lossy().to_string());
 
         // Read and store package.json
+        let mut package_json: Option<serde_json::Value> = None;
         let package_json_path = project_path.join("package.json");
         if package_json_path.exists() {
             let package_json_content = fs::read(&package_json_path)
                 .map_err(|e| format!("Failed to read package.json: {}", e))?;
             snapshot.package_json_hash = Some(self.compute_hash(&package_json_content));
             self.storage.store_package_json(&snapshot.id, &package_json_content)?;
+            // Parse package.json for validation
+            package_json = serde_json::from_slice(&package_json_content).ok();
         }
 
         // Parse lockfile and extract dependencies
@@ -149,7 +158,95 @@ impl SnapshotCaptureService {
         // Compute security score (simplified)
         snapshot.security_score = Some(self.compute_security_score(&dependencies));
 
-        Ok(dependencies)
+        Ok((dependencies, package_json))
+    }
+
+    /// Run lockfile validation and store insights
+    fn run_validation_and_store_insights(
+        &self,
+        snapshot_id: &str,
+        dependencies: &[SnapshotDependency],
+        package_json: Option<&serde_json::Value>,
+    ) -> Result<(), String> {
+        // Load validation config
+        let validation_repo = LockfileValidationRepository::new(self.db.clone());
+        let config = validation_repo.get_config()?;
+
+        // Skip if validation is disabled
+        if !config.enabled {
+            log::debug!("[SnapshotCapture] Lockfile validation is disabled, skipping");
+            return Ok(());
+        }
+
+        log::info!(
+            "[SnapshotCapture] Running lockfile validation with strictness: {}",
+            config.strictness.as_str()
+        );
+
+        // Run validation
+        let engine = ValidationEngine::new(config);
+        let result = engine.validate(snapshot_id, dependencies, package_json);
+
+        log::info!(
+            "[SnapshotCapture] Validation complete: {} failures, {} warnings",
+            result.failures.len(),
+            result.warnings.len()
+        );
+
+        // Convert failures to security insights and store them
+        let repo = SnapshotRepository::new(self.db.clone());
+        let now = chrono::Utc::now().to_rfc3339();
+
+        for failure in result.failures {
+            let insight = Self::failure_to_insight(snapshot_id, &failure, &now);
+            if let Err(e) = repo.create_insight(&insight) {
+                log::warn!("[SnapshotCapture] Failed to store insight: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Convert a validation failure to a security insight
+    fn failure_to_insight(
+        snapshot_id: &str,
+        failure: &ValidationFailure,
+        created_at: &str,
+    ) -> SecurityInsight {
+        let insight_type = match failure.rule_id.as_str() {
+            "require-integrity" => InsightType::MissingIntegrity,
+            "require-https-resolved" => InsightType::InsecureProtocol,
+            "check-allowed-registries" => InsightType::UnexpectedRegistry,
+            "check-blocked-packages" => InsightType::BlockedPackage,
+            "check-manifest-consistency" => InsightType::ManifestMismatch,
+            "enhanced-typosquatting" => {
+                // Determine specific type based on message
+                if failure.message.contains("scope confusion") {
+                    InsightType::ScopeConfusion
+                } else if failure.message.contains("lookalike") {
+                    InsightType::HomoglyphSuspect
+                } else {
+                    InsightType::TyposquattingSuspect
+                }
+            }
+            _ => InsightType::TyposquattingSuspect,
+        };
+
+        SecurityInsight {
+            id: uuid::Uuid::new_v4().to_string(),
+            snapshot_id: snapshot_id.to_string(),
+            insight_type,
+            severity: failure.severity.clone(),
+            title: format!("{}: {}", failure.rule_id, failure.package_name),
+            description: failure.message.clone(),
+            package_name: Some(failure.package_name.clone()),
+            previous_value: None,
+            current_value: None,
+            recommendation: failure.remediation.clone(),
+            metadata: None,
+            is_dismissed: false,
+            created_at: created_at.to_string(),
+        }
     }
 
     /// Detect lockfile type and read content

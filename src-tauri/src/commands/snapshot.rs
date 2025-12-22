@@ -18,6 +18,12 @@ use crate::services::snapshot::{SnapshotCaptureService, SnapshotDiffService, Sna
 use crate::utils::database::Database;
 use crate::DatabaseState;
 
+// Lockfile validation types
+use packageflow_lib::repositories::LockfileValidationRepository;
+use packageflow_lib::services::snapshot::validation::{
+    BlockedPackageEntry, LockfileValidationConfig, ValidationEngine, ValidationResult,
+};
+
 /// Get the snapshot storage base path
 fn get_storage_base_path() -> Result<PathBuf, String> {
     dirs::data_dir()
@@ -901,3 +907,158 @@ pub async fn get_lockfile_watched_projects(
 
 /// State wrapper for LockfileWatcherManager
 pub struct LockfileWatcherState(pub Arc<LockfileWatcherManager>);
+
+// =========================================================================
+// Lockfile Validation Commands (Lockfile Security Enhancement)
+// =========================================================================
+
+/// Get lockfile validation configuration
+#[tauri::command]
+pub async fn get_lockfile_validation_config(
+    db: State<'_, DatabaseState>,
+) -> Result<LockfileValidationConfig, String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let repo = LockfileValidationRepository::new(db);
+        repo.get_config()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Save lockfile validation configuration
+#[tauri::command]
+pub async fn save_lockfile_validation_config(
+    db: State<'_, DatabaseState>,
+    config: LockfileValidationConfig,
+) -> Result<(), String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let repo = LockfileValidationRepository::new(db);
+        repo.save_config(&config)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Run manual lockfile validation on a snapshot
+#[tauri::command]
+pub async fn validate_lockfile_manual(
+    db: State<'_, DatabaseState>,
+    snapshot_id: String,
+) -> Result<ValidationResult, String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        // Get validation config
+        let validation_repo = LockfileValidationRepository::new(db.clone());
+        let mut config = validation_repo.get_config()?;
+        // Force enable for manual validation
+        config.enabled = true;
+
+        // Get snapshot dependencies
+        let snapshot_repo = SnapshotRepository::new(db.clone());
+        // Verify snapshot exists
+        let _snapshot = snapshot_repo
+            .get_snapshot(&snapshot_id)?
+            .ok_or_else(|| format!("Snapshot not found: {}", snapshot_id))?;
+        let dependencies = snapshot_repo.list_dependencies(&snapshot_id)?;
+
+        // Load package.json if available
+        let base_path = get_storage_base_path()?;
+        let storage = SnapshotStorage::new(base_path);
+        let package_json = storage
+            .read_package_json(&snapshot_id)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+
+        // Run validation
+        let engine = ValidationEngine::new(config);
+        Ok(engine.validate(&snapshot_id, &dependencies, package_json.as_ref()))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Add a blocked package to the validation config
+#[tauri::command]
+pub async fn add_blocked_package(
+    db: State<'_, DatabaseState>,
+    name: String,
+    reason: String,
+) -> Result<(), String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let repo = LockfileValidationRepository::new(db);
+        let entry = BlockedPackageEntry::new(name, reason);
+        repo.add_blocked_package(entry)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Remove a blocked package from the validation config
+#[tauri::command]
+pub async fn remove_blocked_package(
+    db: State<'_, DatabaseState>,
+    package_name: String,
+) -> Result<(), String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let repo = LockfileValidationRepository::new(db);
+        repo.remove_blocked_package(&package_name)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Add an allowed registry to the validation config
+#[tauri::command]
+pub async fn add_allowed_registry(
+    db: State<'_, DatabaseState>,
+    registry: String,
+) -> Result<(), String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let repo = LockfileValidationRepository::new(db);
+        repo.add_allowed_registry(&registry)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Remove an allowed registry from the validation config
+#[tauri::command]
+pub async fn remove_allowed_registry(
+    db: State<'_, DatabaseState>,
+    registry: String,
+) -> Result<(), String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let repo = LockfileValidationRepository::new(db);
+        repo.remove_allowed_registry(&registry)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Reset lockfile validation config to defaults
+#[tauri::command]
+pub async fn reset_lockfile_validation_config(
+    db: State<'_, DatabaseState>,
+) -> Result<LockfileValidationConfig, String> {
+    let db = (*db.0).clone();
+
+    tokio::task::spawn_blocking(move || {
+        let repo = LockfileValidationRepository::new(db);
+        repo.reset_to_defaults()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}

@@ -24,7 +24,15 @@ export type InsightType =
   | 'integrity_mismatch'
   | 'typosquatting_suspect'
   | 'frequent_updater'
-  | 'suspicious_script';
+  | 'suspicious_script'
+  // Lockfile validation types (v7)
+  | 'insecure_protocol'
+  | 'unexpected_registry'
+  | 'manifest_mismatch'
+  | 'blocked_package'
+  | 'missing_integrity'
+  | 'scope_confusion'
+  | 'homoglyph_suspect';
 
 export type InsightSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 
@@ -544,4 +552,64 @@ export interface SecurityAuditReport {
   riskSummary: RiskSummary;
   dependencyAnalysis: DependencyAnalysis[];
   securityEvents: SecurityEvent[];
+}
+
+// =========================================================================
+// Lockfile Validation Types (Lockfile Security Enhancement)
+// =========================================================================
+
+export type ValidationStrictness = 'relaxed' | 'standard' | 'strict';
+
+export interface ValidationRuleSet {
+  requireIntegrity: boolean;
+  requireHttpsResolved: boolean;
+  checkAllowedRegistries: boolean;
+  checkBlockedPackages: boolean;
+  checkManifestConsistency: boolean;
+  enhancedTyposquatting: boolean;
+}
+
+export interface BlockedPackageEntry {
+  name: string;
+  reason: string;
+  addedAt: string;
+}
+
+export interface LockfileValidationConfig {
+  enabled: boolean;
+  strictness: ValidationStrictness;
+  rules: ValidationRuleSet;
+  allowedRegistries: string[];
+  blockedPackages: BlockedPackageEntry[];
+}
+
+export interface ValidationFailure {
+  ruleId: string;
+  packageName: string;
+  severity: InsightSeverity;
+  message: string;
+  remediation?: string;
+}
+
+export interface ValidationWarning {
+  ruleId: string;
+  packageName: string;
+  message: string;
+}
+
+export interface ValidationSummary {
+  totalChecked: number;
+  failureCount: number;
+  warningCount: number;
+  passedCount: number;
+  ruleResults: Record<string, { passed: number; failed: number }>;
+}
+
+export interface ValidationResult {
+  snapshotId: string;
+  passed: boolean;
+  strictness: ValidationStrictness;
+  failures: ValidationFailure[];
+  warnings: ValidationWarning[];
+  summary: ValidationSummary;
 }

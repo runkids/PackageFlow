@@ -4,6 +4,7 @@
 pub mod ai_conversation_repo;
 pub mod ai_repo;
 pub mod deploy_repo;
+pub mod lockfile_validation_repo;
 pub mod mcp_action_repo;
 pub mod mcp_repo;
 pub mod notification_repo;
@@ -18,6 +19,7 @@ pub mod workflow_repo;
 pub use ai_conversation_repo::AIConversationRepository;
 pub use ai_repo::AIRepository;
 pub use deploy_repo::DeployRepository;
+pub use lockfile_validation_repo::LockfileValidationRepository;
 pub use mcp_action_repo::MCPActionRepository;
 pub use mcp_repo::{MCPRepository, McpLogEntry};
 pub use notification_repo::{NotificationListResponse, NotificationRecord, NotificationRepository};

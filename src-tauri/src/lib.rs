@@ -470,6 +470,15 @@ pub fn run() {
             snapshot::stop_lockfile_watching,
             snapshot::get_lockfile_watcher_status,
             snapshot::get_lockfile_watched_projects,
+            // Lockfile Validation (Lockfile Security Enhancement)
+            snapshot::get_lockfile_validation_config,
+            snapshot::save_lockfile_validation_config,
+            snapshot::validate_lockfile_manual,
+            snapshot::add_blocked_package,
+            snapshot::remove_blocked_package,
+            snapshot::add_allowed_registry,
+            snapshot::remove_allowed_registry,
+            snapshot::reset_lockfile_validation_config,
         ])
         // Setup hook - sync incoming webhook server and start database watcher on app start
         .setup(|app| {

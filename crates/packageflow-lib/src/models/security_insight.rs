@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum InsightType {
+    // Existing types
     NewDependency,
     RemovedDependency,
     VersionChange,
@@ -17,6 +18,14 @@ pub enum InsightType {
     TyposquattingSuspect,
     FrequentUpdater,
     SuspiciousScript,
+    // Lockfile validation types (v7)
+    InsecureProtocol,     // git:// or http:// resolved URL
+    UnexpectedRegistry,   // Package from non-whitelisted registry
+    ManifestMismatch,     // Lockfile doesn't match package.json
+    BlockedPackage,       // Package on blocked list
+    MissingIntegrity,     // No integrity hash present
+    ScopeConfusion,       // @scope/pkg vs scope-pkg typosquatting
+    HomoglyphSuspect,     // Visually similar characters in name
 }
 
 impl InsightType {
@@ -32,6 +41,14 @@ impl InsightType {
             Self::TyposquattingSuspect => "typosquatting_suspect",
             Self::FrequentUpdater => "frequent_updater",
             Self::SuspiciousScript => "suspicious_script",
+            // Lockfile validation types (v7)
+            Self::InsecureProtocol => "insecure_protocol",
+            Self::UnexpectedRegistry => "unexpected_registry",
+            Self::ManifestMismatch => "manifest_mismatch",
+            Self::BlockedPackage => "blocked_package",
+            Self::MissingIntegrity => "missing_integrity",
+            Self::ScopeConfusion => "scope_confusion",
+            Self::HomoglyphSuspect => "homoglyph_suspect",
         }
     }
 
@@ -47,6 +64,14 @@ impl InsightType {
             "typosquatting_suspect" => Some(Self::TyposquattingSuspect),
             "frequent_updater" => Some(Self::FrequentUpdater),
             "suspicious_script" => Some(Self::SuspiciousScript),
+            // Lockfile validation types (v7)
+            "insecure_protocol" => Some(Self::InsecureProtocol),
+            "unexpected_registry" => Some(Self::UnexpectedRegistry),
+            "manifest_mismatch" => Some(Self::ManifestMismatch),
+            "blocked_package" => Some(Self::BlockedPackage),
+            "missing_integrity" => Some(Self::MissingIntegrity),
+            "scope_confusion" => Some(Self::ScopeConfusion),
+            "homoglyph_suspect" => Some(Self::HomoglyphSuspect),
             _ => None,
         }
     }

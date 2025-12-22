@@ -2679,6 +2679,9 @@ import type {
   SecurityAuditReport,
   ExportFormat,
   TimeMachineSettings,
+  // Lockfile Validation types
+  LockfileValidationConfig,
+  ValidationResult,
 } from '../types/snapshot';
 
 export const snapshotAPI = {
@@ -2828,6 +2831,39 @@ export const snapshotAPI = {
   /** Get list of projects with active lockfile watchers */
   getLockfileWatchedProjects: (): Promise<string[]> =>
     invoke<string[]>('get_lockfile_watched_projects'),
+
+  // Lockfile Validation (Lockfile Security Enhancement)
+  /** Get lockfile validation configuration */
+  getLockfileValidationConfig: (): Promise<LockfileValidationConfig> =>
+    invoke<LockfileValidationConfig>('get_lockfile_validation_config'),
+
+  /** Save lockfile validation configuration */
+  saveLockfileValidationConfig: (config: LockfileValidationConfig): Promise<void> =>
+    invoke<void>('save_lockfile_validation_config', { config }),
+
+  /** Run manual lockfile validation on a snapshot */
+  validateLockfileManual: (snapshotId: string): Promise<ValidationResult> =>
+    invoke<ValidationResult>('validate_lockfile_manual', { snapshotId }),
+
+  /** Add a blocked package to the validation config */
+  addBlockedPackage: (name: string, reason: string): Promise<void> =>
+    invoke<void>('add_blocked_package', { name, reason }),
+
+  /** Remove a blocked package from the validation config */
+  removeBlockedPackage: (packageName: string): Promise<void> =>
+    invoke<void>('remove_blocked_package', { packageName }),
+
+  /** Add an allowed registry to the validation config */
+  addAllowedRegistry: (registry: string): Promise<void> =>
+    invoke<void>('add_allowed_registry', { registry }),
+
+  /** Remove an allowed registry from the validation config */
+  removeAllowedRegistry: (registry: string): Promise<void> =>
+    invoke<void>('remove_allowed_registry', { registry }),
+
+  /** Reset lockfile validation config to defaults */
+  resetLockfileValidationConfig: (): Promise<LockfileValidationConfig> =>
+    invoke<LockfileValidationConfig>('reset_lockfile_validation_config'),
 };
 
 export const tauriAPI = {
