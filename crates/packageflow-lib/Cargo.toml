@@ -1,6 +1,6 @@
 [package]
 name = "packageflow-lib"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 description = "PackageFlow shared library - models, repositories, services, and utilities"
 
