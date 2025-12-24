@@ -136,6 +136,40 @@ const terminalOptions = {
   minimumContrastRatio: 4.5, // WCAG AA compliance
 };
 
+// Throttle function to limit execution rate
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function throttle<T extends (...args: any[]) => void>(
+  fn: T,
+  delay: number
+): (...args: Parameters<T>) => void {
+  let lastCall = 0;
+  let pendingArgs: Parameters<T> | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  return (...args: Parameters<T>) => {
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCall;
+
+    if (timeSinceLastCall >= delay) {
+      lastCall = now;
+      fn(...args);
+    } else {
+      // Store latest args and schedule execution
+      pendingArgs = args;
+      if (!timeoutId) {
+        timeoutId = setTimeout(() => {
+          if (pendingArgs) {
+            lastCall = Date.now();
+            fn(...pendingArgs);
+            pendingArgs = null;
+          }
+          timeoutId = null;
+        }, delay - timeSinceLastCall);
+      }
+    }
+  };
+}
+
 // Status display configuration
 const statusConfig: Record<string, { label: string; color: string }> = {
   running: { label: 'Running', color: 'text-yellow-400' },
@@ -196,6 +230,36 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
     const pendingSpawnsRef = useRef<Map<string, { command: string; args: string[]; cwd: string }>>(
       new Map()
     );
+
+    // Track last activity time for each session (for scrollback cleanup)
+    const lastActivityRef = useRef<Map<string, number>>(new Map());
+
+    // Auto-cleanup scrollback buffer after inactivity (5 minutes)
+    const SCROLLBACK_CLEANUP_INTERVAL = 60_000; // Check every 1 minute
+    const SCROLLBACK_CLEANUP_THRESHOLD = 5 * 60_000; // 5 minutes of inactivity
+
+    useEffect(() => {
+      const cleanupInterval = setInterval(() => {
+        const now = Date.now();
+        sessions.forEach((session) => {
+          const lastActivity = lastActivityRef.current.get(session.id) || 0;
+          const idleTime = now - lastActivity;
+
+          // Only clean running sessions that have been idle
+          if (session.status === 'running' && idleTime > SCROLLBACK_CLEANUP_THRESHOLD) {
+            if (session.terminal) {
+              // Clear scrollback buffer but keep current screen content
+              session.terminal.clear();
+              console.log(`[PTY] Cleared scrollback for idle session: ${session.name}`);
+              // Reset activity timer after cleanup
+              lastActivityRef.current.set(session.id, now);
+            }
+          }
+        });
+      }, SCROLLBACK_CLEANUP_INTERVAL);
+
+      return () => clearInterval(cleanupInterval);
+    }, [sessions]);
 
     // Spawn a new PTY session
     const spawnSession = useCallback(
@@ -259,6 +323,8 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
           session.pty?.kill();
           session.webglAddon?.dispose();
           session.terminal?.dispose();
+          // Clean up activity tracking
+          lastActivityRef.current.delete(sessionId);
           setSessions((prev) => {
             const next = new Map(prev);
             next.delete(sessionId);
@@ -287,6 +353,8 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
           onRemovePtyExecution?.(session.id);
         }
       });
+      // Clear all activity tracking
+      lastActivityRef.current.clear();
       setSessions(new Map());
       setActiveSessionId(null);
     }, [sessions, onRemovePtyExecution]);
@@ -411,15 +479,47 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
                 env,
               });
 
-              // PTY -> Terminal
+              // PTY -> Terminal with batched writes to prevent backpressure
+              // Buffer to collect PTY output
+              let outputBuffer = '';
+              let flushScheduled = false;
+
+              // Throttled callback for port detection (100ms interval)
+              const throttledOutputCallback = throttle((output: string) => {
+                onUpdatePtyOutputRef.current?.(sessionId, output);
+              }, 100);
+
+              // Flush buffer to terminal using requestAnimationFrame for smooth rendering
+              const flushBuffer = () => {
+                if (outputBuffer) {
+                  term.write(outputBuffer);
+                  throttledOutputCallback(outputBuffer);
+                  outputBuffer = '';
+                }
+                flushScheduled = false;
+              };
+
               pty.onData((data: string) => {
-                term.write(data);
-                // Feature 008: Update output in ScriptExecutionContext for port detection
-                onUpdatePtyOutputRef.current?.(sessionId, data);
+                // Accumulate output in buffer
+                outputBuffer += data;
+
+                // Update last activity time for scrollback cleanup tracking
+                lastActivityRef.current.set(sessionId, Date.now());
+
+                // Schedule flush on next animation frame (batches rapid outputs)
+                if (!flushScheduled) {
+                  flushScheduled = true;
+                  requestAnimationFrame(flushBuffer);
+                }
               });
 
               // PTY exit
               pty.onExit(({ exitCode }: { exitCode: number }) => {
+                // Flush any remaining buffered output
+                if (outputBuffer) {
+                  term.write(outputBuffer);
+                  outputBuffer = '';
+                }
                 term.write(`\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`);
                 const newStatus = exitCode === 0 ? 'completed' : 'failed';
                 setSessions((prev) => {

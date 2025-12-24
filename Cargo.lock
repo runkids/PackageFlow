@@ -3426,7 +3426,7 @@ dependencies = [
 
 [[package]]
 name = "packageflow-lib"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "aes-gcm",
  "async-stream",
@@ -3474,7 +3474,7 @@ dependencies = [
 
 [[package]]
 name = "packageflow-mcp"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
