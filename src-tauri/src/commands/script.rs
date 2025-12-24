@@ -384,6 +384,8 @@ pub async fn execute_script(
     let mut command = path_resolver::create_command(&cmd);
     command.args(&args);
     command.current_dir(&working_dir);
+    // Set CI=true to prevent interactive prompts from pnpm/npm
+    command.env("CI", "true");
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     command.stdin(Stdio::piped());

@@ -1323,6 +1323,10 @@ async fn execute_node(
         command.current_dir(&expanded_cwd);
     }
 
+    // Set CI=true to prevent interactive prompts from pnpm/npm
+    // This fixes ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY error
+    command.env("CI", "true");
+
     // Set up stdio for streaming output
     // Kill child processes when the main process is killed
     command.stdout(Stdio::piped());
