@@ -200,6 +200,10 @@ pub fn create_command(tool_name: &str) -> Command {
     let tool_path = get_tool_path(tool_name);
     let mut cmd = Command::new(&tool_path);
 
+    // Clear Volta internal variables that should not persist across processes
+    // _VOLTA_TOOL_RECURSION causes Volta shim to skip its logic and use fallback node
+    cmd.env_remove("_VOLTA_TOOL_RECURSION");
+
     // Set essential environment variables
     let home = get_home_dir();
     if let Some(ref home) = home {
@@ -215,6 +219,19 @@ pub fn create_command(tool_name: &str) -> Command {
         let fnm_dir = format!("{}/.fnm", home);
         if std::path::Path::new(&fnm_dir).exists() {
             cmd.env("FNM_DIR", &fnm_dir);
+        }
+
+        // pnpm support - only set if user has explicitly configured
+        let pnpm_home = get_pnpm_home(home);
+        cmd.env("PNPM_HOME", &pnpm_home);
+
+        // Only set PNPM_STORE_DIR if explicitly configured by user
+        // Otherwise let pnpm use its default (~/.pnpm-store/v10)
+        if let Some(store_dir) = std::env::var("PNPM_STORE_DIR")
+            .ok()
+            .or_else(|| read_npmrc_store_dir(home))
+        {
+            cmd.env("PNPM_STORE_DIR", &store_dir);
         }
     }
 
@@ -258,6 +275,10 @@ pub fn create_async_command(tool_name: &str) -> tokio::process::Command {
     let tool_path = get_tool_path(tool_name);
     let mut cmd = tokio::process::Command::new(&tool_path);
 
+    // Clear Volta internal variables that should not persist across processes
+    // _VOLTA_TOOL_RECURSION causes Volta shim to skip its logic and use fallback node
+    cmd.env_remove("_VOLTA_TOOL_RECURSION");
+
     // Set essential environment variables
     let home = get_home_dir();
     if let Some(ref home) = home {
@@ -273,6 +294,19 @@ pub fn create_async_command(tool_name: &str) -> tokio::process::Command {
         let fnm_dir = format!("{}/.fnm", home);
         if std::path::Path::new(&fnm_dir).exists() {
             cmd.env("FNM_DIR", &fnm_dir);
+        }
+
+        // pnpm support - only set if user has explicitly configured
+        let pnpm_home = get_pnpm_home(home);
+        cmd.env("PNPM_HOME", &pnpm_home);
+
+        // Only set PNPM_STORE_DIR if explicitly configured by user
+        // Otherwise let pnpm use its default (~/.pnpm-store/v10)
+        if let Some(store_dir) = std::env::var("PNPM_STORE_DIR")
+            .ok()
+            .or_else(|| read_npmrc_store_dir(home))
+        {
+            cmd.env("PNPM_STORE_DIR", &store_dir);
         }
     }
 
@@ -291,11 +325,147 @@ pub fn create_async_command(tool_name: &str) -> tokio::process::Command {
     cmd
 }
 
+/// Get PNPM_HOME path with fallback to defaults
+fn get_pnpm_home(home: &str) -> String {
+    std::env::var("PNPM_HOME").ok().unwrap_or_else(|| {
+        let macos_default = format!("{}/Library/pnpm", home);
+        let linux_default = format!("{}/.local/share/pnpm", home);
+        if std::path::Path::new(&macos_default).exists() {
+            macos_default
+        } else if std::path::Path::new(&linux_default).exists() {
+            linux_default
+        } else {
+            #[cfg(target_os = "macos")]
+            {
+                macos_default
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                linux_default
+            }
+        }
+    })
+}
+
+/// Read store-dir from pnpm config files
+/// Checks multiple locations: pnpm global rc, ~/.npmrc
+/// Returns None if not found
+fn read_npmrc_store_dir(home: &str) -> Option<String> {
+    // pnpm config file locations (in priority order)
+    let config_paths = [
+        // pnpm global config (macOS)
+        format!("{}/Library/Preferences/pnpm/rc", home),
+        // pnpm global config (Linux)
+        format!("{}/.config/pnpm/rc", home),
+        // Legacy pnpm location
+        format!("{}/Library/pnpm/rc", home),
+        format!("{}/.local/share/pnpm/rc", home),
+        // npm config (also used by pnpm)
+        format!("{}/.npmrc", home),
+    ];
+
+    for config_path in &config_paths {
+        if let Some(store_dir) = read_store_dir_from_file(config_path, home) {
+            return Some(store_dir);
+        }
+    }
+    None
+}
+
+/// Parse a single config file for store-dir setting
+fn read_store_dir_from_file(path: &str, home: &str) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+
+    for line in content.lines() {
+        let line = line.trim();
+        // Skip comments and empty lines
+        if line.starts_with('#') || line.starts_with(';') || line.is_empty() {
+            continue;
+        }
+        // Look for store-dir setting (pnpm uses this key)
+        if let Some(value) = line.strip_prefix("store-dir=") {
+            let value = value.trim();
+            // Handle quoted values
+            let value = value.trim_matches('"').trim_matches('\'');
+            if !value.is_empty() {
+                // Expand ~ to home directory
+                return Some(value.replace('~', home));
+            }
+        }
+    }
+    None
+}
+
+/// Configure environment variables for a std::process::Command
+/// Use this when you need to create Command manually (e.g., for process_group on Unix)
+/// This applies the same environment setup as create_command()
+pub fn configure_std_command_env(cmd: &mut Command) {
+    // Clear Volta internal variables that should not persist across processes
+    // _VOLTA_TOOL_RECURSION causes Volta shim to skip its logic and use fallback node
+    cmd.env_remove("_VOLTA_TOOL_RECURSION");
+
+    // Set essential environment variables
+    let home = get_home_dir();
+    if let Some(ref home) = home {
+        cmd.env("HOME", home);
+
+        // Volta support: set VOLTA_HOME for volta-managed projects
+        let volta_home = format!("{}/.volta", home);
+        if std::path::Path::new(&volta_home).exists() {
+            cmd.env("VOLTA_HOME", &volta_home);
+        }
+
+        // fnm support
+        let fnm_dir = format!("{}/.fnm", home);
+        if std::path::Path::new(&fnm_dir).exists() {
+            cmd.env("FNM_DIR", &fnm_dir);
+        }
+
+        // pnpm support
+        let pnpm_home = get_pnpm_home(home);
+        cmd.env("PNPM_HOME", &pnpm_home);
+
+        // Only set PNPM_STORE_DIR if explicitly configured by user
+        if let Some(store_dir) = std::env::var("PNPM_STORE_DIR")
+            .ok()
+            .or_else(|| read_npmrc_store_dir(home))
+        {
+            cmd.env("PNPM_STORE_DIR", &store_dir);
+        }
+    }
+
+    // Set PATH so child processes can find tools
+    cmd.env("PATH", get_path());
+
+    // Set SSH_AUTH_SOCK for git operations
+    if let Some(sock) = get_ssh_auth_sock() {
+        cmd.env("SSH_AUTH_SOCK", &sock);
+    }
+
+    // Set LANG for proper encoding
+    cmd.env("LANG", "en_US.UTF-8");
+    cmd.env("LC_ALL", "en_US.UTF-8");
+
+    // Terminal/TTY settings for interactive tools and dev servers
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("FORCE_COLOR", "1");
+    cmd.env("CI", "false");
+
+    // Node.js specific settings
+    cmd.env(
+        "NODE_ENV",
+        std::env::var("NODE_ENV").unwrap_or_else(|_| "development".to_string()),
+    );
+}
+
 /// Build environment variables map for child processes
 /// This ensures child processes have access to necessary paths
-#[allow(dead_code)]
 pub fn build_env_for_child() -> HashMap<String, String> {
     let mut env = HashMap::new();
+
+    // Clear Volta internal variables that should not persist across processes
+    // _VOLTA_TOOL_RECURSION causes Volta shim to skip its logic and use fallback node
+    env.insert("_VOLTA_TOOL_RECURSION".to_string(), String::new());
 
     if let Some(home) = get_home_dir() {
         // Volta support
@@ -308,6 +478,19 @@ pub fn build_env_for_child() -> HashMap<String, String> {
         let fnm_dir = format!("{}/.fnm", &home);
         if std::path::Path::new(&fnm_dir).exists() {
             env.insert("FNM_DIR".to_string(), fnm_dir);
+        }
+
+        // pnpm support - only set if user has explicitly configured
+        let pnpm_home = get_pnpm_home(&home);
+        env.insert("PNPM_HOME".to_string(), pnpm_home);
+
+        // Only set PNPM_STORE_DIR if explicitly configured by user
+        // Otherwise let pnpm use its default (~/.pnpm-store/v10)
+        if let Some(store_dir) = std::env::var("PNPM_STORE_DIR")
+            .ok()
+            .or_else(|| read_npmrc_store_dir(&home))
+        {
+            env.insert("PNPM_STORE_DIR".to_string(), store_dir);
         }
 
         env.insert("HOME".to_string(), home);
@@ -325,6 +508,13 @@ pub fn build_env_for_child() -> HashMap<String, String> {
 
     // Terminal settings
     env.insert("TERM".to_string(), "xterm-256color".to_string());
+
+    // User's default shell (for spawning login shells)
+    if let Ok(shell) = std::env::var("SHELL") {
+        env.insert("SHELL".to_string(), shell);
+    } else {
+        env.insert("SHELL".to_string(), "/bin/zsh".to_string());
+    }
     env.insert("FORCE_COLOR".to_string(), "1".to_string());
     env.insert("CI".to_string(), "false".to_string());
 

@@ -122,35 +122,9 @@ impl ProcessManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // Set essential environment variables (critical for macOS GUI apps)
-        if let Some(home) = dirs::home_dir() {
-            let home_str = home.to_string_lossy().to_string();
-            std_cmd.env("HOME", &home_str);
-
-            // Volta support
-            let volta_home = format!("{}/.volta", home_str);
-            if std::path::Path::new(&volta_home).exists() {
-                std_cmd.env("VOLTA_HOME", &volta_home);
-            }
-
-            // fnm support
-            let fnm_dir = format!("{}/.fnm", home_str);
-            if std::path::Path::new(&fnm_dir).exists() {
-                std_cmd.env("FNM_DIR", &fnm_dir);
-            }
-        }
-
-        // Set PATH so child processes can find tools
-        std_cmd.env("PATH", path_resolver::get_path());
-
-        // Set LANG for proper encoding
-        std_cmd.env("LANG", "en_US.UTF-8");
-        std_cmd.env("LC_ALL", "en_US.UTF-8");
-
-        // Terminal settings
-        std_cmd.env("TERM", "xterm-256color");
-        std_cmd.env("FORCE_COLOR", "1");
-        std_cmd.env("CI", "false");
+        // Set environment variables using shared path_resolver config
+        // This handles Volta, pnpm, fnm, and other tool environments correctly
+        path_resolver::configure_std_command_env(&mut std_cmd);
 
         // Create new process group on Unix for proper child termination
         // This allows us to kill all child processes when stopping

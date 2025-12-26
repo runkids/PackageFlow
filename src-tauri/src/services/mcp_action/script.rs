@@ -5,7 +5,6 @@
 use async_trait::async_trait;
 use std::process::Stdio;
 use std::time::Instant;
-use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 
 use crate::models::mcp_action::{MCPActionType, ScriptConfig, ScriptExecutionResult};
@@ -40,17 +39,16 @@ impl ScriptExecutor {
         let start = Instant::now();
 
         // Build the command using path_resolver for proper macOS GUI app support
+        // create_async_command handles all environment setup including Volta, pnpm, etc.
         let mut cmd = if config.use_volta {
             // Use volta run for Volta-managed projects
-            let volta_path = path_resolver::get_tool_path("volta");
-            let mut c = Command::new(&volta_path);
+            let mut c = path_resolver::create_async_command("volta");
             c.arg("run").arg(&config.command);
             c.args(&config.args);
             c
         } else {
-            // Use path_resolver to find the command
-            let tool_path = path_resolver::get_tool_path(&config.command);
-            let mut c = Command::new(&tool_path);
+            // Use path_resolver to find and configure the command
+            let mut c = path_resolver::create_async_command(&config.command);
             c.args(&config.args);
             c
         };
@@ -61,30 +59,7 @@ impl ScriptExecutor {
             cmd.current_dir(cwd);
         }
 
-        // Set environment variables from path_resolver
-        let home = path_resolver::get_home_dir();
-        if let Some(ref home) = home {
-            cmd.env("HOME", home);
-
-            // Volta support
-            let volta_home = format!("{}/.volta", home);
-            if std::path::Path::new(&volta_home).exists() {
-                cmd.env("VOLTA_HOME", &volta_home);
-            }
-        }
-
-        cmd.env("PATH", path_resolver::get_path());
-
-        if let Some(sock) = path_resolver::get_ssh_auth_sock() {
-            cmd.env("SSH_AUTH_SOCK", &sock);
-        }
-
-        cmd.env("LANG", "en_US.UTF-8");
-        cmd.env("LC_ALL", "en_US.UTF-8");
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("FORCE_COLOR", "1");
-
-        // Apply custom environment variables from config
+        // Apply custom environment variables from config (override defaults if needed)
         for (key, value) in &config.env {
             cmd.env(key, value);
         }

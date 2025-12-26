@@ -283,7 +283,30 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
               // Get environment variables for proper PATH, VOLTA_HOME, etc.
               const env = await scriptAPI.getPtyEnv();
 
-              const pty = await spawn(command, args, {
+              // Wrap command to unset Volta internal variables that interfere with node version
+              // _VOLTA_TOOL_RECURSION causes Volta shim to skip its logic
+              // Use login shell (-l) to source user's profile for consistent environment
+              const userShell = env.SHELL || '/bin/zsh';
+
+              // Escape arguments for shell - handle special characters
+              const escapeArg = (arg: string): string => {
+                // Use single quotes and escape any single quotes within
+                // This is safer than double quotes as it prevents variable expansion
+                return `'${arg.replace(/'/g, "'\\''")}'`;
+              };
+
+              const escapedArgs = args.length > 0 ? ' ' + args.map(escapeArg).join(' ') : '';
+
+              // For fish shell, use different syntax
+              const isFish = userShell.includes('fish');
+              const wrappedCommand = isFish ? '/bin/bash' : userShell;
+              const wrappedArgs = [
+                '-l',
+                '-c',
+                `unset _VOLTA_TOOL_RECURSION; exec ${escapeArg(command)}${escapedArgs}`,
+              ];
+
+              const pty = await spawn(wrappedCommand, wrappedArgs, {
                 cols: term.cols || 80,
                 rows: term.rows || 24,
                 cwd,
