@@ -10,17 +10,12 @@ import {
   useEffect,
   useCallback,
   useState,
-  useMemo,
   forwardRef,
   useImperativeHandle,
 } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
-import { spawn, type IPty } from 'tauri-pty';
+import { spawn } from 'tauri-pty';
 import {
-  X,
   ChevronUp,
   ChevronDown,
   GripHorizontal,
@@ -29,26 +24,14 @@ import {
   Search,
   Trash2,
   Terminal as TerminalIcon,
+  X,
 } from 'lucide-react';
 import { scriptAPI } from '../../lib/tauri-api';
 import { useSettings } from '../../contexts/SettingsContext';
 import { Button } from '../ui/Button';
+import { usePtySessions, terminalTheme, type PtySession } from '../../hooks/usePtySessions';
+import { TerminalTab } from './TerminalTab';
 import '@xterm/xterm/css/xterm.css';
-
-// PTY session info
-interface PtySession {
-  id: string;
-  name: string;
-  projectPath: string;
-  projectName?: string;
-  pty: IPty | null;
-  terminal: Terminal | null;
-  fitAddon: FitAddon | null;
-  searchAddon: SearchAddon | null;
-  webglAddon: WebglAddon | null;
-  status: 'running' | 'completed' | 'failed';
-  exitCode?: number;
-}
 
 interface ScriptPtyTerminalProps {
   isCollapsed: boolean;
@@ -89,52 +72,6 @@ export interface ScriptPtyTerminalRef {
   sessions: Map<string, PtySession>;
   activeSessionId: string | null;
 }
-
-// Terminal theme matching the existing design
-const terminalTheme = {
-  background: '#030712', // gray-950
-  foreground: '#e5e7eb', // gray-200 (improved contrast)
-  cursor: '#e5e7eb',
-  cursorAccent: '#030712',
-  selectionBackground: 'rgba(59, 130, 246, 0.4)', // blue-500 with opacity
-  selectionForeground: '#ffffff',
-  black: '#374151',
-  red: '#ef4444',
-  green: '#22c55e',
-  yellow: '#eab308',
-  blue: '#3b82f6',
-  magenta: '#a855f7',
-  cyan: '#06b6d4',
-  white: '#e5e7eb', // gray-200
-  brightBlack: '#9ca3af', // gray-400 (brighter for better visibility)
-  brightRed: '#f87171',
-  brightGreen: '#4ade80',
-  brightYellow: '#facc15',
-  brightBlue: '#60a5fa',
-  brightMagenta: '#c084fc',
-  brightCyan: '#22d3ee',
-  brightWhite: '#f9fafb', // gray-50
-};
-
-// Terminal configuration for better readability
-const terminalOptions = {
-  cursorBlink: true,
-  cursorStyle: 'block' as const,
-  fontSize: 14, // Slightly larger for better readability
-  fontFamily:
-    '"SF Mono", Menlo, Monaco, "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace',
-  fontWeight: '400' as const,
-  fontWeightBold: '600' as const,
-  lineHeight: 1.5, // More breathing room between lines (increased from 1.35)
-  letterSpacing: 0.5, // Slight letter spacing for clarity
-  theme: terminalTheme,
-  scrollback: 5000, // Reduced for better performance
-  // smoothScrollDuration removed for better scroll performance
-  allowProposedApi: true,
-  // Rendering options for crisp text
-  allowTransparency: false,
-  minimumContrastRatio: 4.5, // WCAG AA compliance
-};
 
 // Throttle function to limit execution rate
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -195,8 +132,24 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalContainerRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
-    const [sessions, setSessions] = useState<Map<string, PtySession>>(new Map());
-    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+
+    // Use extracted hook for session management
+    const {
+      sessions,
+      activeSessionId,
+      activeSession,
+      sessionList,
+      setActiveSessionId,
+      setSessions,
+      spawnSession,
+      killSession,
+      killAllSessions,
+      pendingSpawnsRef,
+    } = usePtySessions({
+      onRegisterPtyExecution,
+      onRemovePtyExecution,
+    });
+
     const [isResizing, setIsResizing] = useState(false);
     const [copied, setCopied] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -222,142 +175,6 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
       onUpdatePtyOutputRef.current = onUpdatePtyOutput;
       onUpdatePtyStatusRef.current = onUpdatePtyStatus;
     }, [onUpdatePtyOutput, onUpdatePtyStatus]);
-
-    // Get active session
-    const activeSession = activeSessionId ? sessions.get(activeSessionId) : null;
-
-    // Track pending spawns that need PTY initialization after terminal mount
-    const pendingSpawnsRef = useRef<Map<string, { command: string; args: string[]; cwd: string }>>(
-      new Map()
-    );
-
-    // Track last activity time for each session (for scrollback cleanup)
-    const lastActivityRef = useRef<Map<string, number>>(new Map());
-
-    // Auto-cleanup scrollback buffer after inactivity (5 minutes)
-    const SCROLLBACK_CLEANUP_INTERVAL = 60_000; // Check every 1 minute
-    const SCROLLBACK_CLEANUP_THRESHOLD = 5 * 60_000; // 5 minutes of inactivity
-
-    useEffect(() => {
-      const cleanupInterval = setInterval(() => {
-        const now = Date.now();
-        sessions.forEach((session) => {
-          const lastActivity = lastActivityRef.current.get(session.id) || 0;
-          const idleTime = now - lastActivity;
-
-          // Only clean running sessions that have been idle
-          if (session.status === 'running' && idleTime > SCROLLBACK_CLEANUP_THRESHOLD) {
-            if (session.terminal) {
-              // Clear scrollback buffer but keep current screen content
-              session.terminal.clear();
-              console.log(`[PTY] Cleared scrollback for idle session: ${session.name}`);
-              // Reset activity timer after cleanup
-              lastActivityRef.current.set(session.id, now);
-            }
-          }
-        });
-      }, SCROLLBACK_CLEANUP_INTERVAL);
-
-      return () => clearInterval(cleanupInterval);
-    }, [sessions]);
-
-    // Spawn a new PTY session
-    const spawnSession = useCallback(
-      async (
-        command: string,
-        args: string[],
-        cwd: string,
-        name: string,
-        projectName?: string
-      ): Promise<string | null> => {
-        console.log('[PTY] spawnSession called:', { command, args, cwd, name, projectName });
-        const sessionId = crypto.randomUUID();
-
-        // Create terminal instance with improved readability settings
-        const term = new Terminal(terminalOptions);
-
-        const fitAddon = new FitAddon();
-        // SearchAddon with yellow highlight for better visibility
-        const searchAddon = new SearchAddon();
-        term.loadAddon(fitAddon);
-        term.loadAddon(searchAddon);
-        // WebGL addon will be loaded after terminal is opened (requires DOM)
-
-        // Create initial session
-        const session: PtySession = {
-          id: sessionId,
-          name,
-          projectPath: cwd,
-          projectName,
-          pty: null,
-          terminal: term,
-          fitAddon,
-          searchAddon,
-          webglAddon: null, // Will be initialized after terminal is opened
-          status: 'running',
-        };
-
-        // Store spawn info for later initialization
-        pendingSpawnsRef.current.set(sessionId, { command, args, cwd });
-
-        setSessions((prev) => {
-          const next = new Map(prev);
-          next.set(sessionId, session);
-          return next;
-        });
-        setActiveSessionId(sessionId);
-
-        // Feature 008: Register with ScriptExecutionContext for icon state and port detection
-        onRegisterPtyExecution?.(sessionId, name, cwd, projectName);
-
-        return sessionId;
-      },
-      [onRegisterPtyExecution]
-    );
-
-    // Kill a session
-    const killSession = useCallback(
-      (sessionId: string) => {
-        const session = sessions.get(sessionId);
-        if (session) {
-          session.pty?.kill();
-          session.webglAddon?.dispose();
-          session.terminal?.dispose();
-          // Clean up activity tracking
-          lastActivityRef.current.delete(sessionId);
-          setSessions((prev) => {
-            const next = new Map(prev);
-            next.delete(sessionId);
-            // Select another session if active was removed
-            if (activeSessionId === sessionId) {
-              const remaining = Array.from(next.keys());
-              setActiveSessionId(remaining.length > 0 ? remaining[remaining.length - 1] : null);
-            }
-            return next;
-          });
-          // Feature 008: Remove from ScriptExecutionContext
-          onRemovePtyExecution?.(sessionId);
-        }
-      },
-      [sessions, activeSessionId, onRemovePtyExecution]
-    );
-
-    // Kill all running sessions (for "Stop All Processes")
-    const killAllSessions = useCallback(() => {
-      sessions.forEach((session) => {
-        if (session.status === 'running') {
-          session.pty?.kill();
-          session.webglAddon?.dispose();
-          session.terminal?.dispose();
-          // Feature 008: Remove from ScriptExecutionContext
-          onRemovePtyExecution?.(session.id);
-        }
-      });
-      // Clear all activity tracking
-      lastActivityRef.current.clear();
-      setSessions(new Map());
-      setActiveSessionId(null);
-    }, [sessions, onRemovePtyExecution]);
 
     // Expose methods to parent via ref
     useImperativeHandle(
@@ -502,9 +319,6 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
               pty.onData((data: string) => {
                 // Accumulate output in buffer
                 outputBuffer += data;
-
-                // Update last activity time for scrollback cleanup tracking
-                lastActivityRef.current.set(sessionId, Date.now());
 
                 // Schedule flush on next animation frame (batches rapid outputs)
                 if (!flushScheduled) {
@@ -761,9 +575,6 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
       return () => document.removeEventListener('keydown', handleKeyDown);
     }, [handleCopy]);
 
-    // Session tabs
-    const sessionList = useMemo(() => Array.from(sessions.values()), [sessions]);
-
     // If no sessions, hide terminal completely
     if (sessions.size === 0) {
       return null;
@@ -810,54 +621,18 @@ export const ScriptPtyTerminal = forwardRef<ScriptPtyTerminalRef, ScriptPtyTermi
             <>
               <GripHorizontal className="w-4 h-4 text-muted-foreground mr-2" />
 
-              {/* Tabs */}
+              {/* Tabs - using memoized TerminalTab component */}
               <div className="flex-1 flex items-center gap-1 overflow-x-auto">
-                {sessionList.map((session) => {
-                  const port = sessionPorts?.get(session.id);
-                  return (
-                    <div
-                      key={session.id}
-                      onClick={() => setActiveSessionId(session.id)}
-                      className={`group flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer ${
-                        activeSessionId === session.id
-                          ? 'bg-secondary text-foreground'
-                          : 'text-muted-foreground hover:bg-accent'
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                          session.status === 'running'
-                            ? 'bg-yellow-400'
-                            : session.status === 'completed'
-                              ? 'bg-green-400'
-                              : 'bg-red-400'
-                        }`}
-                      />
-                      <span className="truncate max-w-[150px]">
-                        {(() => {
-                          const projectLabel =
-                            session.projectName ||
-                            session.projectPath.split(/[\\/]/).filter(Boolean).pop();
-                          return projectLabel ? `${projectLabel}: ${session.name}` : session.name;
-                        })()}
-                      </span>
-                      {port && (
-                        <span className="text-yellow-400 text-[10px] flex-shrink-0">:{port}</span>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          killSession(session.id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 h-auto p-0.5"
-                      >
-                        <X className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  );
-                })}
+                {sessionList.map((session) => (
+                  <TerminalTab
+                    key={session.id}
+                    session={session}
+                    isActive={activeSessionId === session.id}
+                    port={sessionPorts?.get(session.id)}
+                    onSelect={setActiveSessionId}
+                    onClose={killSession}
+                  />
+                ))}
               </div>
 
               {/* Toolbar buttons */}

@@ -5,7 +5,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
-use std::sync::Mutex;
+use tokio::sync::RwLock;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -134,13 +134,186 @@ impl Default for OutputBuffer {
 }
 
 // ============================================================================
+// Performance Optimization: Output Batcher
+// Batches output events to reduce IPC overhead (8KB or 16ms threshold)
+// ============================================================================
+
+/// Performance optimization: Batch output before emitting to frontend
+/// Reduces IPC overhead by batching events (8KB or 16ms, whichever comes first)
+pub struct OutputBatcher {
+    buffer: String,
+    last_flush: Instant,
+    execution_id: String,
+    stream_type: String,
+}
+
+impl OutputBatcher {
+    /// Batch size threshold (8KB)
+    const BATCH_SIZE_THRESHOLD: usize = 8192;
+    /// Time threshold (16ms = ~60fps)
+    const TIME_THRESHOLD_MS: u64 = 16;
+
+    pub fn new(execution_id: String, stream_type: &str) -> Self {
+        Self {
+            buffer: String::new(),
+            last_flush: Instant::now(),
+            execution_id,
+            stream_type: stream_type.to_string(),
+        }
+    }
+
+    /// Add content to buffer and flush if thresholds are met
+    pub async fn add(&mut self, content: &str, app: &AppHandle, state: &ScriptExecutionState) {
+        self.buffer.push_str(content);
+
+        let should_flush = self.buffer.len() >= Self::BATCH_SIZE_THRESHOLD
+            || self.last_flush.elapsed().as_millis() as u64 >= Self::TIME_THRESHOLD_MS;
+
+        if should_flush {
+            self.flush(app, state).await;
+        }
+    }
+
+    /// Flush any remaining content (call at end of stream)
+    pub async fn flush(&mut self, app: &AppHandle, state: &ScriptExecutionState) {
+        if self.buffer.is_empty() {
+            return;
+        }
+
+        let timestamp = Utc::now().to_rfc3339();
+
+        // Buffer the output in state (using write lock for mutation)
+        {
+            let mut executions = state.executions.write().await;
+            if let Some(exec) = executions.get_mut(&self.execution_id) {
+                exec.output_buffer.push(OutputLine {
+                    content: self.buffer.clone(),
+                    stream: self.stream_type.clone(),
+                    timestamp: timestamp.clone(),
+                });
+            }
+        }
+
+        // Emit to frontend
+        let _ = app.emit(
+            "script_output",
+            ScriptOutputPayload {
+                execution_id: self.execution_id.clone(),
+                output: self.buffer.clone(),
+                stream: self.stream_type.clone(),
+                timestamp,
+            },
+        );
+
+        self.buffer.clear();
+        self.last_flush = Instant::now();
+    }
+}
+
+// ============================================================================
+// Shared Output Stream Handler
+// Eliminates code duplication between execute_script and execute_command
+// ============================================================================
+
+/// Stream type for output handling
+#[derive(Clone, Copy)]
+pub enum StreamType {
+    Stdout,
+    Stderr,
+}
+
+impl StreamType {
+    fn as_str(&self) -> &'static str {
+        match self {
+            StreamType::Stdout => "stdout",
+            StreamType::Stderr => "stderr",
+        }
+    }
+}
+
+/// Shared output stream handler - processes lines from stdout/stderr
+/// Uses OutputBatcher for performance optimization
+async fn stream_output<R: tokio::io::AsyncRead + Unpin>(
+    reader: R,
+    stream_type: StreamType,
+    execution_id: String,
+    app: AppHandle,
+) {
+    let state = app.state::<ScriptExecutionState>();
+    let mut batcher = OutputBatcher::new(execution_id.clone(), stream_type.as_str());
+    let mut line_reader = BufReader::new(reader).lines();
+
+    while let Ok(Some(line)) = line_reader.next_line().await {
+        // BufReader::lines() strips newlines, so we add it back for proper display
+        let line_with_newline = format!("{}\n", line);
+        batcher.add(&line_with_newline, &app, &state).await;
+    }
+
+    // Flush any remaining content
+    batcher.flush(&app, &state).await;
+}
+
+/// Shared process completion handler
+/// Eliminates code duplication between execute_script and execute_command
+async fn handle_process_completion(
+    execution_id: String,
+    start_time: Instant,
+    app: AppHandle,
+) {
+    // Get the child process (outside lock scope for await)
+    let child_opt = {
+        let state = app.state::<ScriptExecutionState>();
+        let mut executions = state.executions.write().await;
+        executions
+            .get_mut(&execution_id)
+            .and_then(|exec| exec.child.take())
+    };
+
+    // Wait for the child process (no lock held)
+    let status = if let Some(mut child) = child_opt {
+        child.wait().await.ok()
+    } else {
+        None
+    };
+
+    let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
+    let duration = start_time.elapsed();
+
+    let _ = app.emit(
+        "script_completed",
+        ScriptCompletedPayload {
+            execution_id: execution_id.clone(),
+            exit_code,
+            success: exit_code == 0,
+            duration_ms: duration.as_millis() as u64,
+        },
+    );
+
+    // Update status instead of removing (keep for 5 min retention)
+    let state = app.state::<ScriptExecutionState>();
+    let mut executions = state.executions.write().await;
+    if let Some(exec) = executions.get_mut(&execution_id) {
+        exec.status = if exit_code == 0 {
+            ExecutionStatus::Completed
+        } else {
+            ExecutionStatus::Failed
+        };
+        exec.exit_code = Some(exit_code);
+        exec.completed_at = Some(Utc::now().to_rfc3339());
+        exec.child = None;
+        exec.stdin = None;
+    }
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
 /// Execution state stored in app state
 pub struct ScriptExecutionState {
     /// Map of execution_id -> child process handle
-    pub executions: Mutex<HashMap<String, RunningExecution>>,
+    /// Uses RwLock for better async performance (allows concurrent reads)
+    pub executions: RwLock<HashMap<String, RunningExecution>>,
 }
 
 /// Running execution info with output buffer for reconnection support (Feature 007)
@@ -165,7 +338,7 @@ pub struct RunningExecution {
 impl Default for ScriptExecutionState {
     fn default() -> Self {
         Self {
-            executions: Mutex::new(HashMap::new()),
+            executions: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -411,7 +584,7 @@ pub async fn execute_script(
     let stored_name = project_name.clone();
     {
         let state = app.state::<ScriptExecutionState>();
-        let mut executions = state.executions.lock().unwrap();
+        let mut executions = state.executions.write().await;
         executions.insert(
             execution_id.clone(),
             RunningExecution {
@@ -433,74 +606,17 @@ pub async fn execute_script(
         );
     }
 
-    // Spawn task to handle stdout
+    // Performance optimization: Use shared stream handlers with batching
     let app_stdout = app.clone();
     let exec_id_stdout = exec_id.clone();
     let stdout_task = tauri::async_runtime::spawn(async move {
-        let mut reader = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let timestamp = Utc::now().to_rfc3339();
-            // BufReader::lines() strips newlines, so we add it back for proper display
-            let line_with_newline = format!("{}\n", line);
-
-            // Feature 007: Buffer the output before emitting
-            {
-                let state = app_stdout.state::<ScriptExecutionState>();
-                let mut executions = state.executions.lock().unwrap();
-                if let Some(exec) = executions.get_mut(&exec_id_stdout) {
-                    exec.output_buffer.push(OutputLine {
-                        content: line_with_newline.clone(),
-                        stream: "stdout".to_string(),
-                        timestamp: timestamp.clone(),
-                    });
-                }
-            }
-
-            let _ = app_stdout.emit(
-                "script_output",
-                ScriptOutputPayload {
-                    execution_id: exec_id_stdout.clone(),
-                    output: line_with_newline,
-                    stream: "stdout".to_string(),
-                    timestamp,
-                },
-            );
-        }
+        stream_output(stdout, StreamType::Stdout, exec_id_stdout, app_stdout).await;
     });
 
-    // Spawn task to handle stderr
     let app_stderr = app.clone();
     let exec_id_stderr = exec_id.clone();
     let stderr_task = tauri::async_runtime::spawn(async move {
-        let mut reader = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let timestamp = Utc::now().to_rfc3339();
-            // BufReader::lines() strips newlines, so we add it back for proper display
-            let line_with_newline = format!("{}\n", line);
-
-            // Feature 007: Buffer the output before emitting
-            {
-                let state = app_stderr.state::<ScriptExecutionState>();
-                let mut executions = state.executions.lock().unwrap();
-                if let Some(exec) = executions.get_mut(&exec_id_stderr) {
-                    exec.output_buffer.push(OutputLine {
-                        content: line_with_newline.clone(),
-                        stream: "stderr".to_string(),
-                        timestamp: timestamp.clone(),
-                    });
-                }
-            }
-
-            let _ = app_stderr.emit(
-                "script_output",
-                ScriptOutputPayload {
-                    execution_id: exec_id_stderr.clone(),
-                    output: line_with_newline,
-                    stream: "stderr".to_string(),
-                    timestamp,
-                },
-            );
-        }
+        stream_output(stderr, StreamType::Stderr, exec_id_stderr, app_stderr).await;
     });
 
     // Spawn task to wait for process completion
@@ -511,49 +627,8 @@ pub async fn execute_script(
         let _ = stdout_task.await;
         let _ = stderr_task.await;
 
-        // Get the child process (outside lock scope for await)
-        let child_opt = {
-            let state = app_wait.state::<ScriptExecutionState>();
-            let mut executions = state.executions.lock().unwrap();
-            executions
-                .get_mut(&exec_id_wait)
-                .and_then(|exec| exec.child.take())
-        };
-
-        // Wait for the child process (no lock held)
-        let status = if let Some(mut child) = child_opt {
-            child.wait().await.ok()
-        } else {
-            None
-        };
-
-        let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
-        let duration = start_time.elapsed();
-
-        let _ = app_wait.emit(
-            "script_completed",
-            ScriptCompletedPayload {
-                execution_id: exec_id_wait.clone(),
-                exit_code,
-                success: exit_code == 0,
-                duration_ms: duration.as_millis() as u64,
-            },
-        );
-
-        // Feature 007: Update status instead of removing (keep for 5 min retention)
-        let state = app_wait.state::<ScriptExecutionState>();
-        let mut executions = state.executions.lock().unwrap();
-        if let Some(exec) = executions.get_mut(&exec_id_wait) {
-            exec.status = if exit_code == 0 {
-                ExecutionStatus::Completed
-            } else {
-                ExecutionStatus::Failed
-            };
-            exec.exit_code = Some(exit_code);
-            exec.completed_at = Some(Utc::now().to_rfc3339());
-            exec.child = None;
-            exec.stdin = None;
-        }
+        // Use shared completion handler
+        handle_process_completion(exec_id_wait, start_time, app_wait).await;
     });
 
     Ok(ExecuteScriptResponse {
@@ -716,7 +791,7 @@ pub async fn execute_command(
     let stored_path = project_path.unwrap_or_else(|| cwd.clone());
     {
         let state = app.state::<ScriptExecutionState>();
-        let mut executions = state.executions.lock().unwrap();
+        let mut executions = state.executions.write().await;
         executions.insert(
             execution_id.clone(),
             RunningExecution {
@@ -738,74 +813,17 @@ pub async fn execute_command(
         );
     }
 
-    // Spawn task to handle stdout
+    // Performance optimization: Use shared stream handlers with batching
     let app_stdout = app.clone();
     let exec_id_stdout = exec_id.clone();
     let stdout_task = tauri::async_runtime::spawn(async move {
-        let mut reader = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let timestamp = Utc::now().to_rfc3339();
-            // BufReader::lines() strips newlines, so we add it back for proper display
-            let line_with_newline = format!("{}\n", line);
-
-            // Feature 007: Buffer the output before emitting
-            {
-                let state = app_stdout.state::<ScriptExecutionState>();
-                let mut executions = state.executions.lock().unwrap();
-                if let Some(exec) = executions.get_mut(&exec_id_stdout) {
-                    exec.output_buffer.push(OutputLine {
-                        content: line_with_newline.clone(),
-                        stream: "stdout".to_string(),
-                        timestamp: timestamp.clone(),
-                    });
-                }
-            }
-
-            let _ = app_stdout.emit(
-                "script_output",
-                ScriptOutputPayload {
-                    execution_id: exec_id_stdout.clone(),
-                    output: line_with_newline,
-                    stream: "stdout".to_string(),
-                    timestamp,
-                },
-            );
-        }
+        stream_output(stdout, StreamType::Stdout, exec_id_stdout, app_stdout).await;
     });
 
-    // Spawn task to handle stderr
     let app_stderr = app.clone();
     let exec_id_stderr = exec_id.clone();
     let stderr_task = tauri::async_runtime::spawn(async move {
-        let mut reader = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let timestamp = Utc::now().to_rfc3339();
-            // BufReader::lines() strips newlines, so we add it back for proper display
-            let line_with_newline = format!("{}\n", line);
-
-            // Feature 007: Buffer the output before emitting
-            {
-                let state = app_stderr.state::<ScriptExecutionState>();
-                let mut executions = state.executions.lock().unwrap();
-                if let Some(exec) = executions.get_mut(&exec_id_stderr) {
-                    exec.output_buffer.push(OutputLine {
-                        content: line_with_newline.clone(),
-                        stream: "stderr".to_string(),
-                        timestamp: timestamp.clone(),
-                    });
-                }
-            }
-
-            let _ = app_stderr.emit(
-                "script_output",
-                ScriptOutputPayload {
-                    execution_id: exec_id_stderr.clone(),
-                    output: line_with_newline,
-                    stream: "stderr".to_string(),
-                    timestamp,
-                },
-            );
-        }
+        stream_output(stderr, StreamType::Stderr, exec_id_stderr, app_stderr).await;
     });
 
     // Spawn task to wait for process completion
@@ -816,49 +834,8 @@ pub async fn execute_command(
         let _ = stdout_task.await;
         let _ = stderr_task.await;
 
-        // Get the child process (outside lock scope for await)
-        let child_opt = {
-            let state = app_wait.state::<ScriptExecutionState>();
-            let mut executions = state.executions.lock().unwrap();
-            executions
-                .get_mut(&exec_id_wait)
-                .and_then(|exec| exec.child.take())
-        };
-
-        // Wait for the child process (no lock held)
-        let status = if let Some(mut child) = child_opt {
-            child.wait().await.ok()
-        } else {
-            None
-        };
-
-        let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
-        let duration = start_time.elapsed();
-
-        let _ = app_wait.emit(
-            "script_completed",
-            ScriptCompletedPayload {
-                execution_id: exec_id_wait.clone(),
-                exit_code,
-                success: exit_code == 0,
-                duration_ms: duration.as_millis() as u64,
-            },
-        );
-
-        // Feature 007: Update status instead of removing (keep for 5 min retention)
-        let state = app_wait.state::<ScriptExecutionState>();
-        let mut executions = state.executions.lock().unwrap();
-        if let Some(exec) = executions.get_mut(&exec_id_wait) {
-            exec.status = if exit_code == 0 {
-                ExecutionStatus::Completed
-            } else {
-                ExecutionStatus::Failed
-            };
-            exec.exit_code = Some(exit_code);
-            exec.completed_at = Some(Utc::now().to_rfc3339());
-            exec.child = None;
-            exec.stdin = None;
-        }
+        // Use shared completion handler
+        handle_process_completion(exec_id_wait, start_time, app_wait).await;
     });
 
     Ok(ExecuteScriptResponse {
@@ -879,7 +856,7 @@ pub async fn cancel_script(
     // Extract needed data from state first, then release lock
     let (pid, child, duration_ms, should_emit) = {
         let state = app.state::<ScriptExecutionState>();
-        let mut executions = state.executions.lock().unwrap();
+        let mut executions = state.executions.write().await;
 
         println!(
             "[cancel_script] Current tracked executions: {:?}",
@@ -962,7 +939,7 @@ pub async fn kill_all_node_processes(app: AppHandle) -> Result<CancelScriptRespo
     // Collect data to kill outside the lock
     let to_kill: Vec<(String, Option<u32>, Option<Child>, u64)> = {
         let state = app.state::<ScriptExecutionState>();
-        let mut executions = state.executions.lock().unwrap();
+        let mut executions = state.executions.write().await;
 
         println!(
             "[kill_all_node_processes] Starting, tracked executions: {}",
@@ -1144,10 +1121,10 @@ pub struct RunningScriptInfo {
 #[tauri::command]
 pub async fn get_running_scripts(app: AppHandle) -> Result<Vec<RunningScriptInfo>, String> {
     // Feature 007 (T025): Clean up expired scripts first
-    cleanup_expired_executions(&app);
+    cleanup_expired_executions(&app).await;
 
     let state = app.state::<ScriptExecutionState>();
-    let executions = state.executions.lock().unwrap();
+    let executions = state.executions.read().await;
 
     // Feature 007: Include all scripts (running + completed within retention period)
     let scripts: Vec<RunningScriptInfo> = executions
@@ -1194,10 +1171,10 @@ pub async fn get_script_output(
     execution_id: String,
 ) -> Result<GetScriptOutputResponse, String> {
     // Feature 007 (T025): Clean up expired scripts first
-    cleanup_expired_executions(&app);
+    cleanup_expired_executions(&app).await;
 
     let state = app.state::<ScriptExecutionState>();
-    let executions = state.executions.lock().unwrap();
+    let executions = state.executions.read().await;
 
     if let Some(exec) = executions.get(&execution_id) {
         Ok(GetScriptOutputResponse {
@@ -1230,9 +1207,9 @@ pub async fn get_script_output(
 const COMPLETED_SCRIPT_RETENTION_SECS: u64 = 5 * 60;
 
 /// Clean up expired completed scripts (Feature 007: T025)
-fn cleanup_expired_executions(app: &AppHandle) {
+async fn cleanup_expired_executions(app: &AppHandle) {
     let state = app.state::<ScriptExecutionState>();
-    let mut executions = state.executions.lock().unwrap();
+    let mut executions = state.executions.write().await;
 
     let expired_ids: Vec<String> = executions
         .iter()
@@ -1296,7 +1273,7 @@ pub async fn write_to_script(
     // Extract stdin handle and script name, then release lock
     let (stdin_result, script_name) = {
         let state = app.state::<ScriptExecutionState>();
-        let mut executions = state.executions.lock().unwrap();
+        let mut executions = state.executions.write().await;
 
         if let Some(execution) = executions.get_mut(&execution_id) {
             // Check if process is still running
@@ -1354,7 +1331,7 @@ pub async fn write_to_script(
                 Ok(_) => {
                     // Put stdin back
                     let state = app.state::<ScriptExecutionState>();
-                    let mut executions = state.executions.lock().unwrap();
+                    let mut executions = state.executions.write().await;
                     if let Some(execution) = executions.get_mut(&execution_id) {
                         execution.stdin = Some(stdin);
                     }

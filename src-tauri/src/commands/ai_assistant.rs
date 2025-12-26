@@ -2150,7 +2150,7 @@ pub async fn ai_assistant_execute_tool_direct(
     if tool_name == "list_background_processes" {
         log::info!("[AI Tool Direct] Special handling for list_background_processes");
         let state = app.state::<ScriptExecutionState>();
-        let executions = state.executions.lock().unwrap();
+        let executions = state.executions.read().await;
 
         let processes: Vec<serde_json::Value> = executions
             .values()

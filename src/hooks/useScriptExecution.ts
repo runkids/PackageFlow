@@ -26,41 +26,64 @@ export interface RunningScript {
   port?: number; // Detected port from output
 }
 
+// Performance optimization: Output memory limit (512KB)
+const MAX_OUTPUT_SIZE = 512 * 1024;
+
+// Performance optimization: Port detection overlap region
+const PORT_DETECTION_OVERLAP = 200;
+
+// Performance optimization: Compile regex patterns once at module scope
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+
+// High priority patterns - actual running server URLs
+const URL_PATTERNS = [
+  // Vite specific: "Local: http://localhost:5174/"
+  /Local:\s+(?:http|https):\/\/[^:]+:(\d{4,5})/gi,
+  // Next.js: "- Local: http://localhost:3000"
+  /-\s*Local:\s+(?:http|https):\/\/[^:]+:(\d{4,5})/gi,
+  // General URL patterns (localhost, 127.0.0.1, 0.0.0.0)
+  /(?:http|https):\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{4,5})/gi,
+];
+
+// Low priority patterns - may match "port in use" messages
+const FALLBACK_PATTERNS = [
+  // Next.js: "started server on 0.0.0.0:3000"
+  /started\s+server\s+on\s+[\d.]+:(\d{4,5})/gi,
+  // "listening on port 3000" style
+  /(?:listening|running|started|server|ready)\s+(?:on|at)\s+(?:port\s+)?(\d{4,5})/gi,
+  // "port 3000" or ":3000" standalone with context
+  /(?:on|at|port)\s*:?\s*(\d{4,5})\b/gi,
+];
+
 // Strip ANSI escape codes from output for pattern matching
 function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+  return str.replace(ANSI_ESCAPE_PATTERN, '');
 }
 
-// Helper function to extract port from output
-// Prioritizes specific URL patterns over generic "port" mentions
-function extractPortFromOutput(output: string): number | undefined {
+/**
+ * Helper function to extract port from output
+ * Prioritizes specific URL patterns over generic "port" mentions
+ *
+ * Performance optimization:
+ * - Only searches searchRegion (new chunk + overlap) instead of entire output
+ * - Returns early if port already detected
+ */
+function extractPortFromOutput(
+  searchRegion: string,
+  existingPort?: number
+): number | undefined {
+  // If port already detected, skip searching
+  if (existingPort !== undefined) {
+    return existingPort;
+  }
+
   // Strip ANSI codes first for cleaner matching
-  const cleanOutput = stripAnsi(output);
-
-  // High priority patterns - actual running server URLs
-  const urlPatterns = [
-    // Vite specific: "Local: http://localhost:5174/"
-    /Local:\s+(?:http|https):\/\/[^:]+:(\d{4,5})/gi,
-    // Next.js: "- Local: http://localhost:3000"
-    /-\s*Local:\s+(?:http|https):\/\/[^:]+:(\d{4,5})/gi,
-    // General URL patterns (localhost, 127.0.0.1, 0.0.0.0)
-    /(?:http|https):\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{4,5})/gi,
-  ];
-
-  // Low priority patterns - may match "port in use" messages
-  const fallbackPatterns = [
-    // Next.js: "started server on 0.0.0.0:3000"
-    /started\s+server\s+on\s+[\d.]+:(\d{4,5})/gi,
-    // "listening on port 3000" style
-    /(?:listening|running|started|server|ready)\s+(?:on|at)\s+(?:port\s+)?(\d{4,5})/gi,
-    // "port 3000" or ":3000" standalone with context
-    /(?:on|at|port)\s*:?\s*(\d{4,5})\b/gi,
-  ];
+  const cleanOutput = stripAnsi(searchRegion);
 
   // First try high priority URL patterns - take the LAST match (most recent)
   let lastUrlPort: number | undefined;
-  for (const pattern of urlPatterns) {
+  for (const pattern of URL_PATTERNS) {
     pattern.lastIndex = 0;
     let match;
     while ((match = pattern.exec(cleanOutput)) !== null) {
@@ -79,7 +102,7 @@ function extractPortFromOutput(output: string): number | undefined {
   }
 
   // Fall back to other patterns only if no URL was found
-  for (const pattern of fallbackPatterns) {
+  for (const pattern of FALLBACK_PATTERNS) {
     pattern.lastIndex = 0;
     let match;
     while ((match = pattern.exec(cleanOutput)) !== null) {
@@ -93,6 +116,26 @@ function extractPortFromOutput(output: string): number | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Append new output to existing output with memory limit
+ * Keeps the most recent content within MAX_OUTPUT_SIZE
+ */
+function appendOutputWithLimit(existingOutput: string, newChunk: string): string {
+  const combined = existingOutput + newChunk;
+  if (combined.length > MAX_OUTPUT_SIZE) {
+    return combined.slice(-MAX_OUTPUT_SIZE);
+  }
+  return combined;
+}
+
+/**
+ * Get search region for port detection: overlap from existing + new chunk
+ */
+function getPortSearchRegion(existingOutput: string, newChunk: string): string {
+  const overlapStart = Math.max(0, existingOutput.length - PORT_DETECTION_OVERLAP);
+  return existingOutput.slice(overlapStart) + newChunk;
 }
 
 interface UseScriptExecutionReturn {
@@ -344,13 +387,19 @@ export function useScriptExecution(): UseScriptExecutionReturn {
   );
 
   // Feature 008: Update PTY session output for port detection
+  // Performance optimization: Only search new chunk + overlap for port detection
+  // Performance optimization: Limit output memory to 512KB
   const updatePtyOutput = useCallback((sessionId: string, output: string) => {
     setRunningScripts((prev) => {
       const script = prev.get(sessionId);
       if (!script) return prev;
 
-      const newOutput = script.output + output;
-      const port = extractPortFromOutput(newOutput);
+      // Performance optimization: Only search new chunk + overlap region
+      const searchRegion = getPortSearchRegion(script.output, output);
+      const port = extractPortFromOutput(searchRegion, script.port);
+
+      // Performance optimization: Limit output size to 512KB
+      const newOutput = appendOutputWithLimit(script.output, output);
 
       if (port && port !== script.port) {
         console.log('[useScriptExecution] Port detected:', port, 'for session:', sessionId);
@@ -490,8 +539,11 @@ export function useScriptExecution(): UseScriptExecutionReturn {
           const newMap = new Map(prev);
           const script = newMap.get(event.executionId);
           if (script) {
-            const newOutput = script.output + event.output;
-            const port = extractPortFromOutput(newOutput);
+            // Performance optimization: Only search new chunk + overlap region
+            const searchRegion = getPortSearchRegion(script.output, event.output);
+            const port = extractPortFromOutput(searchRegion, script.port);
+            // Performance optimization: Limit output size to 512KB
+            const newOutput = appendOutputWithLimit(script.output, event.output);
             newMap.set(event.executionId, {
               ...script,
               output: newOutput,
