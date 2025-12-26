@@ -573,18 +573,37 @@ pub fn run() {
         // Handle window events for cleanup
         .on_window_event(|_window, event| {
             use tauri::WindowEvent;
-            if let WindowEvent::Destroyed = event {
-                // Clean up background processes when app is closing
-                log::info!("[shutdown] Cleaning up background processes...");
-                tauri::async_runtime::block_on(async {
-                    use crate::services::ai_assistant::background_process::BACKGROUND_PROCESS_MANAGER;
-                    BACKGROUND_PROCESS_MANAGER.shutdown().await;
-                    log::info!("[shutdown] Background processes cleaned up");
-                });
+            let app_handle = _window.app_handle();
+            match event {
+                WindowEvent::CloseRequested {..} => {
+                    println!("WindowEvent::CloseRequested event: {:?} window: {:?}", &event, &_window);
+                    clean_shutdown(&app_handle);
+                },
+                WindowEvent::Destroyed => {
+                    clean_shutdown(&app_handle);
+                },
+                &_ => {
+                    println!("unhandled event: {:?}", &event);
+                }
             }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn clean_shutdown(app: &tauri::AppHandle) {
+    // Clean up background processes when app is closing
+    log::info!("[shutdown] Cleaning up background processes...");
+    tauri::async_runtime::block_on(async {
+        use crate::services::ai_assistant::background_process::BACKGROUND_PROCESS_MANAGER;
+        BACKGROUND_PROCESS_MANAGER.shutdown().await;
+        log::info!("[shutdown] Background processes cleaned up");
+    });
+    close_app(app);
+}
+
+fn close_app(app: &tauri::AppHandle) {
+    app.exit(0);
 }
 
 /// Initialize SQLite database with migrations
