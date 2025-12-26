@@ -1,6 +1,6 @@
 [package]
 name = "packageflow-mcp"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "PackageFlow MCP Server for AI assistants"
 
