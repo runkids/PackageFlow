@@ -411,17 +411,17 @@ export function GitPanel({
 
         {/* Branches Tab */}
         <div className={cn('flex-1 overflow-y-auto', activeTab !== 'branches' && 'hidden')}>
-          <GitBranchList projectPath={projectPath} onBranchChange={loadStatus} />
+          <GitBranchList projectPath={projectPath} onBranchChange={loadStatus} isActive={activeTab === 'branches'} />
         </div>
 
         {/* History Tab */}
         <div className={cn('flex-1 overflow-y-auto', activeTab !== 'history' && 'hidden')}>
-          <GitHistoryList projectPath={projectPath} />
+          <GitHistoryList projectPath={projectPath} isActive={activeTab === 'history'} />
         </div>
 
         {/* Stash Tab */}
         <div className={cn('flex-1 overflow-y-auto', activeTab !== 'stash' && 'hidden')}>
-          <GitStashList projectPath={projectPath} onStashChange={loadStatus} />
+          <GitStashList projectPath={projectPath} onStashChange={loadStatus} isActive={activeTab === 'stash'} />
         </div>
 
         {/* Worktrees Tab */}
@@ -432,12 +432,13 @@ export function GitPanel({
             onUpdateProject={onUpdateProject}
             onExecuteScript={onExecuteScript}
             onWorktreesChange={onWorktreesChange}
+            isActive={activeTab === 'worktrees'}
           />
         </div>
 
         {/* Settings Tab */}
         <div className={cn('flex-1 overflow-y-auto', activeTab !== 'settings' && 'hidden')}>
-          <GitSettingsPanel projectPath={projectPath} onRemotesChange={loadStatus} />
+          <GitSettingsPanel projectPath={projectPath} onRemotesChange={loadStatus} isActive={activeTab === 'settings'} />
         </div>
       </div>
 

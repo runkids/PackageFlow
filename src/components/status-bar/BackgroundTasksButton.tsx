@@ -49,22 +49,29 @@ const formatElapsedTime = (startedAt: Date): string => {
 
 interface TaskItemProps {
   task: BackgroundTask;
+  isPanelOpen: boolean;
 }
 
-const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
+const TaskItem: React.FC<TaskItemProps> = ({ task, isPanelOpen }) => {
   const TaskIcon = getTaskIcon(task.type);
   const [elapsed, setElapsed] = useState(formatElapsedTime(task.startedAt));
 
-  // Update elapsed time every second
+  // Update elapsed time every second - ONLY when panel is open to save CPU/battery
   useEffect(() => {
-    if (task.status !== 'running' && task.status !== 'pending') return;
+    // Skip timer if panel is closed or task is not running
+    if (!isPanelOpen || (task.status !== 'running' && task.status !== 'pending')) {
+      return;
+    }
+
+    // Update immediately when panel opens
+    setElapsed(formatElapsedTime(task.startedAt));
 
     const interval = setInterval(() => {
       setElapsed(formatElapsedTime(task.startedAt));
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [task.startedAt, task.status]);
+  }, [task.startedAt, task.status, isPanelOpen]);
 
   const isComplete = task.status === 'completed';
   const isFailed = task.status === 'failed';
@@ -239,7 +246,7 @@ export const BackgroundTasksButton: React.FC = () => {
             ) : (
               <div className="divide-y divide-border">
                 {tasks.map((task) => (
-                  <TaskItem key={task.id} task={task} />
+                  <TaskItem key={task.id} task={task} isPanelOpen={isOpen} />
                 ))}
               </div>
             )}

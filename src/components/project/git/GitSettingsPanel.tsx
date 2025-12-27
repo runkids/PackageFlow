@@ -15,9 +15,11 @@ interface GitSettingsPanelProps {
   projectPath: string;
   /** Callback when remotes change */
   onRemotesChange?: () => void;
+  /** Whether this tab is currently active (for polling optimization) */
+  isActive?: boolean;
 }
 
-export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPanelProps) {
+export function GitSettingsPanel({ projectPath, onRemotesChange, isActive = true }: GitSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<'remotes' | 'auth'>('remotes');
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const [isLoadingRemotes, setIsLoadingRemotes] = useState(true);
@@ -56,14 +58,16 @@ export function GitSettingsPanel({ projectPath, onRemotesChange }: GitSettingsPa
     loadRemotes();
   }, [loadRemotes]);
 
-  // Auto-refresh every 30 seconds (silent background update)
+  // Auto-refresh every 30 seconds (silent background update) - only when tab is active
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = setInterval(() => {
       loadRemotes(true);
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [loadRemotes]);
+  }, [loadRemotes, isActive]);
 
   // Fetch from remote
   const handleFetch = async (remoteName?: string) => {

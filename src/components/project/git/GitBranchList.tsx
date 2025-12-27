@@ -28,9 +28,11 @@ interface GitBranchListProps {
   projectPath: string;
   /** Callback when branch changes */
   onBranchChange?: () => void;
+  /** Whether this tab is currently active (for polling optimization) */
+  isActive?: boolean;
 }
 
-export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProps) {
+export function GitBranchList({ projectPath, onBranchChange, isActive = true }: GitBranchListProps) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -85,14 +87,16 @@ export function GitBranchList({ projectPath, onBranchChange }: GitBranchListProp
     loadBranches();
   }, [loadBranches]);
 
-  // Auto-refresh every 30 seconds (silent background update)
+  // Auto-refresh every 30 seconds (silent background update) - only when tab is active
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = setInterval(() => {
       loadBranches(true);
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [loadBranches]);
+  }, [loadBranches, isActive]);
 
   // Handle checkout branch
   const handleCheckout = async (branchName: string) => {

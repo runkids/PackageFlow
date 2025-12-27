@@ -328,16 +328,18 @@ export function useMCPActions(options: UseMCPActionsOptions = {}): UseMCPActions
     }
   }, [autoFetch, refresh]);
 
-  // Poll for pending requests
+  // Poll for pending requests - use dynamic interval based on whether there are pending requests
   useEffect(() => {
     if (pendingPollInterval <= 0) return;
 
+    // Use configured interval when there are pending requests, 30s when idle (save power)
+    const actualInterval = pendingRequests.length > 0 ? pendingPollInterval : 30000;
     const interval = setInterval(() => {
       fetchPendingRequests();
-    }, pendingPollInterval);
+    }, actualInterval);
 
     return () => clearInterval(interval);
-  }, [pendingPollInterval, fetchPendingRequests]);
+  }, [pendingPollInterval, fetchPendingRequests, pendingRequests.length]);
 
   // Listen for action response events
   useEffect(() => {
@@ -462,12 +464,14 @@ export function useActionHistory(options: UseActionHistoryOptions = {}) {
 // ============================================================================
 
 export interface UsePendingActionsOptions {
-  /** Polling interval (ms) */
-  pollInterval?: number;
+  /** Polling interval when there ARE pending requests (ms) */
+  activePollInterval?: number;
+  /** Polling interval when there are NO pending requests (ms) - longer to save power */
+  idlePollInterval?: number;
 }
 
 export function usePendingActions(options: UsePendingActionsOptions = {}) {
-  const { pollInterval = 3000 } = options;
+  const { activePollInterval = 3000, idlePollInterval = 30000 } = options;
 
   const [requests, setRequests] = useState<PendingActionRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -496,12 +500,15 @@ export function usePendingActions(options: UsePendingActionsOptions = {}) {
     return response;
   }, []);
 
+  // Dynamic polling: faster when there are pending requests, slower when idle
   useEffect(() => {
     fetchRequests();
 
+    // Use shorter interval when there are pending requests, longer when idle
+    const pollInterval = requests.length > 0 ? activePollInterval : idlePollInterval;
     const interval = setInterval(fetchRequests, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchRequests, pollInterval]);
+  }, [fetchRequests, activePollInterval, idlePollInterval, requests.length]);
 
   return {
     requests,

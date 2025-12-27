@@ -242,7 +242,8 @@ export const ActionConfirmationDialog: React.FC<ActionConfirmationDialogProps> =
   className,
 }) => {
   const { requests, hasPending, pendingCount, approve, deny } = usePendingActions({
-    pollInterval: 3000,
+    activePollInterval: 3000,  // Fast polling when there ARE pending requests
+    idlePollInterval: 30000,   // Slow polling when idle (save power)
   });
 
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());

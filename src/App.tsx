@@ -274,20 +274,21 @@ function App() {
     cleanupOrphanedPorts();
   }, []);
 
+  // Save running ports to localStorage when they change (event-driven, not polling)
+  // This is used to cleanup orphaned ports on next app launch
+  const portsJsonRef = useRef<string>('');
   useEffect(() => {
-    const saveRunningPorts = () => {
-      const info = runningProcessInfoRef.current;
-      if (info.ports.length > 0) {
-        localStorage.setItem('PACKAGE_FLOW_RUNNING_PORTS', JSON.stringify(info.ports));
+    const portsJson = JSON.stringify(runningProcessInfo.ports);
+    // Only write to localStorage when ports actually change
+    if (portsJson !== portsJsonRef.current) {
+      portsJsonRef.current = portsJson;
+      if (runningProcessInfo.ports.length > 0) {
+        localStorage.setItem('PACKAGE_FLOW_RUNNING_PORTS', portsJson);
       } else {
         localStorage.removeItem('PACKAGE_FLOW_RUNNING_PORTS');
       }
-    };
-
-    saveRunningPorts();
-    const interval = setInterval(saveRunningPorts, 1000);
-    return () => clearInterval(interval);
-  }, []);
+    }
+  }, [runningProcessInfo.ports]);
 
   const handleNavigateToWorkflow = useCallback((workflow: Workflow, projectPath: string) => {
     setWorkflowNavState({ workflow, projectPath });

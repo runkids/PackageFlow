@@ -66,6 +66,8 @@ interface GitWorktreeListProps {
   onSwitchWorkingDirectory?: (path: string) => void;
   /** Callback when worktrees list changes (add/remove) */
   onWorktreesChange?: () => void;
+  /** Whether this tab is currently active (for polling optimization) */
+  isActive?: boolean;
 }
 
 // Sub-component: Branch Select for worktree creation
@@ -99,6 +101,7 @@ export function GitWorktreeList({
   onExecuteScript,
   onSwitchWorkingDirectory,
   onWorktreesChange,
+  isActive = true,
 }: GitWorktreeListProps) {
   const projectPath = project.path;
   const projectName = project.name;
@@ -358,14 +361,16 @@ export function GitWorktreeList({
     loadWorktrees(false);
   }, [loadWorktrees]);
 
-  // Auto-refresh every 30 seconds (silent background update)
+  // Auto-refresh every 30 seconds (silent background update) - only when tab is active
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = setInterval(() => {
       loadWorktrees(false);
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [loadWorktrees]);
+  }, [loadWorktrees, isActive]);
 
   const handleOpenAddDialog = () => {
     setShowAddDialog(true);

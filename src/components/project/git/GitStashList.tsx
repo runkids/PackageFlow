@@ -14,9 +14,11 @@ interface GitStashListProps {
   projectPath: string;
   /** Callback when stash changes */
   onStashChange?: () => void;
+  /** Whether this tab is currently active (for polling optimization) */
+  isActive?: boolean;
 }
 
-export function GitStashList({ projectPath, onStashChange }: GitStashListProps) {
+export function GitStashList({ projectPath, onStashChange, isActive = true }: GitStashListProps) {
   const [stashes, setStashes] = useState<Stash[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -58,14 +60,16 @@ export function GitStashList({ projectPath, onStashChange }: GitStashListProps) 
     loadStashes();
   }, [loadStashes]);
 
-  // Auto-refresh every 30 seconds (silent background update)
+  // Auto-refresh every 30 seconds (silent background update) - only when tab is active
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = setInterval(() => {
       loadStashes(true);
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [loadStashes]);
+  }, [loadStashes, isActive]);
 
   // Create new stash
   const handleCreateStash = async () => {

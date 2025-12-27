@@ -23,9 +23,11 @@ interface GitHistoryListProps {
   projectPath: string;
   /** Number of commits to load per page */
   pageSize?: number;
+  /** Whether this tab is currently active (for polling optimization) */
+  isActive?: boolean;
 }
 
-export function GitHistoryList({ projectPath, pageSize = 50 }: GitHistoryListProps) {
+export function GitHistoryList({ projectPath, pageSize = 50, isActive = true }: GitHistoryListProps) {
   const [commits, setCommits] = useState<Commit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,14 +88,16 @@ export function GitHistoryList({ projectPath, pageSize = 50 }: GitHistoryListPro
     loadHistory();
   }, [loadHistory]);
 
-  // Auto-refresh every 30 seconds (silent background update)
+  // Auto-refresh every 30 seconds (silent background update) - only when tab is active
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = setInterval(() => {
       loadHistory(true);
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [loadHistory]);
+  }, [loadHistory, isActive]);
 
   // Copy SHA to clipboard
   const handleCopySha = async (sha: string) => {
