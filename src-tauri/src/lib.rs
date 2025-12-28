@@ -34,6 +34,9 @@ use commands::snapshot::LockfileWatcherState;
 use services::ai_assistant::StreamManager;
 use tauri::Manager;
 use utils::database::{Database, get_database_path};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static SHUTDOWN_CALLED: AtomicBool = AtomicBool::new(false);
 
 /// Database state wrapper for Tauri
 pub struct DatabaseState(pub Arc<Database>);
@@ -575,16 +578,13 @@ pub fn run() {
             use tauri::WindowEvent;
             let app_handle = _window.app_handle();
             match event {
-                WindowEvent::CloseRequested {..} => {
-                    println!("WindowEvent::CloseRequested event: {:?} window: {:?}", &event, &_window);
-                    clean_shutdown(&app_handle);
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                    if !SHUTDOWN_CALLED.swap(true, Ordering::SeqCst) {
+                        clean_shutdown(&window.app_handle());
+                    }
                 },
-                WindowEvent::Destroyed => {
-                    clean_shutdown(&app_handle);
-                },
-                &_ => {
-                    println!("unhandled event: {:?}", &event);
-                }
+                //unhandled events
+                &_ => {}
             }
         })
         .run(tauri::generate_context!())
