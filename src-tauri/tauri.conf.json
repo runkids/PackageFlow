@@ -39,9 +39,6 @@
     "active": true,
     "targets": ["app", "dmg"],
     "createUpdaterArtifacts": true,
-    "resources": {
-      "../target/release/packageflow-mcp": "bin/packageflow-mcp"
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

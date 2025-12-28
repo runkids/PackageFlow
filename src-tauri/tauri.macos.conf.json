@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "../target/release/packageflow-mcp": "bin/packageflow-mcp"
+    }
+  }
+}
