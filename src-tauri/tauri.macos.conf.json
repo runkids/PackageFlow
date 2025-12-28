@@ -1,7 +1,34 @@
 {
+  "identifier": "com.packageflow.PackageFlow-macOS",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build:mcp:release && pnpm build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [{ "hiddenTitle": true, "titleBarStyle": "Overlay" }]
+  },
   "bundle": {
+    "targets": ["app", "dmg"],
     "resources": {
       "../target/release/packageflow-mcp": "bin/packageflow-mcp"
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "windowSize": {
+          "width": 540,
+          "height": 380
+        },
+        "appPosition": {
+          "x": 140,
+          "y": 180
+        },
+        "applicationFolderPosition": {
+          "x": 400,
+          "y": 180
+        }
+      }
     }
   }
 }

@@ -1,15 +1,10 @@
-{
-  "identifier": "com.packageflow.PackageFlow-Windows",
-  "build": {
-    "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build:mcp:release-windows && pnpm build",
-    "frontendDist": "../dist"
-  },
-  "bundle": {
-    "targets": ["app", "nsis"],
-    "resources": {
-      "../target/release/packageflow-mcp.exe": "bin/packageflow-mcp.exe"
+  {
+    "identifier": "com.packageflow.PackageFlow-windows",
+    "build": {
+      "beforeDevCommand": "pnpm dev",
+      "beforeBuildCommand": "pnpm build"
+    },
+    "bundle": {
+      "targets": ["msi", "nsis"]
     }
   }
-}
