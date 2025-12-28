@@ -1,10 +1,10 @@
-  {
-    "identifier": "com.packageflow.PackageFlow-windows",
-    "build": {
-      "beforeDevCommand": "pnpm dev",
-      "beforeBuildCommand": "pnpm build"
-    },
-    "bundle": {
-      "targets": ["msi", "nsis"]
-    }
+{
+  "identifier": "com.packageflow.PackageFlow-windows",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "bundle": {
+    "targets": ["msi", "nsis"]
   }
+}
