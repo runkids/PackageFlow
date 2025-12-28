@@ -574,9 +574,8 @@ pub fn run() {
             Ok(())
         })
         // Handle window events for cleanup
-        .on_window_event(|_window, event| {
+        .on_window_event(|window, event| {
             use tauri::WindowEvent;
-            let app_handle = _window.app_handle();
             match event {
                 WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
                     if !SHUTDOWN_CALLED.swap(true, Ordering::SeqCst) {
