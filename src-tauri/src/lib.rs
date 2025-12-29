@@ -34,6 +34,9 @@ use commands::snapshot::LockfileWatcherState;
 use services::ai_assistant::StreamManager;
 use tauri::Manager;
 use utils::database::{Database, get_database_path};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static SHUTDOWN_CALLED: AtomicBool = AtomicBool::new(false);
 
 /// Database state wrapper for Tauri
 pub struct DatabaseState(pub Arc<Database>);
@@ -571,20 +574,35 @@ pub fn run() {
             Ok(())
         })
         // Handle window events for cleanup
-        .on_window_event(|_window, event| {
+        .on_window_event(|window, event| {
             use tauri::WindowEvent;
-            if let WindowEvent::Destroyed = event {
-                // Clean up background processes when app is closing
-                log::info!("[shutdown] Cleaning up background processes...");
-                tauri::async_runtime::block_on(async {
-                    use crate::services::ai_assistant::background_process::BACKGROUND_PROCESS_MANAGER;
-                    BACKGROUND_PROCESS_MANAGER.shutdown().await;
-                    log::info!("[shutdown] Background processes cleaned up");
-                });
+            match event {
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                    if !SHUTDOWN_CALLED.swap(true, Ordering::SeqCst) {
+                        clean_shutdown(&window.app_handle());
+                    }
+                },
+                //unhandled events
+                &_ => {}
             }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn clean_shutdown(app: &tauri::AppHandle) {
+    // Clean up background processes when app is closing
+    log::info!("[shutdown] Cleaning up background processes...");
+    tauri::async_runtime::block_on(async {
+        use crate::services::ai_assistant::background_process::BACKGROUND_PROCESS_MANAGER;
+        BACKGROUND_PROCESS_MANAGER.shutdown().await;
+        log::info!("[shutdown] Background processes cleaned up");
+    });
+    close_app(app);
+}
+
+fn close_app(app: &tauri::AppHandle) {
+    app.exit(0);
 }
 
 /// Initialize SQLite database with migrations

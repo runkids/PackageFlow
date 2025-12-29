@@ -104,10 +104,6 @@ serde_yaml = "0.9"
 strsim = "0.11"
 rayon = "1.10"
 
-# Unix-specific: process signal handling for cancellation
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
 # Incoming Webhook Server
 axum = "0.8"
 tower = "0.5"
@@ -117,6 +113,10 @@ tower-http = { version = "0.6", features = ["cors"] }
 hmac = "0.12"
 constant_time_eq = "0.3"
 hex = "0.4"
+
+# Unix-specific: process signal handling for cancellation
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
