@@ -1,6 +1,7 @@
 // Data models module
 // Rust structs that map to TypeScript interfaces
 
+pub mod config;
 pub mod execution;
 pub mod git;
 pub mod mcp;

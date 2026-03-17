@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use commands::workflow::WorkflowExecutionState;
 use commands::{
-    file_watcher, git, mcp, notification,
+    config, file_watcher, git, mcp, notification,
     settings, shortcuts, workflow,
 };
 use services::FileWatcherManager;
@@ -126,6 +126,9 @@ pub fn run() {
         .manage(DatabaseWatcher::new())
         // Register commands
         .invoke_handler(tauri::generate_handler![
+            // Global config commands
+            config::get_config,
+            config::update_config,
             // Settings commands (US7)
             settings::load_settings,
             settings::save_settings,

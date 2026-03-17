@@ -1,6 +1,7 @@
 // Tauri commands module
 // Each submodule contains commands for a specific feature
 
+pub mod config;
 pub mod file_watcher;
 pub mod git;
 pub mod mcp;
