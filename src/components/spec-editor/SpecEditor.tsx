@@ -1,0 +1,297 @@
+/**
+ * SpecEditor
+ * Main editor with split layout: left panel (metadata form + workflow) and right panel (markdown).
+ * Loads spec + schema on mount, saves changes via update_spec.
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { Button } from '../ui/Button';
+import { FrontmatterForm } from './FrontmatterForm';
+import { MarkdownEditor } from './MarkdownEditor';
+import { cn } from '../../lib/utils';
+import type { Spec } from '../../types/spec';
+import type { SchemaDefinition } from '../../types/schema';
+
+// ---------------------------------------------------------------------------
+// Status badge (reused from SpecList)
+// ---------------------------------------------------------------------------
+
+const STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+  active: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  review: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  implement: 'bg-green-500/20 text-green-400 border-green-500/30',
+  verify: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+  archived: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+};
+
+const PHASE_COLORS: Record<string, string> = {
+  draft: 'text-zinc-400',
+  review: 'text-yellow-400',
+  implement: 'text-green-400',
+  verify: 'text-cyan-400',
+  deploy: 'text-blue-400',
+};
+
+function phaseColor(phase: string): string {
+  return PHASE_COLORS[phase] ?? 'text-indigo-400';
+}
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+interface SpecEditorProps {
+  specId: string;
+  projectDir: string;
+  onBack: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export function SpecEditor({ specId, projectDir, onBack }: SpecEditorProps) {
+  const [spec, setSpec] = useState<Spec | null>(null);
+  const [schema, setSchema] = useState<SchemaDefinition | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  // Working copies — mutated by user, sent on save
+  const [fields, setFields] = useState<Record<string, unknown>>({});
+  const [body, setBody] = useState('');
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Load spec + schema
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const loadedSpec = await invoke<Spec>('get_spec', { id: specId, projectDir });
+        if (cancelled) return;
+
+        setSpec(loadedSpec);
+        setFields(loadedSpec.fields ?? {});
+        setBody(loadedSpec.body ?? '');
+
+        // Load schema
+        const loadedSchema = await invoke<SchemaDefinition>('get_schema', {
+          name: loadedSpec.schema,
+          projectDir,
+        });
+        if (cancelled) return;
+        setSchema(loadedSchema);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [specId, projectDir]);
+
+  // ---------------------------------------------------------------------------
+  // Save
+  // ---------------------------------------------------------------------------
+
+  const save = useCallback(async () => {
+    if (!spec) return;
+    try {
+      setSaving(true);
+      const updated = await invoke<Spec>('update_spec', {
+        id: spec.id,
+        fields,
+        body,
+        projectDir,
+      });
+      setSpec(updated);
+      setDirty(false);
+    } catch (e) {
+      console.error('Failed to save spec:', e);
+    } finally {
+      setSaving(false);
+    }
+  }, [spec, fields, body, projectDir]);
+
+  // Debounced auto-save on blur
+  const debouncedSave = useCallback(() => {
+    if (!dirty) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      save();
+    }, 500);
+  }, [dirty, save]);
+
+  // Cleanup timer
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  // Ctrl+S / Cmd+S
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (dirty) save();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [dirty, save]);
+
+  // ---------------------------------------------------------------------------
+  // Field / body change handlers
+  // ---------------------------------------------------------------------------
+
+  const handleFieldsChange = useCallback((newFields: Record<string, unknown>) => {
+    setFields(newFields);
+    setDirty(true);
+  }, []);
+
+  const handleBodyChange = useCallback((newBody: string) => {
+    setBody(newBody);
+    setDirty(true);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Render states
+  // ---------------------------------------------------------------------------
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-sm text-muted-foreground">Loading spec...</span>
+      </div>
+    );
+  }
+
+  if (error || !spec) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3">
+        <p className="text-sm text-destructive">{error ?? 'Spec not found'}</p>
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="w-4 h-4 mr-1.5" />
+          Back to Specs
+        </Button>
+      </div>
+    );
+  }
+
+  const statusClass = STATUS_COLORS[spec.status] ?? STATUS_COLORS['draft'];
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* ---- Header ---- */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border flex-shrink-0">
+        <Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Button>
+
+        <div className="w-px h-5 bg-border" />
+
+        {/* Title */}
+        <h2 className="text-sm font-medium text-foreground truncate flex-1">{spec.title}</h2>
+
+        {/* Badges */}
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400 border border-purple-500/30">
+          {spec.schema}
+        </span>
+        <span
+          className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${statusClass}`}
+        >
+          {spec.status}
+        </span>
+
+        {/* Save button */}
+        <Button size="sm" onClick={save} disabled={saving || !dirty} className="gap-1.5">
+          {saving ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Save className="w-3.5 h-3.5" />
+          )}
+          {saving ? 'Saving...' : dirty ? 'Save' : 'Saved'}
+        </Button>
+      </div>
+
+      {/* ---- Body: split layout ---- */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left panel — metadata + workflow */}
+        <div
+          className="w-[280px] flex-shrink-0 border-r border-border overflow-y-auto"
+          onBlur={debouncedSave}
+        >
+          {/* Metadata form */}
+          <div className="p-4 space-y-4">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Metadata
+            </h3>
+            {schema ? (
+              <FrontmatterForm fields={fields} schema={schema} onChange={handleFieldsChange} />
+            ) : (
+              <p className="text-xs text-muted-foreground">No schema loaded</p>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="mx-4 border-t border-border" />
+
+          {/* Workflow section */}
+          <div className="p-4 space-y-3">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Workflow
+            </h3>
+
+            {spec.workflow_phase ? (
+              <div className="space-y-2">
+                {/* Current phase */}
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'w-2 h-2 rounded-full',
+                      phaseColor(spec.workflow_phase).replace('text-', 'bg-')
+                    )}
+                  />
+                  <span className={cn('text-sm font-medium', phaseColor(spec.workflow_phase))}>
+                    {spec.workflow_phase}
+                  </span>
+                </div>
+
+                {/* Advance button (disabled — workflow engine not yet implemented) */}
+                <Button variant="outline" size="sm" disabled className="w-full text-xs">
+                  Advance phase (coming soon)
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No workflow assigned</p>
+            )}
+          </div>
+        </div>
+
+        {/* Right panel — Markdown editor */}
+        <div className="flex-1 min-w-0">
+          <MarkdownEditor value={body} onChange={handleBodyChange} />
+        </div>
+      </div>
+    </div>
+  );
+}

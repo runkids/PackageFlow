@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { WorkflowPage } from './components/workflow/WorkflowPage';
 import { SpecList } from './components/spec-editor/SpecList';
+import { SpecEditor } from './components/spec-editor/SpecEditor';
 import { useShortcutsContext } from './contexts/ShortcutsContext';
 import { SettingsButton } from './components/settings/SettingsButton';
 import { SettingsPage } from './components/settings/SettingsPage';
@@ -60,7 +61,7 @@ function App() {
   } = useUpdater();
 
   const [activeTab, setActiveTab] = useState<AppTab>('specs');
-  const [_selectedSpecId, setSelectedSpecId] = useState<string | null>(null);
+  const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null);
   const [settingsPageOpen, setSettingsPageOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('storage');
   const [dataVersion, setDataVersion] = useState(0);
@@ -328,15 +329,18 @@ function App() {
       <main className="flex-1 flex flex-col overflow-hidden bg-background">
         <div className="flex-1 overflow-hidden">
           {activeTab === 'specs' ? (
-            <SpecList
-              projectDir={PROJECT_DIR}
-              onSelectSpec={(specId) => {
-                setSelectedSpecId(specId);
-                // TODO: Task 11 will add the SpecEditor component
-                // eslint-disable-next-line no-console -- placeholder until Task 11 adds SpecEditor
-                console.log('[SpecList] Selected spec:', specId);
-              }}
-            />
+            selectedSpecId ? (
+              <SpecEditor
+                specId={selectedSpecId}
+                projectDir={PROJECT_DIR}
+                onBack={() => setSelectedSpecId(null)}
+              />
+            ) : (
+              <SpecList
+                projectDir={PROJECT_DIR}
+                onSelectSpec={(specId) => setSelectedSpecId(specId)}
+              />
+            )
           ) : (
             <WorkflowPage dataVersion={dataVersion} />
           )}
