@@ -214,6 +214,9 @@ pub fn run() {
             git::test_remote_connection,
             // Git diff viewer (010-git-diff-viewer)
             git::get_file_diff,
+            // Spec-aware git commands
+            git::git_commit_for_spec,
+            git::get_spec_branch_info,
             // Keyboard shortcuts commands
             shortcuts::load_keyboard_shortcuts,
             shortcuts::save_keyboard_shortcuts,

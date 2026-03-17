@@ -6,12 +6,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ArrowLeft, Save, Loader2, AlertTriangle, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, AlertTriangle, ChevronRight, GitBranch } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { FrontmatterForm } from './FrontmatterForm';
 import { MarkdownEditor } from './MarkdownEditor';
 import { cn } from '../../lib/utils';
 import { useWorkflowStatus } from '../../hooks/useWorkflowStatus';
+import { useSpecBranch } from '../../hooks/useSpecBranch';
 import type { Spec } from '../../types/spec';
 import type { SchemaDefinition } from '../../types/schema';
 import type { AdvanceResult } from '../../types/workflow-phase';
@@ -72,6 +73,7 @@ function WorkflowSection({ specId, projectDir, workflowPhase }: WorkflowSectionP
     workflowPhase ? specId : null,
     projectDir
   );
+  const branchInfo = useSpecBranch(specId, projectDir);
   const [advancing, setAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
 
@@ -115,9 +117,25 @@ function WorkflowSection({ specId, projectDir, workflowPhase }: WorkflowSectionP
 
           {/* Workflow name */}
           {status?.workflowName && (
-            <p className="text-[11px] text-muted-foreground">
-              Workflow: {status.workflowName}
-            </p>
+            <p className="text-[11px] text-muted-foreground">Workflow: {status.workflowName}</p>
+          )}
+
+          {/* Branch info */}
+          {branchInfo && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <GitBranch className="w-3 h-3 flex-shrink-0" />
+              {branchInfo.exists ? (
+                <span>
+                  <span className="font-mono text-foreground/80">{branchInfo.branch_name}</span>
+                  <span className="ml-1.5 text-muted-foreground">
+                    ({branchInfo.commit_count}{' '}
+                    {branchInfo.commit_count === 1 ? 'commit' : 'commits'})
+                  </span>
+                </span>
+              ) : (
+                <span>No branch yet</span>
+              )}
+            </div>
           )}
 
           {/* Available transitions */}
