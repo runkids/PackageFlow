@@ -5,14 +5,14 @@
 //!
 //! ## Module Structure
 //!
-//! - `types`: Parameter and response type definitions (~680 lines)
-//! - `security`: Tool categorization and permission checking (~80 lines)
-//! - `state`: Rate limiters and concurrency controls (~70 lines)
-//! - `templates`: Built-in workflow step templates (~220 lines)
-//! - `store`: Database access and local data types (~370 lines)
-//! - `background/`: Background process management (~595 lines)
-//! - `tools_registry`: Centralized tool definitions (~300 lines)
-//! - `instance_manager`: Smart multi-instance management with heartbeat (~400 lines)
+//! - `types`: Parameter and response type definitions
+//! - `security`: Tool categorization and permission checking
+//! - `state`: Rate limiters and concurrency controls
+//! - `templates`: Built-in schema and workflow templates
+//! - `store`: Database access and local data types
+//! - `background/`: Background process management
+//! - `tools_registry`: Centralized tool definitions
+//! - `instance_manager`: Smart multi-instance management with heartbeat
 //!
 //! The main tool implementations remain in `mcp_server.rs` due to
 //! `rmcp` crate's requirement that all `#[tool]` methods be in a
@@ -31,14 +31,13 @@ pub mod instance_manager;
 // Re-export commonly used items
 pub use security::{ToolCategory, get_tool_category, is_tool_allowed};
 pub use tools_registry::ALL_TOOLS;
-pub use state::{RATE_LIMITER, TOOL_RATE_LIMITERS, ACTION_SEMAPHORE};
-pub use templates::get_builtin_templates;
+pub use state::{RATE_LIMITER, TOOL_RATE_LIMITERS};
+pub use templates::get_builtin_schemas;
 pub use store::{
-    read_store_data, write_store_data, log_request, open_database, get_database_path,
-    Project, Workflow, WorkflowNode, CustomStepTemplate,
+    read_store_data, log_request, open_database,
 };
 pub use background::{
-    BackgroundProcessStatus, BACKGROUND_PROCESS_MANAGER, CLEANUP_INTERVAL_SECS,
+    BACKGROUND_PROCESS_MANAGER, CLEANUP_INTERVAL_SECS,
 };
 pub use instance_manager::InstanceManager;
 

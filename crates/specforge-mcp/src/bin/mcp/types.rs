@@ -2,616 +2,202 @@
 //!
 //! Contains all structs used for tool inputs and outputs.
 
-use std::collections::HashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
-// Default Value Helper Functions
-// ============================================================================
-
-pub fn default_true() -> bool {
-    true
-}
-
-pub fn default_include_builtin() -> bool {
-    true
-}
-
-pub fn default_category() -> String {
-    "custom".to_string()
-}
-
-pub fn default_tail_lines() -> usize {
-    100
-}
-
-pub fn default_limit_20() -> i64 {
-    20
-}
-
-pub fn default_limit_10() -> i64 {
-    10
-}
-
-pub fn default_output_limit() -> usize {
-    5000
-}
-
-pub fn default_limit_50() -> usize {
-    50
-}
-
-pub fn default_max_lines() -> usize {
-    500
-}
-
-pub fn default_start_line() -> usize {
-    1
-}
-
-// ============================================================================
-// Parameter Types for Tools (must derive JsonSchema)
+// Spec Operation Parameters
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GetProjectParams {
-    /// The absolute path to the project directory
-    pub path: String,
+#[serde(rename_all = "camelCase")]
+pub struct CreateSpecParams {
+    /// Schema name (e.g., "spec", "change-request", "task")
+    pub schema: String,
+    /// Spec title
+    pub title: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GetProjectsParams {
-    /// Optional search query to filter projects by name
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub query: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ListWorktreesParams {
-    /// The absolute path to the project directory
-    pub project_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GetWorktreeStatusParams {
-    /// The absolute path to the worktree or project directory
-    pub worktree_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GetGitDiffParams {
-    /// The absolute path to the worktree or project directory
-    pub worktree_path: String,
-}
-
-// Workflow tool parameters
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ListWorkflowsParams {
-    /// Optional project ID to filter workflows
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GetWorkflowParams {
-    /// The workflow ID
-    pub workflow_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct CreateWorkflowParams {
-    /// Workflow name
-    pub name: String,
-    /// Optional description
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Optional project ID to associate
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct AddWorkflowStepParams {
-    /// Target workflow ID
-    pub workflow_id: String,
-    /// Step name
-    pub name: String,
-    /// Shell command to execute
-    pub command: String,
-    /// Optional working directory
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    /// Optional timeout in milliseconds
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<u64>,
-    /// Optional position (defaults to end)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub order: Option<i32>,
-}
-
-/// Individual step input for batch creation
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkflowStepInput {
-    /// Step display name
+pub struct ListSpecsParams {
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+    /// Optional status filter (e.g., "draft", "active", "completed")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Optional workflow phase filter (e.g., "discuss", "implement", "review")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_phase: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSpecParams {
+    /// The spec ID (e.g., "spec-2026-03-17-add-oauth2-a3f1")
+    pub id: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSpecParams {
+    /// The spec ID
+    pub id: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+    /// Optional field updates as a JSON object (e.g., {"status": "active", "priority": "high"})
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields: Option<serde_json::Value>,
+    /// Optional new markdown body content
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSpecParams {
+    /// The spec ID
+    pub id: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+}
+
+// ============================================================================
+// Workflow Operation Parameters
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvanceSpecParams {
+    /// The spec ID
+    pub spec_id: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+    /// Optional target phase (if omitted, advances to next available phase)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_phase: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewSpecParams {
+    /// The spec ID
+    pub spec_id: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+    /// Whether the review approves the spec
+    pub approved: bool,
+    /// Optional review comment
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetWorkflowStatusParams {
+    /// The spec ID
+    pub spec_id: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetGateStatusParams {
+    /// The spec ID
+    pub spec_id: String,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+}
+
+// ============================================================================
+// Schema Operation Parameters
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSchemasParams {
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSchemaParams {
+    /// Schema name (e.g., "spec", "change-request", "task")
     pub name: String,
-    /// Shell command to execute
-    pub command: String,
-    /// Optional working directory
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    /// Optional timeout in milliseconds
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<u64>,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
 }
 
-/// Parameters for add_workflow_steps tool (batch operation)
+// ============================================================================
+// Project Operation Parameters
+// ============================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct AddWorkflowStepsParams {
-    /// Target workflow ID - use actual ID from create_workflow or list_workflows
-    pub workflow_id: String,
-    /// Array of steps to add (max 10). Steps are added in array order.
-    pub steps: Vec<WorkflowStepInput>,
+pub struct InitProjectParams {
+    /// Absolute path to the project directory
+    pub project_dir: String,
+    /// Preset: "basic-sdd" (built-in schemas + workflow) or "blank" (empty structure)
+    #[serde(default = "default_preset")]
+    pub preset: String,
 }
 
-/// Response for add_workflow_steps tool
+fn default_preset() -> String {
+    "basic-sdd".to_string()
+}
+
+// ============================================================================
+// Agent Operation Parameters
+// ============================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct AddWorkflowStepsResponse {
-    /// Whether all steps were added successfully
-    pub success: bool,
-    /// The workflow ID steps were added to
-    pub workflow_id: String,
-    /// List of created step details
-    pub created_steps: Vec<CreatedStepInfo>,
-    /// Total number of steps in workflow after this operation
-    pub total_workflow_steps: usize,
-    /// Summary message
+pub struct GetAgentRunsParams {
+    /// Optional spec ID filter (if omitted, returns all agent runs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_id: Option<String>,
+    /// Absolute path to the project directory containing .specforge/
+    pub project_dir: String,
+}
+
+// ============================================================================
+// Git Operation Parameters
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatusParams {
+    /// The absolute path to the project/worktree directory
+    pub project_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffParams {
+    /// The absolute path to the project/worktree directory
+    pub project_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCreateBranchParams {
+    /// The absolute path to the project/worktree directory
+    pub project_dir: String,
+    /// Branch name to create
+    pub branch_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitParams {
+    /// The absolute path to the project/worktree directory
+    pub project_dir: String,
+    /// Commit message
     pub message: String,
 }
-
-/// Info for a single created step in batch response
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreatedStepInfo {
-    /// Generated node ID for this step
-    pub node_id: String,
-    /// Step name as provided
-    pub name: String,
-    /// Assigned order position
-    pub order: i32,
-    /// Command as provided
-    pub command: String,
-}
-
-/// Parameters for create_workflow_with_steps tool (atomic workflow + steps creation)
-/// This tool creates a workflow and its steps in a single atomic operation,
-/// preventing sync issues that can occur with separate create_workflow + add_workflow_steps calls.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateWorkflowWithStepsParams {
-    /// Workflow display name (required, 1-100 characters)
-    pub name: String,
-    /// Optional workflow description (max 500 characters)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Optional project ID to associate with (must be valid from list_projects)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    /// Array of steps to create (1-10 steps). Steps execute in array order.
-    pub steps: Vec<WorkflowStepInput>,
-}
-
-/// Response for create_workflow_with_steps tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateWorkflowWithStepsResponse {
-    /// Operation success status
-    pub success: bool,
-    /// Created workflow ID (use with run_workflow, get_workflow, etc.)
-    pub workflow_id: String,
-    /// Workflow name as created
-    pub workflow_name: String,
-    /// Workflow description if provided
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Associated project ID if provided
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    /// List of created steps with their IDs and order positions
-    pub created_steps: Vec<CreatedStepInfo>,
-    /// Total number of steps created
-    pub total_steps: usize,
-    /// ISO 8601 timestamp when workflow was created
-    pub created_at: String,
-    /// Human-readable summary message
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ListStepTemplatesParams {
-    /// Filter by category (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub category: Option<String>,
-    /// Search query (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub query: Option<String>,
-    /// Include built-in templates (default: true)
-    #[serde(default = "default_include_builtin")]
-    pub include_builtin: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct CreateStepTemplateParams {
-    /// Template name
-    pub name: String,
-    /// Shell command
-    pub command: String,
-    /// Category (default: "custom")
-    #[serde(default = "default_category")]
-    pub category: String,
-    /// Optional description
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RunWorkflowParams {
-    /// Workflow ID to execute
-    pub workflow_id: String,
-    /// Optional project path override (for working directory)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_path: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RunNpmScriptParams {
-    /// Project path (required - the directory containing package.json)
-    pub project_path: String,
-    /// Script name from package.json scripts (e.g., "build", "dev", "test")
-    pub script_name: String,
-    /// Optional arguments to pass to the script
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub args: Option<Vec<String>>,
-    /// Timeout in milliseconds (default: 5 minutes, max: 1 hour)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u64>,
-    /// Run in background mode (default: false). When true, returns immediately with process ID.
-    #[serde(default)]
-    pub run_in_background: bool,
-    /// Pattern to match in output to consider process started successfully.
-    /// Examples: "ready in", "Local:", "Server running", "Compiled successfully"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub success_pattern: Option<String>,
-    /// Timeout for success pattern matching in milliseconds (default: 30000ms)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub success_timeout_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RunPackageManagerCommandParams {
-    /// Project path (required - the directory containing package.json)
-    pub project_path: String,
-    /// Command to execute: "install", "update", "add", "remove", "ci", "audit", "outdated"
-    pub command: String,
-    /// Packages to add/remove (required for "add" and "remove" commands)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub packages: Option<Vec<String>>,
-    /// Additional flags (e.g., ["--save-dev", "--frozen-lockfile"])
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub flags: Option<Vec<String>>,
-    /// Timeout in milliseconds (default: 5 minutes, max: 30 minutes)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u64>,
-}
-
-// ============================================================================
-// Background Process Tool Parameters
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetBackgroundProcessOutputParams {
-    /// The process ID returned from run_npm_script (e.g., "bp_abc123")
-    pub process_id: String,
-    /// Number of lines to return from the end (default: 100)
-    #[serde(default = "default_tail_lines")]
-    pub tail_lines: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StopBackgroundProcessParams {
-    /// The process ID to stop
-    pub process_id: String,
-    /// Send SIGKILL instead of SIGTERM (default: false)
-    #[serde(default)]
-    pub force: bool,
-}
-
-// MCP Action Tool Parameters removed (modules deleted)
-
-// ============================================================================
-// Enhanced MCP Tool Parameters
-// ============================================================================
-
-/// Parameters for get_environment_info tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetEnvironmentInfoParams {
-    /// Include PATH environment details (default: false)
-    #[serde(default)]
-    pub include_paths: bool,
-    /// Optional project path to check project-specific toolchain
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_path: Option<String>,
-}
-
-/// Parameters for check_file_exists tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckFileExistsParams {
-    /// Base project path - must be a registered project
-    pub project_path: String,
-    /// Relative paths to check (e.g., ['package.json', 'src/index.ts'])
-    pub paths: Vec<String>,
-}
-
-/// Parameters for get_notifications tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetNotificationsParams {
-    /// Filter by notification category
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub category: Option<String>,
-    /// Only return unread notifications (default: false)
-    #[serde(default)]
-    pub unread_only: bool,
-    /// Maximum notifications to return (default: 20)
-    #[serde(default = "default_limit_20")]
-    pub limit: i64,
-}
-
-/// Parameters for mark_notifications_read tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct MarkNotificationsReadParams {
-    /// List of notification IDs to mark as read
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notification_ids: Option<Vec<String>>,
-    /// Mark all notifications as read (default: false)
-    #[serde(default)]
-    pub mark_all: bool,
-}
-
-
-
-
-
-/// Parameters for update_workflow tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateWorkflowParams {
-    /// The workflow ID - use actual ID from list_workflows
-    pub workflow_id: String,
-    /// New workflow name (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// New workflow description (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
-/// Parameters for delete_workflow_step tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteWorkflowStepParams {
-    /// The workflow ID
-    pub workflow_id: String,
-    /// The step/node ID to remove - use actual ID from get_workflow
-    pub step_id: String,
-}
-
-
-/// Parameters for search_project_files tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchProjectFilesParams {
-    /// Base project path - must be a registered project
-    pub project_path: String,
-    /// File name pattern (glob syntax, e.g., '*.ts', 'src/**/*.tsx')
-    pub pattern: String,
-    /// Maximum files to return (default: 50)
-    #[serde(default = "default_limit_50")]
-    pub max_results: usize,
-    /// Include directory matches (default: false)
-    #[serde(default)]
-    pub include_directories: bool,
-}
-
-/// Parameters for read_project_file tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ReadProjectFileParams {
-    /// Base project path - must be a registered project
-    pub project_path: String,
-    /// Relative path to the file within the project
-    pub file_path: String,
-    /// Maximum lines to read (default: 500)
-    #[serde(default = "default_max_lines")]
-    pub max_lines: usize,
-    /// Line to start reading from (1-based, default: 1)
-    #[serde(default = "default_start_line")]
-    pub start_line: usize,
-}
-
-// ============================================================================
-// Response Types for Tools
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectInfo {
-    /// Project ID (if registered in SpecForge, null if not registered)
-    pub id: Option<String>,
-    /// Project path
-    pub path: String,
-    /// Project name
-    pub name: String,
-    /// Project description
-    pub description: Option<String>,
-    /// Git remote URL
-    pub git_remote: Option<String>,
-    /// Current git branch
-    pub current_branch: Option<String>,
-    /// Package manager detected (npm, yarn, pnpm, bun)
-    pub package_manager: Option<String>,
-    /// Available scripts from package.json
-    pub scripts: Option<HashMap<String, String>>,
-    /// Project type (node, rust, python, etc.)
-    pub project_type: Option<String>,
-    /// Node.js version from .nvmrc, .node-version, or package.json engines
-    pub node_version: Option<String>,
-    /// Associated workflows in SpecForge
-    pub workflows: Option<Vec<WorkflowRef>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkflowRef {
-    pub id: String,
-    pub name: String,
-}
-
-/// Project summary for list_projects response
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectListItem {
-    /// Project ID
-    pub id: String,
-    /// Project name
-    pub name: String,
-    /// Project path
-    pub path: String,
-    /// Project description
-    pub description: Option<String>,
-    /// Project type (node, rust, python, tauri, nextjs, etc.)
-    pub project_type: Option<String>,
-    /// Package manager (npm, yarn, pnpm, bun)
-    pub package_manager: Option<String>,
-    /// Current git branch
-    pub current_branch: Option<String>,
-    /// Number of workflows associated with this project
-    pub workflow_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct WorktreeInfo {
-    pub path: String,
-    pub branch: String,
-    pub is_main: bool,
-    pub is_bare: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GitStatusInfo {
-    pub branch: String,
-    pub ahead: i32,
-    pub behind: i32,
-    pub staged: Vec<String>,
-    pub modified: Vec<String>,
-    pub untracked: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct DiffInfo {
-    pub diff: String,
-    pub files_changed: usize,
-    pub insertions: usize,
-    pub deletions: usize,
-}
-
-// Workflow response types
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkflowSummary {
-    pub id: String,
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    pub step_count: usize,
-    pub created_at: String,
-    pub updated_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_executed_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateWorkflowResponse {
-    pub workflow_id: String,
-    pub name: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AddStepResponse {
-    pub node_id: String,
-    pub workflow_id: String,
-    pub name: String,
-    pub order: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StepTemplateInfo {
-    pub id: String,
-    pub name: String,
-    pub command: String,
-    pub category: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub is_custom: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateTemplateResponse {
-    pub template_id: String,
-    pub name: String,
-    pub category: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RunWorkflowResponse {
-    pub success: bool,
-    pub workflow_id: String,
-    pub workflow_name: String,
-    pub steps_executed: usize,
-    pub total_steps: usize,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub failed_step: Option<FailedStepInfo>,
-    pub output_summary: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct FailedStepInfo {
-    pub node_id: String,
-    pub node_name: String,
-    pub exit_code: i32,
-    pub error_message: String,
-}
-
-// Time Machine & Security Guardian Tool Parameters removed (modules deleted)
-

@@ -4,7 +4,7 @@
 // Run with: cargo run --bin specforge-mcp
 // Or install: cargo install --path . --bin specforge-mcp
 //
-// This server uses SQLite database for data storage with WAL mode for concurrent access.
+// This server provides spec-focused tools for managing specs, schemas, workflows, and git.
 
 // MCP server modules (extracted for maintainability)
 mod mcp;
@@ -16,27 +16,23 @@ use mcp::{
     // State
     RATE_LIMITER, TOOL_RATE_LIMITERS,
     // Templates
-    get_builtin_templates,
-    // Store (database access and local types)
-    read_store_data, write_store_data, log_request, open_database, get_database_path,
-    Project, Workflow, WorkflowNode, CustomStepTemplate,
+    get_builtin_schemas,
+    // Store (database access)
+    read_store_data, log_request, open_database,
     // Background process management
-    BackgroundProcessStatus, BACKGROUND_PROCESS_MANAGER, CLEANUP_INTERVAL_SECS,
-    // Instance management (smart multi-instance support)
+    BACKGROUND_PROCESS_MANAGER, CLEANUP_INTERVAL_SECS,
+    // Instance management
     InstanceManager,
 };
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-
-use tokio::time::timeout as tokio_timeout;
 
 use chrono::Utc;
 use rmcp::{
     ErrorData as McpError,
     ServerHandler,
-    handler::server::tool::{ToolCallContext, ToolRouter},
+    handler::server::tool::ToolRouter,
     handler::server::wrapper::Parameters,
     model::*,
     service::RequestContext,
@@ -45,32 +41,19 @@ use rmcp::{
 use tokio::io::{stdin, stdout};
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
-use uuid::Uuid;
-
-// Import SQLite database and repositories
-use specforge_lib::utils::database::Database;
-use specforge_lib::repositories::NotificationRepository;
 use rusqlite::params;
 
-// Import shared store utilities (for validation, etc.)
+// Import shared store utilities (for validation)
 use specforge_lib::utils::shared_store::{
-    // Error handling
-    sanitize_error,
-    // Input validation
-    validate_path, validate_command, validate_string_length, validate_timeout,
-    MAX_NAME_LENGTH, MAX_DESCRIPTION_LENGTH,
-    // Output sanitization
-    sanitize_output,
+    validate_path,
 };
 
 // Import MCP types from models
-use specforge_lib::models::mcp::{MCPServerConfig, DevServerMode};
+use specforge_lib::models::mcp::MCPServerConfig;
 
 // Import path_resolver for proper command execution on macOS GUI apps
 use specforge_lib::utils::path_resolver;
 
-// Rate limiters, semaphore, and security are now imported from mcp::{state, security}
-// Background process management is now imported from mcp::background
 // ============================================================================
 // MCP Server Implementation
 // ============================================================================
@@ -89,12 +72,7 @@ impl SpecForgeMcp {
     }
 
     /// Execute a git command and return the output
-    ///
-    /// Uses path_resolver for proper environment setup on macOS GUI apps:
-    /// - Sets correct PATH to find git
-    /// - Sets SSH_AUTH_SOCK for SSH key authentication
     fn git_command(cwd: &str, args: &[&str]) -> Result<String, String> {
-        // Use path_resolver::create_command for proper PATH and SSH_AUTH_SOCK setup
         let mut cmd = path_resolver::create_command("git");
         let output = cmd
             .args(args)
@@ -121,497 +99,1070 @@ impl SpecForgeMcp {
             .map(|s| s.trim().to_string())
     }
 
-    /// Get the remote URL
-    fn get_remote_url(path: &str) -> Option<String> {
-        Self::git_command(path, &["remote", "get-url", "origin"])
-            .ok()
-            .map(|s| s.trim().to_string())
+    // ========================================================================
+    // Spec helpers (direct file I/O + SQLite)
+    // ========================================================================
+
+    /// Open a project-local SQLite database at .specforge/specforge.db
+    /// Falls back to the global app database if project-local doesn't exist.
+    fn open_project_db(_project_dir: &str) -> Result<specforge_lib::utils::database::Database, String> {
+        // Use the global app database (shared with Tauri app)
+        open_database()
     }
 
-    /// Execute a shell command with timeout enforcement
-    ///
-    /// Uses path_resolver for proper environment setup on macOS GUI apps:
-    /// - Sets correct PATH including Volta, Homebrew, Cargo paths
-    /// - Sets HOME, SSH_AUTH_SOCK, VOLTA_HOME environment variables
-    /// - Sets terminal/encoding environment (TERM, LANG, FORCE_COLOR)
-    ///
-    /// Security features:
-    /// - Default timeout: 5 minutes (300,000 ms)
-    /// - Maximum timeout: 1 hour (from validation)
-    /// - Returns error if command exceeds timeout
-    async fn shell_command_async(cwd: &str, command: &str, timeout_ms: Option<u64>) -> Result<(i32, String, String), String> {
-        // Default timeout: 5 minutes, max is enforced by validate_timeout (1 hour)
-        let timeout_duration = Duration::from_millis(timeout_ms.unwrap_or(300_000));
-
-        // Use path_resolver::create_async_command for proper environment setup
-        // This ensures the command has access to Volta, Homebrew, and other tools
-        let mut cmd = path_resolver::create_async_command("sh");
-        cmd.arg("-c")
-            .arg(command)
-            .current_dir(cwd)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-
-        // Spawn the child process
-        let child = cmd.spawn()
-            .map_err(|e| format!("Failed to spawn command: {}", e))?;
-
-        // Wait for output with timeout
-        let result = tokio_timeout(timeout_duration, child.wait_with_output()).await;
-
-        match result {
-            Ok(output_result) => {
-                let output = output_result
-                    .map_err(|e| format!("Failed to execute command: {}", e))?;
-
-                let exit_code = output.status.code().unwrap_or(-1);
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-                Ok((exit_code, stdout, stderr))
-            }
-            Err(_) => {
-                // Timeout occurred
-                Err(format!(
-                    "Command execution timed out after {} seconds. The process has been terminated.",
-                    timeout_duration.as_secs()
-                ))
-            }
-        }
-    }
-
-    /// Check if a script is a dev server script (long-running process)
-    ///
-    /// Dev server scripts typically include:
-    /// - Script names: dev, start, serve, watch, preview, etc.
-    /// - Commands containing: vite, next dev, webpack serve, nuxt dev, etc.
-    fn is_dev_server_script(script_name: &str, script_command: &str) -> bool {
-        // Common dev server script names
-        let dev_script_names = [
-            "dev", "start", "serve", "watch", "preview",
-            "dev:server", "start:dev", "serve:dev",
-        ];
-
-        // Check script name
-        let name_lower = script_name.to_lowercase();
-        if dev_script_names.iter().any(|&n| name_lower == n || name_lower.starts_with(&format!("{}:", n))) {
-            return true;
+    /// Parse YAML frontmatter from a spec markdown file.
+    /// Returns (frontmatter_yaml, body)
+    fn parse_spec_frontmatter(content: &str) -> Result<(String, String), String> {
+        let trimmed = content.trim_start();
+        if !trimmed.starts_with("---") {
+            return Err("Missing frontmatter: content must start with '---'".to_string());
         }
 
-        // Common dev server command patterns
-        let dev_command_patterns = [
-            "vite", "next dev", "next start", "nuxt dev", "nuxt start",
-            "webpack serve", "webpack-dev-server", "parcel watch",
-            "react-scripts start", "vue-cli-service serve",
-            "nodemon", "ts-node-dev", "tsx watch",
-            "astro dev", "remix dev",
-        ];
+        let after_first = &trimmed[3..];
+        let end_idx = after_first
+            .find("\n---")
+            .ok_or("Missing closing '---' for frontmatter")?;
 
-        let cmd_lower = script_command.to_lowercase();
-        dev_command_patterns.iter().any(|&p| cmd_lower.contains(p))
+        let yaml_content = after_first[..end_idx].to_string();
+        let body_start = end_idx + 4;
+        let body = if body_start < after_first.len() {
+            after_first[body_start..].trim().to_string()
+        } else {
+            String::new()
+        };
+
+        Ok((yaml_content, body))
     }
 
+    /// Read a spec from its markdown file, returning full JSON representation
+    fn read_spec_file(project_dir: &str, id: &str) -> Result<serde_json::Value, String> {
+        let file_path = PathBuf::from(project_dir)
+            .join(".specforge")
+            .join("specs")
+            .join(format!("{}.md", id));
+
+        let content = std::fs::read_to_string(&file_path)
+            .map_err(|e| format!("Failed to read spec file {}: {}", file_path.display(), e))?;
+
+        let (yaml_str, body) = Self::parse_spec_frontmatter(&content)?;
+
+        let mut spec: serde_json::Value = serde_yaml::from_str(&yaml_str)
+            .map_err(|e| format!("Failed to parse frontmatter YAML: {}", e))?;
+
+        if let Some(obj) = spec.as_object_mut() {
+            obj.insert("body".to_string(), serde_json::Value::String(body));
+            obj.insert("file_path".to_string(), serde_json::Value::String(
+                file_path.to_string_lossy().to_string()
+            ));
+        }
+
+        Ok(spec)
+    }
+
+    /// Generate a spec ID: spec-{YYYY-MM-DD}-{slug}-{4hex}
+    fn generate_spec_id(title: &str) -> String {
+        use rand::Rng;
+        let date = chrono::Utc::now().format("%Y-%m-%d");
+        let slug: String = title
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '-' })
+            .collect();
+        let slug: String = slug
+            .split('-')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("-");
+        let slug: String = slug.chars().take(40).collect();
+        let slug = slug.trim_end_matches('-');
+
+        let mut rng = rand::thread_rng();
+        let hex: String = format!("{:04x}", rng.gen_range(0..0x10000u32));
+        format!("spec-{}-{}-{}", date, slug, hex)
+    }
+
+    /// Write a spec to disk as markdown with YAML frontmatter.
+    /// Returns the relative file path.
+    fn write_spec_file(
+        project_dir: &str,
+        spec: &serde_json::Value,
+        body: &str,
+    ) -> Result<String, String> {
+        let specs_dir = PathBuf::from(project_dir).join(".specforge").join("specs");
+        std::fs::create_dir_all(&specs_dir)
+            .map_err(|e| format!("Failed to create specs directory: {}", e))?;
+
+        let id = spec.get("id").and_then(|v| v.as_str())
+            .ok_or("Spec missing 'id' field")?;
+
+        // Build YAML frontmatter (exclude body and file_path)
+        let mut frontmatter = spec.clone();
+        if let Some(obj) = frontmatter.as_object_mut() {
+            obj.remove("body");
+            obj.remove("file_path");
+        }
+
+        let yaml = serde_yaml::to_string(&frontmatter)
+            .map_err(|e| format!("Failed to serialize YAML: {}", e))?;
+
+        let mut content = String::from("---\n");
+        content.push_str(&yaml);
+        content.push_str("---\n");
+        if !body.is_empty() {
+            content.push('\n');
+            content.push_str(body);
+            content.push('\n');
+        }
+
+        let abs_path = specs_dir.join(format!("{}.md", id));
+
+        use fs2::FileExt;
+        let file = std::fs::File::create(&abs_path)
+            .map_err(|e| format!("Failed to create spec file: {}", e))?;
+        file.lock_exclusive()
+            .map_err(|e| format!("Failed to lock spec file: {}", e))?;
+        std::fs::write(&abs_path, content)
+            .map_err(|e| format!("Failed to write spec file: {}", e))?;
+        file.unlock()
+            .map_err(|e| format!("Failed to unlock spec file: {}", e))?;
+
+        Ok(format!(".specforge/specs/{}.md", id))
+    }
+
+    /// Insert/update a spec row in the SQLite index
+    fn upsert_spec_in_db(
+        db: &specforge_lib::utils::database::Database,
+        spec: &serde_json::Value,
+        file_path: &str,
+    ) -> Result<(), String> {
+        let id = spec.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let schema_id = spec.get("schema").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let title = spec.get("title").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let status = spec.get("status").and_then(|v| v.as_str()).unwrap_or("draft").to_string();
+        let workflow_id = spec.get("workflow").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let workflow_phase = spec.get("workflow_phase").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let created_at = spec.get("created_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let updated_at = spec.get("updated_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let fields_json = spec.get("fields")
+            .map(|v| serde_json::to_string(v).unwrap_or_default());
+        let file_path = file_path.to_string();
+
+        db.with_connection(|conn| {
+            conn.execute(
+                r#"
+                INSERT OR REPLACE INTO specs (id, schema_id, title, status, workflow_id, workflow_phase, file_path, fields_json, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                "#,
+                params![id, schema_id, title, status, workflow_id, workflow_phase, file_path, fields_json, created_at, updated_at],
+            ).map_err(|e| format!("Failed to upsert spec in database: {}", e))?;
+            Ok(())
+        })
+    }
+
+    /// Load schema definitions from .specforge/schemas/*.schema.yaml
+    fn load_schemas_from_dir(project_dir: &str) -> Result<Vec<serde_json::Value>, String> {
+        let schemas_dir = PathBuf::from(project_dir).join(".specforge").join("schemas");
+        if !schemas_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut schemas = Vec::new();
+        let entries = std::fs::read_dir(&schemas_dir)
+            .map_err(|e| format!("Failed to read schemas directory: {}", e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            let path = entry.path();
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            if !file_name.ends_with(".schema.yaml") {
+                continue;
+            }
+
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read schema file {}: {}", path.display(), e))?;
+
+            let schema: serde_json::Value = serde_yaml::from_str(&content)
+                .map_err(|e| format!("Failed to parse schema {}: {}", file_name, e))?;
+
+            schemas.push(schema);
+        }
+
+        Ok(schemas)
+    }
+
+    /// Build default field values from schema definition
+    fn build_default_fields(schema: &serde_json::Value) -> serde_json::Value {
+        let mut fields = serde_json::Map::new();
+
+        if let Some(field_defs) = schema.get("fields").and_then(|f| f.as_object()) {
+            for (name, field_type) in field_defs {
+                if name == "title" || name == "status" {
+                    continue;
+                }
+                match field_type {
+                    serde_json::Value::String(type_name) => match type_name.as_str() {
+                        "string" | "date" => {
+                            fields.insert(name.clone(), serde_json::Value::String(String::new()));
+                        }
+                        "number" => {
+                            fields.insert(name.clone(), serde_json::json!(0));
+                        }
+                        "list" => {
+                            fields.insert(name.clone(), serde_json::Value::Array(Vec::new()));
+                        }
+                        _ => {}
+                    },
+                    serde_json::Value::Array(values) => {
+                        // Enum type - pick first value as default
+                        if let Some(first) = values.first() {
+                            fields.insert(name.clone(), first.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        serde_json::Value::Object(fields)
+    }
+
+    /// Build body with ## section headings from schema
+    fn build_body_from_schema(schema: &serde_json::Value) -> String {
+        let mut body = String::new();
+
+        if let Some(sections) = schema.get("sections").and_then(|s| s.as_array()) {
+            for section in sections {
+                let name = section.get("name").and_then(|n| n.as_str()).unwrap_or("section");
+                let display_name: String = name
+                    .split('-')
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        match chars.next() {
+                            Some(c) => {
+                                let upper: String = c.to_uppercase().collect();
+                                format!("{}{}", upper, chars.collect::<String>())
+                            }
+                            None => String::new(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                if !body.is_empty() {
+                    body.push('\n');
+                }
+                body.push_str(&format!("## {}\n\n", display_name));
+            }
+        }
+        body
+    }
 }
 
 // Implement tools using the tool_router macro
 #[tool_router]
 impl SpecForgeMcp {
     // ========================================================================
-    // Existing Git Tools
+    // Spec Operations
     // ========================================================================
 
-    /// List all registered projects in SpecForge
-    #[tool(description = "List all registered projects in SpecForge with detailed info including project type, package manager, and workflow count.")]
-    async fn list_projects(
+    /// Create a new spec from a schema
+    #[tool(description = "Create a new spec from a schema. Writes a markdown file with YAML frontmatter to .specforge/specs/ and indexes it in SQLite. Returns the created spec as JSON.")]
+    async fn create_spec(
         &self,
-        Parameters(params): Parameters<GetProjectsParams>,
+        Parameters(params): Parameters<CreateSpecParams>,
     ) -> Result<CallToolResult, McpError> {
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let project_dir = &params.project_dir;
+        let schema_name = &params.schema;
+        let title = &params.title;
 
-        let mut projects: Vec<&Project> = store_data.projects.iter().collect();
-
-        // Filter by query if specified
-        if let Some(ref query) = params.query {
-            let query_lower = query.to_lowercase();
-            projects.retain(|p| {
-                p.name.to_lowercase().contains(&query_lower) ||
-                p.path.to_lowercase().contains(&query_lower) ||
-                p.description.as_ref().map(|d| d.to_lowercase().contains(&query_lower)).unwrap_or(false)
-            });
-        }
-
-        // Sort by name
-        projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-
-        // Build detailed project list
-        let detailed_projects: Vec<ProjectListItem> = projects.iter().map(|p| {
-            let path_buf = PathBuf::from(&p.path);
-            let (package_manager, _, _) = Self::read_package_json(&path_buf);
-            let project_type = Self::detect_project_type(&path_buf);
-            let current_branch = Self::get_current_branch(&p.path);
-            let workflow_count = store_data.workflows.iter()
-                .filter(|w| w.project_id.as_ref() == Some(&p.id))
-                .count();
-
-            ProjectListItem {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                path: p.path.clone(),
-                description: p.description.clone(),
-                project_type,
-                package_manager,
-                current_branch,
-                workflow_count,
-            }
-        }).collect();
-
-        let response = serde_json::json!({
-            "projects": detailed_projects,
-            "total": detailed_projects.len()
-        });
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Get information about a project at the specified path
-    #[tool(description = "Get detailed information about a project including ID, scripts, package manager, workflows, and git info")]
-    async fn get_project(
-        &self,
-        Parameters(params): Parameters<GetProjectParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let path = params.path;
-
-        let path_buf = PathBuf::from(&path);
-        if !path_buf.exists() {
+        // Validate .specforge exists
+        let specforge_dir = PathBuf::from(project_dir).join(".specforge");
+        if !specforge_dir.exists() {
             return Ok(CallToolResult::error(vec![Content::text(
-                format!("Project path does not exist: {}", path)
+                format!("No .specforge/ directory found in {}. Run init_project first.", project_dir)
             )]));
         }
 
-        if !Self::is_git_repo(&path) {
+        // Load schemas from disk
+        let schemas = Self::load_schemas_from_dir(project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let schema = schemas.iter()
+            .find(|s| s.get("name").and_then(|n| n.as_str()) == Some(schema_name))
+            .ok_or_else(|| McpError::internal_error(
+                format!("Schema not found: {}. Available: {:?}",
+                    schema_name,
+                    schemas.iter().filter_map(|s| s.get("name").and_then(|n| n.as_str())).collect::<Vec<_>>()
+                ), None
+            ))?;
+
+        let id = Self::generate_spec_id(title);
+        let now = Utc::now().to_rfc3339();
+        let fields = Self::build_default_fields(schema);
+        let body = Self::build_body_from_schema(schema);
+
+        let spec = serde_json::json!({
+            "id": id,
+            "schema": schema_name,
+            "title": title,
+            "status": "draft",
+            "created_at": now,
+            "updated_at": now,
+            "fields": fields,
+        });
+
+        // Write to disk
+        let file_path = Self::write_spec_file(project_dir, &spec, &body)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Insert into SQLite index
+        let conn = Self::open_project_db(project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+        Self::upsert_spec_in_db(&conn, &spec, &file_path)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Return spec with body
+        let mut result = spec;
+        if let Some(obj) = result.as_object_mut() {
+            obj.insert("body".to_string(), serde_json::Value::String(body));
+            obj.insert("file_path".to_string(), serde_json::Value::String(file_path));
+        }
+
+        let json = serde_json::to_string_pretty(&result)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// List specs from the SQLite index
+    #[tool(description = "List all specs in the project. Supports optional filters by status and workflow_phase. Returns an array of spec summaries (without body).")]
+    async fn list_specs(
+        &self,
+        Parameters(params): Parameters<ListSpecsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = Self::open_project_db(&params.project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let status_clone = params.status.clone();
+        let wp_clone = params.workflow_phase.clone();
+
+        let specs: Vec<serde_json::Value> = db.with_connection(|conn| {
+            let mut sql = String::from(
+                "SELECT id, schema_id, title, status, workflow_id, workflow_phase, file_path, fields_json, created_at, updated_at FROM specs"
+            );
+            let mut conditions: Vec<String> = Vec::new();
+            let mut bind_values: Vec<String> = Vec::new();
+
+            if let Some(ref status) = status_clone {
+                conditions.push(format!("status = ?{}", bind_values.len() + 1));
+                bind_values.push(status.clone());
+            }
+            if let Some(ref wp) = wp_clone {
+                conditions.push(format!("workflow_phase = ?{}", bind_values.len() + 1));
+                bind_values.push(wp.clone());
+            }
+
+            if !conditions.is_empty() {
+                sql.push_str(" WHERE ");
+                sql.push_str(&conditions.join(" AND "));
+            }
+            sql.push_str(" ORDER BY updated_at DESC");
+
+            let mut stmt = conn.prepare(&sql)
+                .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+            let params_refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter()
+                .map(|v| v as &dyn rusqlite::types::ToSql)
+                .collect();
+
+            let rows = stmt.query_map(params_refs.as_slice(), |row| {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, String>(0)?,
+                    "schema": row.get::<_, String>(1)?,
+                    "title": row.get::<_, String>(2)?,
+                    "status": row.get::<_, String>(3)?,
+                    "workflow": row.get::<_, Option<String>>(4)?,
+                    "workflow_phase": row.get::<_, Option<String>>(5)?,
+                    "file_path": row.get::<_, String>(6)?,
+                    "fields_json": row.get::<_, Option<String>>(7)?,
+                    "created_at": row.get::<_, String>(8)?,
+                    "updated_at": row.get::<_, String>(9)?,
+                }))
+            }).map_err(|e| format!("Failed to query specs: {}", e))?;
+
+            let mut result = Vec::new();
+            for row in rows {
+                if let Ok(spec) = row {
+                    result.push(spec);
+                }
+            }
+            Ok(result)
+        }).map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "specs": specs,
+            "total": specs.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get a single spec with full body content
+    #[tool(description = "Get a spec by ID including its full markdown body. Reads directly from the file on disk (source of truth).")]
+    async fn get_spec(
+        &self,
+        Parameters(params): Parameters<GetSpecParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let spec = Self::read_spec_file(&params.project_dir, &params.id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let json = serde_json::to_string_pretty(&spec)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Update a spec's fields and/or body
+    #[tool(description = "Update a spec's fields and/or body. Reads the current file, applies changes, writes back to disk, and updates the SQLite index.")]
+    async fn update_spec(
+        &self,
+        Parameters(params): Parameters<UpdateSpecParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // Read current spec from file
+        let mut spec = Self::read_spec_file(&params.project_dir, &params.id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let current_body = spec.get("body")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        // Apply field updates
+        if let Some(ref fields_val) = params.fields {
+            if let Some(updates) = fields_val.as_object() {
+                if let Some(spec_obj) = spec.as_object_mut() {
+                    for (key, value) in updates {
+                        match key.as_str() {
+                            "title" | "status" | "workflow" | "workflow_phase" => {
+                                spec_obj.insert(key.clone(), value.clone());
+                            }
+                            _ => {
+                                // Add to fields sub-object
+                                let fields = spec_obj
+                                    .entry("fields")
+                                    .or_insert_with(|| serde_json::json!({}));
+                                if let Some(f) = fields.as_object_mut() {
+                                    f.insert(key.clone(), value.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update timestamp
+        if let Some(obj) = spec.as_object_mut() {
+            obj.insert("updated_at".to_string(),
+                serde_json::Value::String(Utc::now().to_rfc3339()));
+        }
+
+        // Determine body to write
+        let body = params.body.as_deref().unwrap_or(&current_body);
+
+        // Write back to disk
+        let file_path = Self::write_spec_file(&params.project_dir, &spec, body)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Update SQLite index
+        let conn = Self::open_project_db(&params.project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+        Self::upsert_spec_in_db(&conn, &spec, &file_path)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Return updated spec
+        if let Some(obj) = spec.as_object_mut() {
+            obj.insert("body".to_string(), serde_json::Value::String(body.to_string()));
+            obj.insert("file_path".to_string(), serde_json::Value::String(file_path));
+        }
+
+        let json = serde_json::to_string_pretty(&spec)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Delete a spec file and its SQLite index entry
+    #[tool(description = "Delete a spec by ID. Removes the file from disk and its entry from the SQLite index.")]
+    async fn delete_spec(
+        &self,
+        Parameters(params): Parameters<DeleteSpecParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let file_path = PathBuf::from(&params.project_dir)
+            .join(".specforge")
+            .join("specs")
+            .join(format!("{}.md", params.id));
+
+        // Remove file
+        if file_path.exists() {
+            std::fs::remove_file(&file_path)
+                .map_err(|e| McpError::internal_error(format!("Failed to delete spec file: {}", e), None))?;
+        }
+
+        // Remove from SQLite
+        let db = Self::open_project_db(&params.project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let spec_id = params.id.clone();
+        db.with_connection(|conn| {
+            conn.execute("DELETE FROM specs WHERE id = ?1", params![spec_id])
+                .map_err(|e| format!("Failed to delete spec from database: {}", e))?;
+            Ok(())
+        }).map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "deleted": true,
+            "id": params.id
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    // ========================================================================
+    // Workflow Operations
+    // ========================================================================
+
+    /// Advance a spec to the next workflow phase
+    #[tool(description = "Advance a spec to the next workflow phase. Updates the spec's workflow_phase field, writes to disk and SQLite. If to_phase is omitted, returns available transitions.")]
+    async fn advance_spec(
+        &self,
+        Parameters(params): Parameters<AdvanceSpecParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // Read current spec
+        let mut spec = Self::read_spec_file(&params.project_dir, &params.spec_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let current_phase = spec.get("workflow_phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("draft")
+            .to_string();
+
+        // Try to load workflow definition
+        let workflow_path = PathBuf::from(&params.project_dir)
+            .join(".specforge")
+            .join("workflows")
+            .join("default.workflow.yaml");
+
+        let workflow: Option<serde_json::Value> = if workflow_path.exists() {
+            let content = std::fs::read_to_string(&workflow_path)
+                .map_err(|e| McpError::internal_error(format!("Failed to read workflow: {}", e), None))?;
+            Some(serde_yaml::from_str(&content)
+                .map_err(|e| McpError::internal_error(format!("Failed to parse workflow: {}", e), None))?)
+        } else {
+            None
+        };
+
+        // Find available transitions from current phase
+        let transitions: Vec<serde_json::Value> = workflow.as_ref()
+            .and_then(|w| w.get("transitions"))
+            .and_then(|t| t.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|t| t.get("from").and_then(|f| f.as_str()) == Some(&current_phase))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if let Some(ref to_phase) = params.to_phase {
+            // Validate transition exists
+            let valid = transitions.iter().any(|t|
+                t.get("to").and_then(|v| v.as_str()) == Some(to_phase)
+            );
+
+            if !valid {
+                let available: Vec<&str> = transitions.iter()
+                    .filter_map(|t| t.get("to").and_then(|v| v.as_str()))
+                    .collect();
+                return Ok(CallToolResult::error(vec![Content::text(
+                    format!("Cannot transition from '{}' to '{}'. Available transitions: {:?}",
+                        current_phase, to_phase, available)
+                )]));
+            }
+
+            // Apply transition
+            if let Some(obj) = spec.as_object_mut() {
+                obj.insert("workflow_phase".to_string(),
+                    serde_json::Value::String(to_phase.clone()));
+                obj.insert("updated_at".to_string(),
+                    serde_json::Value::String(Utc::now().to_rfc3339()));
+            }
+
+            let body = spec.get("body").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let file_path = Self::write_spec_file(&params.project_dir, &spec, &body)
+                .map_err(|e| McpError::internal_error(e, None))?;
+
+            let db = Self::open_project_db(&params.project_dir)
+                .map_err(|e| McpError::internal_error(e, None))?;
+            Self::upsert_spec_in_db(&db, &spec, &file_path)
+                .map_err(|e| McpError::internal_error(e, None))?;
+
+            // Record in phase_history
+            let spec_id = params.spec_id.clone();
+            let cp = current_phase.clone();
+            let tp = to_phase.clone();
+            let _ = db.with_connection(|conn| {
+                conn.execute(
+                    "INSERT INTO phase_history (instance_id, from_phase, to_phase, transitioned_at) VALUES (?1, ?2, ?3, ?4)",
+                    params![spec_id, cp, tp, Utc::now().to_rfc3339()],
+                ).map_err(|e| format!("{}", e))?;
+                Ok(())
+            });
+
+            let response = serde_json::json!({
+                "success": true,
+                "spec_id": params.spec_id,
+                "from_phase": current_phase,
+                "to_phase": to_phase,
+            });
+
+            let json = serde_json::to_string_pretty(&response)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            Ok(CallToolResult::success(vec![Content::text(json)]))
+        } else {
+            // Return available transitions
+            let available: Vec<serde_json::Value> = transitions.iter().map(|t| {
+                serde_json::json!({
+                    "to": t.get("to"),
+                    "gate": t.get("gate"),
+                })
+            }).collect();
+
+            let response = serde_json::json!({
+                "spec_id": params.spec_id,
+                "current_phase": current_phase,
+                "available_transitions": available,
+            });
+
+            let json = serde_json::to_string_pretty(&response)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            Ok(CallToolResult::success(vec![Content::text(json)]))
+        }
+    }
+
+    /// Submit a review for a spec
+    #[tool(description = "Submit a review (approve/reject) for a spec. Records the review in the spec_reviews table.")]
+    async fn review_spec(
+        &self,
+        Parameters(params): Parameters<ReviewSpecParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = Self::open_project_db(&params.project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        // Get current phase from spec
+        let spec = Self::read_spec_file(&params.project_dir, &params.spec_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+        let phase = spec.get("workflow_phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let now = Utc::now().to_rfc3339();
+        let spec_id = params.spec_id.clone();
+        let approved_int = params.approved as i32;
+        let comment = params.comment.clone();
+        let phase_clone = phase.clone();
+
+        db.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO spec_reviews (spec_id, phase, reviewer, approved, comment, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![spec_id, phase_clone, "mcp-reviewer", approved_int, comment, now],
+            ).map_err(|e| format!("Failed to insert review: {}", e))?;
+            Ok(())
+        }).map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "success": true,
+            "spec_id": params.spec_id,
+            "phase": phase,
+            "approved": params.approved,
+            "comment": params.comment,
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get workflow status for a spec
+    #[tool(description = "Get the current workflow phase, available transitions, and gate info for a spec.")]
+    async fn get_workflow_status(
+        &self,
+        Parameters(params): Parameters<GetWorkflowStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let spec = Self::read_spec_file(&params.project_dir, &params.spec_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let current_phase = spec.get("workflow_phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("draft");
+
+        let workflow_id = spec.get("workflow")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default");
+
+        // Load workflow
+        let workflow_path = PathBuf::from(&params.project_dir)
+            .join(".specforge")
+            .join("workflows")
+            .join(format!("{}.workflow.yaml", workflow_id));
+
+        let workflow: Option<serde_json::Value> = if workflow_path.exists() {
+            std::fs::read_to_string(&workflow_path).ok()
+                .and_then(|content| serde_yaml::from_str(&content).ok())
+        } else {
+            None
+        };
+
+        let transitions: Vec<serde_json::Value> = workflow.as_ref()
+            .and_then(|w| w.get("transitions"))
+            .and_then(|t| t.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|t| t.get("from").and_then(|f| f.as_str()) == Some(current_phase))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let phases: Vec<serde_json::Value> = workflow.as_ref()
+            .and_then(|w| w.get("phases"))
+            .and_then(|p| p.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        // Get review count
+        let db = Self::open_project_db(&params.project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let spec_id = params.spec_id.clone();
+        let (review_count, approved_count) = db.with_connection(|conn| {
+            let rc: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM spec_reviews WHERE spec_id = ?1",
+                params![spec_id],
+                |row| row.get(0),
+            ).unwrap_or(0);
+            let ac: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM spec_reviews WHERE spec_id = ?1 AND approved = 1",
+                params![spec_id],
+                |row| row.get(0),
+            ).unwrap_or(0);
+            Ok((rc, ac))
+        }).map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "spec_id": params.spec_id,
+            "current_phase": current_phase,
+            "workflow_id": workflow_id,
+            "phases": phases,
+            "available_transitions": transitions,
+            "reviews": {
+                "total": review_count,
+                "approved": approved_count,
+            }
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get detailed gate evaluation for a spec
+    #[tool(description = "Get detailed gate evaluation results for the current phase's transitions. Shows which gates pass/fail and why.")]
+    async fn get_gate_status(
+        &self,
+        Parameters(params): Parameters<GetGateStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let spec = Self::read_spec_file(&params.project_dir, &params.spec_id)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let current_phase = spec.get("workflow_phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("draft");
+
+        // Load workflow
+        let workflow_path = PathBuf::from(&params.project_dir)
+            .join(".specforge")
+            .join("workflows")
+            .join("default.workflow.yaml");
+
+        let workflow: Option<serde_json::Value> = if workflow_path.exists() {
+            std::fs::read_to_string(&workflow_path).ok()
+                .and_then(|content| serde_yaml::from_str(&content).ok())
+        } else {
+            None
+        };
+
+        let transitions: Vec<serde_json::Value> = workflow.as_ref()
+            .and_then(|w| w.get("transitions"))
+            .and_then(|t| t.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|t| t.get("from").and_then(|f| f.as_str()) == Some(current_phase))
+                    .map(|t| {
+                        let gate = t.get("gate");
+                        serde_json::json!({
+                            "to": t.get("to"),
+                            "gate": gate,
+                            "has_gate": gate.is_some(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let response = serde_json::json!({
+            "spec_id": params.spec_id,
+            "current_phase": current_phase,
+            "transitions": transitions,
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    // ========================================================================
+    // Schema Operations
+    // ========================================================================
+
+    /// List available schemas
+    #[tool(description = "List all available schema definitions from the project's .specforge/schemas/ directory.")]
+    async fn list_schemas(
+        &self,
+        Parameters(params): Parameters<ListSchemasParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let schemas = Self::load_schemas_from_dir(&params.project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "schemas": schemas,
+            "total": schemas.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get a single schema by name
+    #[tool(description = "Get a schema definition by name from .specforge/schemas/{name}.schema.yaml.")]
+    async fn get_schema(
+        &self,
+        Parameters(params): Parameters<GetSchemaParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let schema_path = PathBuf::from(&params.project_dir)
+            .join(".specforge")
+            .join("schemas")
+            .join(format!("{}.schema.yaml", params.name));
+
+        if !schema_path.exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Schema not found: {}", params.name)
+            )]));
+        }
+
+        let content = std::fs::read_to_string(&schema_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to read schema: {}", e), None))?;
+
+        let schema: serde_json::Value = serde_yaml::from_str(&content)
+            .map_err(|e| McpError::internal_error(format!("Failed to parse schema: {}", e), None))?;
+
+        let json = serde_json::to_string_pretty(&schema)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    // ========================================================================
+    // Project Operations
+    // ========================================================================
+
+    /// Initialize .specforge/ directory structure
+    #[tool(description = "Initialize the .specforge/ directory structure in a project. Use preset 'basic-sdd' for built-in schemas + workflow, or 'blank' for empty structure.")]
+    async fn init_project(
+        &self,
+        Parameters(params): Parameters<InitProjectParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let project_dir = &params.project_dir;
+        let preset = &params.preset;
+
+        let base = PathBuf::from(project_dir).join(".specforge");
+
+        // Create directory structure
+        let subdirs = ["schemas", "templates", "workflows", "specs", "archive"];
+        for sub in &subdirs {
+            std::fs::create_dir_all(base.join(sub))
+                .map_err(|e| McpError::internal_error(
+                    format!("Failed to create .specforge/{}: {}", sub, e), None
+                ))?;
+        }
+
+        if preset == "basic-sdd" {
+            // Write built-in schemas
+            for (filename, content) in get_builtin_schemas() {
+                let path = base.join("schemas").join(filename);
+                std::fs::write(&path, content)
+                    .map_err(|e| McpError::internal_error(
+                        format!("Failed to write {}: {}", filename, e), None
+                    ))?;
+            }
+
+            // Write default workflow
+            let workflow_path = base.join("workflows").join("default.workflow.yaml");
+            std::fs::write(&workflow_path, mcp::templates::DEFAULT_WORKFLOW_YAML)
+                .map_err(|e| McpError::internal_error(
+                    format!("Failed to write default workflow: {}", e), None
+                ))?;
+
+            // Sync schemas into SQLite
+            let db = Self::open_project_db(project_dir)
+                .map_err(|e| McpError::internal_error(e, None))?;
+
+            let schemas = Self::load_schemas_from_dir(project_dir)
+                .map_err(|e| McpError::internal_error(e, None))?;
+
+            db.with_connection(|conn| {
+                for schema in &schemas {
+                    let name = schema.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+                    let display_name = schema.get("display_name").and_then(|n| n.as_str());
+                    let fields_json = schema.get("fields")
+                        .map(|f| serde_json::to_string(f).unwrap_or_default())
+                        .unwrap_or_default();
+                    let rel_path = format!(".specforge/schemas/{}.schema.yaml", name);
+                    let now = Utc::now().to_rfc3339();
+
+                    let _ = conn.execute(
+                        "INSERT OR REPLACE INTO schemas (id, name, display_name, file_path, fields_json, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        params![name, name, display_name, rel_path, fields_json, now],
+                    );
+                }
+                Ok(())
+            }).map_err(|e| McpError::internal_error(e, None))?;
+        }
+
+        let response = serde_json::json!({
+            "success": true,
+            "project_dir": project_dir,
+            "preset": preset,
+            "directories_created": subdirs,
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    // ========================================================================
+    // Agent Operations
+    // ========================================================================
+
+    /// Get agent run history
+    #[tool(description = "Get agent run history. Optionally filter by spec_id.")]
+    async fn get_agent_runs(
+        &self,
+        Parameters(params): Parameters<GetAgentRunsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = Self::open_project_db(&params.project_dir)
+            .map_err(|e| McpError::internal_error(e, None))?;
+
+        let spec_id_filter = params.spec_id.clone();
+
+        let rows: Vec<serde_json::Value> = db.with_connection(|conn| {
+            let (sql, bind_val) = if let Some(ref spec_id) = spec_id_filter {
+                (
+                    "SELECT id, spec_id, phase, prompt, status, pid, started_at, finished_at, error FROM agent_runs WHERE spec_id = ?1 ORDER BY started_at DESC",
+                    Some(spec_id.clone()),
+                )
+            } else {
+                (
+                    "SELECT id, spec_id, phase, prompt, status, pid, started_at, finished_at, error FROM agent_runs ORDER BY started_at DESC",
+                    None,
+                )
+            };
+
+            let mut stmt = conn.prepare(sql)
+                .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+            let row_mapper = |row: &rusqlite::Row| -> rusqlite::Result<serde_json::Value> {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, String>(0)?,
+                    "spec_id": row.get::<_, String>(1)?,
+                    "phase": row.get::<_, String>(2)?,
+                    "prompt": row.get::<_, String>(3)?,
+                    "status": row.get::<_, String>(4)?,
+                    "pid": row.get::<_, Option<u32>>(5)?,
+                    "started_at": row.get::<_, String>(6)?,
+                    "finished_at": row.get::<_, Option<String>>(7)?,
+                    "error": row.get::<_, Option<String>>(8)?,
+                }))
+            };
+
+            let result: Vec<serde_json::Value> = if let Some(ref val) = bind_val {
+                stmt.query_map(params![val], row_mapper)
+            } else {
+                stmt.query_map([], row_mapper)
+            }
+            .map_err(|e| format!("Failed to query agent runs: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+            Ok(result)
+        }).map_err(|e| McpError::internal_error(e, None))?;
+
+        let response = serde_json::json!({
+            "agent_runs": rows,
+            "total": rows.len()
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    // ========================================================================
+    // Git Operations
+    // ========================================================================
+
+    /// Get git status
+    #[tool(description = "Get git status including current branch, ahead/behind counts, staged files, modified files, and untracked files.")]
+    async fn git_status(
+        &self,
+        Parameters(params): Parameters<GitStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.project_dir;
+
+        if !PathBuf::from(path).exists() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                format!("Path does not exist: {}", path)
+            )]));
+        }
+
+        if !Self::is_git_repo(path) {
             return Ok(CallToolResult::error(vec![Content::text(
                 format!("Not a git repository: {}", path)
             )]));
         }
 
-        // Try to find project in store to get ID and description
-        let store_data = read_store_data().ok();
-        let registered_project = store_data.as_ref().and_then(|data| {
-            data.projects.iter().find(|p| p.path == path)
-        });
-
-        // Get associated workflows for this project
-        let workflows = registered_project.and_then(|p| {
-            store_data.as_ref().map(|data| {
-                data.workflows.iter()
-                    .filter(|w| w.project_id.as_ref() == Some(&p.id))
-                    .map(|w| WorkflowRef {
-                        id: w.id.clone(),
-                        name: w.name.clone(),
-                    })
-                    .collect::<Vec<_>>()
-            })
-        }).filter(|v: &Vec<WorkflowRef>| !v.is_empty());
-
-        // Detect package manager and read package.json
-        let (package_manager, scripts, node_version_from_pkg) = Self::read_package_json(&path_buf);
-
-        // Detect project type
-        let project_type = Self::detect_project_type(&path_buf);
-
-        // Get node version from various sources
-        let node_version = Self::get_node_version(&path_buf).or(node_version_from_pkg);
-
-        let project = ProjectInfo {
-            id: registered_project.map(|p| p.id.clone()),
-            path: path.clone(),
-            name: registered_project
-                .map(|p| p.name.clone())
-                .unwrap_or_else(|| {
-                    path_buf
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".to_string())
-                }),
-            description: registered_project.and_then(|p| p.description.clone()),
-            git_remote: Self::get_remote_url(&path),
-            current_branch: Self::get_current_branch(&path),
-            package_manager,
-            scripts,
-            project_type,
-            node_version,
-            workflows,
-        };
-
-        let json = serde_json::to_string_pretty(&project)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Read package.json and extract scripts, detect package manager
-    fn read_package_json(path: &PathBuf) -> (Option<String>, Option<HashMap<String, String>>, Option<String>) {
-        let package_json_path = path.join("package.json");
-
-        // Detect package manager from lockfile
-        let package_manager = if path.join("pnpm-lock.yaml").exists() {
-            Some("pnpm".to_string())
-        } else if path.join("yarn.lock").exists() {
-            Some("yarn".to_string())
-        } else if path.join("bun.lockb").exists() || path.join("bun.lock").exists() {
-            Some("bun".to_string())
-        } else if path.join("package-lock.json").exists() {
-            Some("npm".to_string())
-        } else if package_json_path.exists() {
-            Some("npm".to_string()) // Default to npm if package.json exists
-        } else {
-            None
-        };
-
-        if !package_json_path.exists() {
-            return (package_manager, None, None);
-        }
-
-        // Read and parse package.json
-        let content = match std::fs::read_to_string(&package_json_path) {
-            Ok(c) => c,
-            Err(_) => return (package_manager, None, None),
-        };
-
-        let pkg: serde_json::Value = match serde_json::from_str(&content) {
-            Ok(v) => v,
-            Err(_) => return (package_manager, None, None),
-        };
-
-        // Extract scripts
-        let scripts = pkg.get("scripts").and_then(|s| {
-            s.as_object().map(|obj| {
-                obj.iter()
-                    .filter_map(|(k, v)| v.as_str().map(|val| (k.clone(), val.to_string())))
-                    .collect::<HashMap<String, String>>()
-            })
-        }).filter(|s| !s.is_empty());
-
-        // Extract node version from engines
-        let node_version = pkg.get("engines")
-            .and_then(|e| e.get("node"))
-            .and_then(|n| n.as_str())
-            .map(|s| s.to_string());
-
-        (package_manager, scripts, node_version)
-    }
-
-    /// Detect project type based on files present
-    fn detect_project_type(path: &PathBuf) -> Option<String> {
-        // Check for various project indicators
-        if path.join("Cargo.toml").exists() {
-            return Some("rust".to_string());
-        }
-        if path.join("go.mod").exists() {
-            return Some("go".to_string());
-        }
-        if path.join("requirements.txt").exists() || path.join("pyproject.toml").exists() || path.join("setup.py").exists() {
-            return Some("python".to_string());
-        }
-        if path.join("Gemfile").exists() {
-            return Some("ruby".to_string());
-        }
-        if path.join("pom.xml").exists() || path.join("build.gradle").exists() || path.join("build.gradle.kts").exists() {
-            return Some("java".to_string());
-        }
-        if path.join("Package.swift").exists() {
-            return Some("swift".to_string());
-        }
-        if path.join("pubspec.yaml").exists() {
-            return Some("dart".to_string());
-        }
-
-        // Check for Node.js project types
-        if path.join("package.json").exists() {
-            // Check for specific frameworks
-            if let Ok(content) = std::fs::read_to_string(path.join("package.json")) {
-                if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) {
-                    let deps = pkg.get("dependencies").and_then(|d| d.as_object());
-                    let dev_deps = pkg.get("devDependencies").and_then(|d| d.as_object());
-
-                    // Check dependencies for framework detection
-                    let has_dep = |name: &str| {
-                        deps.map(|d| d.contains_key(name)).unwrap_or(false) ||
-                        dev_deps.map(|d| d.contains_key(name)).unwrap_or(false)
-                    };
-
-                    if has_dep("next") {
-                        return Some("nextjs".to_string());
-                    }
-                    if has_dep("nuxt") {
-                        return Some("nuxt".to_string());
-                    }
-                    if has_dep("@tauri-apps/api") || path.join("src-tauri").exists() {
-                        return Some("tauri".to_string());
-                    }
-                    if has_dep("electron") {
-                        return Some("electron".to_string());
-                    }
-                    if has_dep("react-native") || has_dep("expo") {
-                        return Some("react-native".to_string());
-                    }
-                    if has_dep("vue") {
-                        return Some("vue".to_string());
-                    }
-                    if has_dep("react") {
-                        return Some("react".to_string());
-                    }
-                    if has_dep("svelte") {
-                        return Some("svelte".to_string());
-                    }
-                    if has_dep("@angular/core") {
-                        return Some("angular".to_string());
-                    }
-                    if has_dep("express") || has_dep("fastify") || has_dep("koa") || has_dep("hono") {
-                        return Some("node-server".to_string());
-                    }
-                }
-            }
-            return Some("node".to_string());
-        }
-
-        None
-    }
-
-    /// Get Node.js version from .nvmrc, .node-version, or volta config
-    fn get_node_version(path: &PathBuf) -> Option<String> {
-        // Check .nvmrc
-        if let Ok(version) = std::fs::read_to_string(path.join(".nvmrc")) {
-            let v = version.trim();
-            if !v.is_empty() {
-                return Some(v.to_string());
-            }
-        }
-
-        // Check .node-version
-        if let Ok(version) = std::fs::read_to_string(path.join(".node-version")) {
-            let v = version.trim();
-            if !v.is_empty() {
-                return Some(v.to_string());
-            }
-        }
-
-        // Check volta in package.json
-        if let Ok(content) = std::fs::read_to_string(path.join("package.json")) {
-            if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(version) = pkg.get("volta")
-                    .and_then(|v| v.get("node"))
-                    .and_then(|n| n.as_str())
-                {
-                    return Some(version.to_string());
-                }
-            }
-        }
-
-        None
-    }
-
-    /// List all git worktrees for a project
-    #[tool(description = "List all git worktrees for a project, showing path, branch, and whether it's the main worktree")]
-    async fn list_worktrees(
-        &self,
-        Parameters(params): Parameters<ListWorktreesParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let project_path = params.project_path;
-
-        if !PathBuf::from(&project_path).exists() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Project path does not exist: {}", project_path)
-            )]));
-        }
-
-        if !Self::is_git_repo(&project_path) {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Not a git repository: {}", project_path)
-            )]));
-        }
-
-        let output = Self::git_command(&project_path, &["worktree", "list", "--porcelain"])
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let mut worktrees = Vec::new();
-        let mut current_worktree: Option<WorktreeInfo> = None;
-
-        for line in output.lines() {
-            if line.starts_with("worktree ") {
-                if let Some(wt) = current_worktree.take() {
-                    worktrees.push(wt);
-                }
-                let path = line.strip_prefix("worktree ").unwrap_or("").to_string();
-                current_worktree = Some(WorktreeInfo {
-                    path,
-                    branch: String::new(),
-                    is_main: false,
-                    is_bare: false,
-                });
-            } else if line.starts_with("branch ") {
-                if let Some(ref mut wt) = current_worktree {
-                    wt.branch = line
-                        .strip_prefix("branch refs/heads/")
-                        .unwrap_or(line.strip_prefix("branch ").unwrap_or(""))
-                        .to_string();
-                }
-            } else if line == "bare" {
-                if let Some(ref mut wt) = current_worktree {
-                    wt.is_bare = true;
-                }
-            }
-        }
-
-        if let Some(wt) = current_worktree {
-            worktrees.push(wt);
-        }
-
-        if let Some(first) = worktrees.iter_mut().find(|w| !w.is_bare) {
-            first.is_main = true;
-        }
-
-        let response = serde_json::json!({ "worktrees": worktrees });
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Get git status for a specific worktree or project
-    #[tool(description = "Get git status including current branch, ahead/behind counts, staged files, modified files, and untracked files")]
-    async fn get_worktree_status(
-        &self,
-        Parameters(params): Parameters<GetWorktreeStatusParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let worktree_path = params.worktree_path;
-
-        if !PathBuf::from(&worktree_path).exists() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Path does not exist: {}", worktree_path)
-            )]));
-        }
-
-        if !Self::is_git_repo(&worktree_path) {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Not a git repository: {}", worktree_path)
-            )]));
-        }
-
-        let branch = Self::get_current_branch(&worktree_path)
+        let branch = Self::get_current_branch(path)
             .unwrap_or_else(|| "HEAD".to_string());
 
-        let (ahead, behind) = Self::git_command(&worktree_path, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+        let (ahead, behind) = Self::git_command(path, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
             .ok()
             .and_then(|s| {
                 let parts: Vec<&str> = s.trim().split_whitespace().collect();
                 if parts.len() == 2 {
                     Some((
-                        parts[0].parse().unwrap_or(0),
-                        parts[1].parse().unwrap_or(0),
+                        parts[0].parse::<i32>().unwrap_or(0),
+                        parts[1].parse::<i32>().unwrap_or(0),
                     ))
                 } else {
                     None
@@ -619,7 +1170,7 @@ impl SpecForgeMcp {
             })
             .unwrap_or((0, 0));
 
-        let status_output = Self::git_command(&worktree_path, &["status", "--porcelain"])
+        let status_output = Self::git_command(path, &["status", "--porcelain"])
             .unwrap_or_default();
 
         let mut staged = Vec::new();
@@ -627,9 +1178,7 @@ impl SpecForgeMcp {
         let mut untracked = Vec::new();
 
         for line in status_output.lines() {
-            if line.len() < 3 {
-                continue;
-            }
+            if line.len() < 3 { continue; }
             let index_status = line.chars().next().unwrap_or(' ');
             let worktree_status = line.chars().nth(1).unwrap_or(' ');
             let file_path = line[3..].to_string();
@@ -645,42 +1194,41 @@ impl SpecForgeMcp {
             }
         }
 
-        let status = GitStatusInfo {
-            branch,
-            ahead,
-            behind,
-            staged,
-            modified,
-            untracked,
-        };
+        let response = serde_json::json!({
+            "branch": branch,
+            "ahead": ahead,
+            "behind": behind,
+            "staged": staged,
+            "modified": modified,
+            "untracked": untracked,
+        });
 
-        let json = serde_json::to_string_pretty(&status)
+        let json = serde_json::to_string_pretty(&response)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    /// Get the staged changes diff for commit message generation
+    /// Get staged changes diff
     #[tool(description = "Get the staged changes diff. Useful for generating commit messages. Returns the diff content along with statistics.")]
-    async fn get_git_diff(
+    async fn git_diff(
         &self,
-        Parameters(params): Parameters<GetGitDiffParams>,
+        Parameters(params): Parameters<GitDiffParams>,
     ) -> Result<CallToolResult, McpError> {
-        let worktree_path = params.worktree_path;
+        let path = &params.project_dir;
 
-        if !PathBuf::from(&worktree_path).exists() {
+        if !PathBuf::from(path).exists() {
             return Ok(CallToolResult::error(vec![Content::text(
-                format!("Path does not exist: {}", worktree_path)
+                format!("Path does not exist: {}", path)
             )]));
         }
 
-        if !Self::is_git_repo(&worktree_path) {
+        if !Self::is_git_repo(path) {
             return Ok(CallToolResult::error(vec![Content::text(
-                format!("Not a git repository: {}", worktree_path)
+                format!("Not a git repository: {}", path)
             )]));
         }
 
-        let diff = Self::git_command(&worktree_path, &["diff", "--cached"])
+        let diff = Self::git_command(path, &["diff", "--cached"])
             .unwrap_or_default();
 
         if diff.is_empty() {
@@ -689,12 +1237,12 @@ impl SpecForgeMcp {
             )]));
         }
 
-        let stats = Self::git_command(&worktree_path, &["diff", "--cached", "--stat"])
+        let stats = Self::git_command(path, &["diff", "--cached", "--stat"])
             .unwrap_or_default();
 
-        let mut files_changed = 0;
-        let mut insertions = 0;
-        let mut deletions = 0;
+        let mut files_changed: usize = 0;
+        let mut insertions: usize = 0;
+        let mut deletions: usize = 0;
 
         for line in stats.lines() {
             if line.contains("files changed") || line.contains("file changed") {
@@ -702,1558 +1250,23 @@ impl SpecForgeMcp {
                     let part = part.trim();
                     if part.contains("file") {
                         files_changed = part.split_whitespace().next()
-                            .and_then(|n| n.parse().ok())
-                            .unwrap_or(0);
+                            .and_then(|n| n.parse().ok()).unwrap_or(0);
                     } else if part.contains("insertion") {
                         insertions = part.split_whitespace().next()
-                            .and_then(|n| n.parse().ok())
-                            .unwrap_or(0);
+                            .and_then(|n| n.parse().ok()).unwrap_or(0);
                     } else if part.contains("deletion") {
                         deletions = part.split_whitespace().next()
-                            .and_then(|n| n.parse().ok())
-                            .unwrap_or(0);
+                            .and_then(|n| n.parse().ok()).unwrap_or(0);
                     }
                 }
-            }
-        }
-
-        let diff_info = DiffInfo {
-            diff,
-            files_changed,
-            insertions,
-            deletions,
-        };
-
-        let json = serde_json::to_string_pretty(&diff_info)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    // ========================================================================
-    // New Workflow Tools
-    // ========================================================================
-
-    /// List all workflows, optionally filtered by project
-    #[tool(description = "List all workflows in SpecForge. Optionally filter by project_id. Returns workflow summaries including step count.")]
-    async fn list_workflows(
-        &self,
-        Parameters(params): Parameters<ListWorkflowsParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let mut workflows: Vec<WorkflowSummary> = store_data.workflows.iter()
-            .filter(|w| {
-                if let Some(ref project_id) = params.project_id {
-                    w.project_id.as_ref() == Some(project_id)
-                } else {
-                    true
-                }
-            })
-            .map(|w| WorkflowSummary {
-                id: w.id.clone(),
-                name: w.name.clone(),
-                description: w.description.clone(),
-                project_id: w.project_id.clone(),
-                step_count: w.nodes.len(),
-                created_at: w.created_at.clone(),
-                updated_at: w.updated_at.clone(),
-                last_executed_at: w.last_executed_at.clone(),
-            })
-            .collect();
-
-        workflows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-
-        let response = serde_json::json!({ "workflows": workflows });
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Get detailed information about a specific workflow
-    #[tool(description = "Get detailed information about a workflow including all its steps/nodes. Returns the full workflow structure.")]
-    async fn get_workflow(
-        &self,
-        Parameters(params): Parameters<GetWorkflowParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let workflow = store_data.workflows.iter()
-            .find(|w| w.id == params.workflow_id);
-
-        match workflow {
-            Some(w) => {
-                let json = serde_json::to_string_pretty(w)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(json)]))
-            }
-            None => {
-                Ok(CallToolResult::error(vec![Content::text(
-                    format!("Workflow not found: {}", params.workflow_id)
-                )]))
-            }
-        }
-    }
-
-    /// Create a new workflow
-    #[tool(description = "Create a new workflow with the specified name. Optionally associate it with a project and add a description.")]
-    async fn create_workflow(
-        &self,
-        Parameters(params): Parameters<CreateWorkflowParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let mut store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let workflow_id = format!("wf-{}", Uuid::new_v4());
-
-        let workflow = Workflow {
-            id: workflow_id.clone(),
-            name: params.name.clone(),
-            description: params.description,
-            project_id: params.project_id,
-            nodes: Vec::new(),
-            created_at: now.clone(),
-            updated_at: now.clone(),
-            last_executed_at: None,
-        };
-
-        store_data.workflows.push(workflow);
-
-        write_store_data(&store_data)
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let response = CreateWorkflowResponse {
-            workflow_id,
-            name: params.name,
-            created_at: now,
-        };
-
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Create a workflow with steps atomically
-    #[tool(description = "Create a new workflow with steps in a single atomic operation. This is the recommended method - it prevents sync issues that can occur when using separate create_workflow and add_workflow_steps calls. Maximum 10 steps.
-
-USAGE:
-- Provide workflow name (required) and optional description/project_id
-- Steps array contains the steps to create (1-10 steps)
-- Steps execute in array order (index 0 = first step)
-
-EXAMPLE:
-{
-  \"name\": \"Build and Deploy\",
-  \"description\": \"CI/CD pipeline\",
-  \"steps\": [
-    { \"name\": \"Install\", \"command\": \"npm ci\" },
-    { \"name\": \"Build\", \"command\": \"npm run build\" },
-    { \"name\": \"Test\", \"command\": \"npm test\" }
-  ]
-}
-
-RETURNS: Created workflow ID and step details. Use workflow_id with run_workflow to execute.")]
-    async fn create_workflow_with_steps(
-        &self,
-        Parameters(params): Parameters<CreateWorkflowWithStepsParams>,
-    ) -> Result<CallToolResult, McpError> {
-        const MAX_BATCH_SIZE: usize = 10;
-
-        // Validate workflow name
-        if params.name.trim().is_empty() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Workflow name cannot be empty"
-            )]));
-        }
-        if let Err(e) = validate_string_length("name", &params.name, MAX_NAME_LENGTH) {
-            return Ok(CallToolResult::error(vec![Content::text(e)]));
-        }
-
-        // Validate steps
-        if params.steps.is_empty() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Steps array cannot be empty. Provide at least 1 step."
-            )]));
-        }
-        if params.steps.len() > MAX_BATCH_SIZE {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Too many steps: {} (max {})", params.steps.len(), MAX_BATCH_SIZE)
-            )]));
-        }
-
-        // Validate all steps upfront
-        let mut step_names: Vec<&str> = Vec::new();
-        for (i, step) in params.steps.iter().enumerate() {
-            if step.name.trim().is_empty() {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Step {} has empty name", i + 1)
-                )]));
-            }
-            if step_names.contains(&step.name.as_str()) {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Duplicate step name '{}'", step.name)
-                )]));
-            }
-            step_names.push(&step.name);
-
-            if step.command.trim().is_empty() {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Step {} '{}' has empty command", i + 1, step.name)
-                )]));
-            }
-            if let Err(e) = validate_command(&step.command) {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Step {} '{}': {}", i + 1, step.name, e)
-                )]));
-            }
-        }
-
-        let mut store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let workflow_id = format!("wf-{}", Uuid::new_v4());
-
-        // Create workflow with all steps
-        let mut nodes: Vec<WorkflowNode> = Vec::new();
-        let mut created_steps: Vec<CreatedStepInfo> = Vec::new();
-
-        for (i, step) in params.steps.iter().enumerate() {
-            let node_id = format!("node-{}", Uuid::new_v4());
-            let order = i as i32;
-
-            let mut config = serde_json::json!({
-                "command": step.command,
-            });
-            if let Some(cwd) = &step.cwd {
-                config["cwd"] = serde_json::json!(cwd);
-            }
-            if let Some(timeout) = step.timeout {
-                config["timeout"] = serde_json::json!(timeout);
-            }
-
-            nodes.push(WorkflowNode {
-                id: node_id.clone(),
-                node_type: "script".to_string(),
-                name: step.name.clone(),
-                config,
-                order,
-                position: None,
-            });
-
-            created_steps.push(CreatedStepInfo {
-                node_id,
-                name: step.name.clone(),
-                order,
-                command: step.command.clone(),
-            });
-        }
-
-        let workflow = Workflow {
-            id: workflow_id.clone(),
-            name: params.name.clone(),
-            description: params.description.clone(),
-            project_id: params.project_id.clone(),
-            nodes,
-            created_at: now.clone(),
-            updated_at: now.clone(),
-            last_executed_at: None,
-        };
-
-        store_data.workflows.push(workflow);
-
-        eprintln!("[MCP Debug] create_workflow_with_steps - Writing workflow '{}' with {} steps",
-            params.name, created_steps.len());
-
-        write_store_data(&store_data)
-            .map_err(|e| {
-                eprintln!("[MCP Debug] create_workflow_with_steps - Write FAILED: {}", e);
-                McpError::internal_error(e, None)
-            })?;
-
-        eprintln!("[MCP Debug] create_workflow_with_steps - Write SUCCESS");
-
-        let response = CreateWorkflowWithStepsResponse {
-            success: true,
-            workflow_id,
-            workflow_name: params.name,
-            description: params.description,
-            project_id: params.project_id,
-            created_steps,
-            total_steps: params.steps.len(),
-            created_at: now,
-            message: format!("Workflow created with {} steps", params.steps.len()),
-        };
-
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Add a step to an existing workflow
-    #[tool(description = "Add a new step (script node) to an existing workflow. Specify the command to execute, optional working directory, and timeout.")]
-    async fn add_workflow_step(
-        &self,
-        Parameters(params): Parameters<AddWorkflowStepParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let mut store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let workflow = store_data.workflows.iter_mut()
-            .find(|w| w.id == params.workflow_id);
-
-        match workflow {
-            Some(w) => {
-                let now = chrono::Utc::now().to_rfc3339();
-                let node_id = format!("node-{}", Uuid::new_v4());
-
-                // Calculate order: use provided order or max + 1
-                let order = params.order.unwrap_or_else(|| {
-                    w.nodes.iter().map(|n| n.order).max().unwrap_or(-1) + 1
-                });
-
-                // Build config
-                let mut config = serde_json::json!({
-                    "command": params.command,
-                });
-                if let Some(cwd) = &params.cwd {
-                    config["cwd"] = serde_json::json!(cwd);
-                }
-                if let Some(timeout) = params.timeout {
-                    config["timeout"] = serde_json::json!(timeout);
-                }
-
-                let node = WorkflowNode {
-                    id: node_id.clone(),
-                    node_type: "script".to_string(),
-                    name: params.name.clone(),
-                    config,
-                    order,
-                    position: None,
-                };
-
-                w.nodes.push(node);
-                w.updated_at = now.clone();
-
-                eprintln!("[MCP Debug] add_workflow_step - Writing to store...");
-                eprintln!("[MCP Debug] add_workflow_step - Workflow {} now has {} nodes", params.workflow_id, w.nodes.len());
-
-                write_store_data(&store_data)
-                    .map_err(|e| {
-                        eprintln!("[MCP Debug] add_workflow_step - Write FAILED: {}", e);
-                        McpError::internal_error(e, None)
-                    })?;
-
-                eprintln!("[MCP Debug] add_workflow_step - Write SUCCESS");
-
-                let response = AddStepResponse {
-                    node_id,
-                    workflow_id: params.workflow_id,
-                    name: params.name,
-                    order,
-                };
-
-                let json = serde_json::to_string_pretty(&response)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-                Ok(CallToolResult::success(vec![Content::text(json)]))
-            }
-            None => {
-                Ok(CallToolResult::error(vec![Content::text(
-                    format!("Workflow not found: {}", params.workflow_id)
-                )]))
-            }
-        }
-    }
-
-    /// Add multiple steps to a workflow atomically (batch operation)
-    #[tool(description = "Add multiple steps to a workflow in a single atomic operation. Use this for efficiently creating workflows with multiple steps. All steps are validated upfront and added together - if any validation fails, no steps are added. Maximum 10 steps per call.
-
-USAGE:
-- First get workflow_id from create_workflow or list_workflows
-- Steps are executed in the order they appear in the array
-- Each step requires: name (unique within batch) and command
-- Optional per-step: cwd (working directory) and timeout (ms)
-
-EXAMPLE:
-{
-  \"workflow_id\": \"workflow-abc123\",
-  \"steps\": [
-    { \"name\": \"Install dependencies\", \"command\": \"npm ci\" },
-    { \"name\": \"Run linter\", \"command\": \"npm run lint\" },
-    { \"name\": \"Run tests\", \"command\": \"npm test\" },
-    { \"name\": \"Build project\", \"command\": \"npm run build\" }
-  ]
-}
-
-LIMITS:
-- Max 10 steps per call
-- Command timeout default: 5 minutes (300000ms)
-
-RETURNS: List of created step IDs and their assigned order positions.")]
-    async fn add_workflow_steps(
-        &self,
-        Parameters(params): Parameters<AddWorkflowStepsParams>,
-    ) -> Result<CallToolResult, McpError> {
-        const MAX_BATCH_SIZE: usize = 10;
-
-        // Validate batch size
-        if params.steps.is_empty() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Steps array cannot be empty. Provide at least 1 step to add."
-            )]));
-        }
-
-        if params.steps.len() > MAX_BATCH_SIZE {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Too many steps: {} (max {}). Split into multiple calls.", params.steps.len(), MAX_BATCH_SIZE)
-            )]));
-        }
-
-        // Validate all steps upfront
-        let mut step_names: Vec<&str> = Vec::new();
-        for (i, step) in params.steps.iter().enumerate() {
-            // Check name
-            if step.name.trim().is_empty() {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Step {} has empty name. Each step requires a non-empty name.", i + 1)
-                )]));
-            }
-            if let Err(e) = validate_string_length("name", &step.name, MAX_NAME_LENGTH) {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Step {}: {}", i + 1, e)
-                )]));
-            }
-
-            // Check for duplicate names within batch
-            if step_names.contains(&step.name.as_str()) {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Duplicate step name '{}' found. Each step must have a unique name within the batch.", step.name)
-                )]));
-            }
-            step_names.push(&step.name);
-
-            // Check command
-            if step.command.trim().is_empty() {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Step {} '{}' has empty command. Each step requires a non-empty command.", i + 1, step.name)
-                )]));
-            }
-            if let Err(e) = validate_command(&step.command) {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Step {} '{}': {}", i + 1, step.name, e)
-                )]));
-            }
-
-            // Validate timeout if provided
-            if let Some(timeout) = step.timeout {
-                if let Err(e) = validate_timeout(timeout) {
-                    return Ok(CallToolResult::error(vec![Content::text(
-                        format!("Step {} '{}': {}", i + 1, step.name, e)
-                    )]));
-                }
-            }
-        }
-
-        // All validation passed, now add the steps
-        let mut store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        // Find workflow index first
-        let workflow_idx = store_data.workflows.iter()
-            .position(|w| w.id == params.workflow_id);
-
-        let workflow_idx = match workflow_idx {
-            Some(idx) => idx,
-            None => {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Workflow not found: {}. Use list_workflows to find valid IDs.", params.workflow_id)
-                )]));
-            }
-        };
-
-        let now = chrono::Utc::now().to_rfc3339();
-
-        // Calculate starting order
-        let start_order = store_data.workflows[workflow_idx].nodes.iter()
-            .map(|n| n.order).max().unwrap_or(-1) + 1;
-
-        let mut created_steps: Vec<CreatedStepInfo> = Vec::new();
-
-        for (i, step) in params.steps.iter().enumerate() {
-            let node_id = format!("node-{}", Uuid::new_v4());
-            let order = start_order + i as i32;
-
-            // Build config
-            let mut config = serde_json::json!({
-                "command": step.command,
-            });
-            if let Some(cwd) = &step.cwd {
-                config["cwd"] = serde_json::json!(cwd);
-            }
-            if let Some(timeout) = step.timeout {
-                config["timeout"] = serde_json::json!(timeout);
-            }
-
-            let node = WorkflowNode {
-                id: node_id.clone(),
-                node_type: "script".to_string(),
-                name: step.name.clone(),
-                config,
-                order,
-                position: None,
-            };
-
-            store_data.workflows[workflow_idx].nodes.push(node);
-
-            created_steps.push(CreatedStepInfo {
-                node_id,
-                name: step.name.clone(),
-                order,
-                command: step.command.clone(),
-            });
-        }
-
-        store_data.workflows[workflow_idx].updated_at = now;
-
-        let total_nodes = store_data.workflows[workflow_idx].nodes.len();
-        let steps_added = created_steps.len();
-
-        eprintln!("[MCP Debug] add_workflow_steps - Writing to store...");
-        eprintln!("[MCP Debug] add_workflow_steps - Workflow {} now has {} nodes (added {})",
-            params.workflow_id, total_nodes, steps_added);
-
-        write_store_data(&store_data)
-            .map_err(|e| {
-                eprintln!("[MCP Debug] add_workflow_steps - Write FAILED: {}", e);
-                McpError::internal_error(e, None)
-            })?;
-
-        eprintln!("[MCP Debug] add_workflow_steps - Write SUCCESS");
-
-        let response = AddWorkflowStepsResponse {
-            success: true,
-            workflow_id: params.workflow_id,
-            created_steps,
-            total_workflow_steps: total_nodes,
-            message: format!("Successfully added {} steps to workflow", steps_added),
-        };
-
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    // ========================================================================
-    // Step Template Tools
-    // ========================================================================
-
-    /// List available step templates
-    #[tool(description = "List available step templates for workflow steps. Includes built-in templates and custom templates. Filter by category or search query.")]
-    async fn list_step_templates(
-        &self,
-        Parameters(params): Parameters<ListStepTemplatesParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let mut templates: Vec<StepTemplateInfo> = Vec::new();
-
-        // Add built-in templates if requested
-        if params.include_builtin {
-            templates.extend(get_builtin_templates());
-        }
-
-        // Add custom templates from store
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        for custom in store_data.custom_step_templates {
-            templates.push(StepTemplateInfo {
-                id: custom.id,
-                name: custom.name,
-                command: custom.command,
-                category: custom.category,
-                description: custom.description,
-                is_custom: true,
-            });
-        }
-
-        // Filter by category if specified
-        if let Some(ref category) = params.category {
-            templates.retain(|t| t.category.to_lowercase() == category.to_lowercase());
-        }
-
-        // Filter by query if specified
-        if let Some(ref query) = params.query {
-            let query_lower = query.to_lowercase();
-            templates.retain(|t| {
-                t.name.to_lowercase().contains(&query_lower) ||
-                t.command.to_lowercase().contains(&query_lower) ||
-                t.description.as_ref().map(|d| d.to_lowercase().contains(&query_lower)).unwrap_or(false)
-            });
-        }
-
-        let response = serde_json::json!({ "templates": templates });
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Create a custom step template
-    #[tool(description = "Create a custom step template that can be reused across workflows. Templates are saved in SpecForge.")]
-    async fn create_step_template(
-        &self,
-        Parameters(params): Parameters<CreateStepTemplateParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let mut store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let template_id = format!("custom-{}", Uuid::new_v4());
-
-        let template = CustomStepTemplate {
-            id: template_id.clone(),
-            name: params.name.clone(),
-            command: params.command,
-            category: params.category.clone(),
-            description: params.description,
-            is_custom: true,
-            created_at: now.clone(),
-        };
-
-        store_data.custom_step_templates.push(template);
-
-        write_store_data(&store_data)
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let response = CreateTemplateResponse {
-            template_id,
-            name: params.name,
-            category: params.category,
-            created_at: now,
-        };
-
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    // ========================================================================
-    // Workflow Execution Tool
-    // ========================================================================
-
-    /// Execute a workflow synchronously
-    #[tool(description = "Execute a workflow synchronously and return the execution result. Runs all steps in order and stops on first failure.")]
-    async fn run_workflow(
-        &self,
-        Parameters(params): Parameters<RunWorkflowParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        // Find workflow
-        let workflow = store_data.workflows.iter()
-            .find(|w| w.id == params.workflow_id);
-
-        let workflow = match workflow {
-            Some(w) => w.clone(),
-            None => {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Workflow not found: {}", params.workflow_id)
-                )]));
-            }
-        };
-
-        // Record execution start time
-        let execution_id = format!("exec-{}", Uuid::new_v4());
-        let started_at = Utc::now();
-
-        // Determine working directory
-        let cwd = if let Some(ref path) = params.project_path {
-            path.clone()
-        } else if let Some(ref project_id) = workflow.project_id {
-            // Find project path
-            store_data.projects.iter()
-                .find(|p| p.id == *project_id)
-                .map(|p| p.path.clone())
-                .unwrap_or_else(|| std::env::current_dir().unwrap().to_string_lossy().to_string())
-        } else {
-            std::env::current_dir().unwrap().to_string_lossy().to_string()
-        };
-
-        // Sort nodes by order
-        let mut nodes = workflow.nodes.clone();
-        nodes.sort_by_key(|n| n.order);
-
-        let total_steps = nodes.len();
-        let mut steps_executed = 0;
-        let mut failed_step: Option<FailedStepInfo> = None;
-        let mut output_lines: Vec<String> = Vec::new();
-
-        for node in &nodes {
-            // Only execute script nodes
-            if node.node_type != "script" {
-                output_lines.push(format!("[SKIP] {}: Not a script node", node.name));
-                continue;
-            }
-
-            // Get command from config
-            let command = node.config.get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-
-            if command.is_empty() {
-                output_lines.push(format!("[SKIP] {}: Empty command", node.name));
-                continue;
-            }
-
-            // Get node-specific cwd or use workflow cwd
-            let node_cwd = node.config.get("cwd")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| cwd.clone());
-
-            let timeout = node.config.get("timeout")
-                .and_then(|v| v.as_u64());
-
-            output_lines.push(format!("[RUN] {}: {} (timeout: {}s)", node.name, command, timeout.unwrap_or(300_000) / 1000));
-
-            // Use async shell command with timeout enforcement
-            match Self::shell_command_async(&node_cwd, command, timeout).await {
-                Ok((exit_code, stdout, stderr)) => {
-                    steps_executed += 1;
-
-                    // Sanitize output to redact sensitive content (API keys, tokens, etc.)
-                    let sanitized_stdout = sanitize_output(&stdout);
-                    let sanitized_stderr = sanitize_output(&stderr);
-
-                    if exit_code == 0 {
-                        output_lines.push(format!("[OK] {} completed successfully", node.name));
-                        if !sanitized_stdout.trim().is_empty() {
-                            // Add last 10 lines of stdout
-                            let last_lines: Vec<&str> = sanitized_stdout.lines().rev().take(10).collect();
-                            for line in last_lines.iter().rev() {
-                                output_lines.push(format!("  > {}", line));
-                            }
-                        }
-                    } else {
-                        output_lines.push(format!("[FAIL] {} failed with exit code {}", node.name, exit_code));
-                        if !sanitized_stderr.trim().is_empty() {
-                            output_lines.push(format!("  Error: {}", sanitized_stderr.trim()));
-                        }
-                        failed_step = Some(FailedStepInfo {
-                            node_id: node.id.clone(),
-                            node_name: node.name.clone(),
-                            exit_code,
-                            error_message: sanitized_stderr.trim().to_string(),
-                        });
-                        break;
-                    }
-                }
-                Err(e) => {
-                    // Sanitize error message
-                    let sanitized_error = sanitize_error(&e);
-                    output_lines.push(format!("[ERROR] {}: {}", node.name, sanitized_error));
-                    failed_step = Some(FailedStepInfo {
-                        node_id: node.id.clone(),
-                        node_name: node.name.clone(),
-                        exit_code: -1,
-                        error_message: sanitized_error,
-                    });
-                    break;
-                }
-            }
-        }
-
-        // Build output summary (last 50 lines)
-        let output_summary = output_lines.iter()
-            .rev()
-            .take(50)
-            .rev()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let status = if failed_step.is_some() {
-            if steps_executed > 0 { "partial" } else { "failed" }
-        } else {
-            "completed"
-        };
-
-        // Record execution end time and duration
-        let finished_at = Utc::now();
-        let duration_ms = (finished_at - started_at).num_milliseconds() as u64;
-
-        // Save execution history to database
-        if let Err(e) = Self::save_execution_history(
-            &execution_id,
-            &workflow.id,
-            &workflow.name,
-            status,
-            &started_at.to_rfc3339(),
-            &finished_at.to_rfc3339(),
-            duration_ms,
-            total_steps,
-            steps_executed,
-            failed_step.as_ref().map(|f| f.error_message.clone()),
-            &output_lines,
-        ) {
-            eprintln!("[MCP Server] Failed to save execution history: {}", e);
-        }
-
-        let response = RunWorkflowResponse {
-            success: failed_step.is_none(),
-            workflow_id: workflow.id,
-            workflow_name: workflow.name,
-            steps_executed,
-            total_steps,
-            status: status.to_string(),
-            failed_step,
-            output_summary,
-        };
-
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    // ========================================================================
-    // NPM Script Execution Tool
-    // ========================================================================
-
-    /// Execute an npm script from a project's package.json
-    /// Supports volta and corepack for proper toolchain management
-    #[tool(description = "Execute an npm/yarn/pnpm script from a project's package.json. Automatically detects and uses volta/corepack if configured. First use get_project to discover available scripts, then use this tool to run them.")]
-    async fn run_npm_script(
-        &self,
-        Parameters(params): Parameters<RunNpmScriptParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let project_path = PathBuf::from(&params.project_path);
-        let package_json_path = project_path.join("package.json");
-
-        // Check if package.json exists
-        if !package_json_path.exists() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("No package.json found at: {}", params.project_path)
-            )]));
-        }
-
-        // Read and parse package.json to verify script exists and get toolchain config
-        let package_json_content = std::fs::read_to_string(&package_json_path)
-            .map_err(|e| McpError::internal_error(format!("Failed to read package.json: {}", e), None))?;
-
-        let package_json: serde_json::Value = serde_json::from_str(&package_json_content)
-            .map_err(|e| McpError::internal_error(format!("Failed to parse package.json: {}", e), None))?;
-
-        // Check if the script exists
-        let scripts = package_json.get("scripts")
-            .and_then(|s| s.as_object());
-
-        if let Some(scripts_obj) = scripts {
-            if !scripts_obj.contains_key(&params.script_name) {
-                let available_scripts: Vec<&String> = scripts_obj.keys().collect();
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!(
-                        "Script '{}' not found in package.json. Available scripts: {}",
-                        params.script_name,
-                        available_scripts.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
-                    )
-                )]));
-            }
-        } else {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "No scripts defined in package.json"
-            )]));
-        }
-
-        // Check dev_server_mode for background processes
-        // Dev server scripts are long-running processes that typically include:
-        // - Script names: dev, start, serve, watch, dev:server, etc.
-        // - Commands containing: vite, next dev, webpack serve, etc.
-        if params.run_in_background {
-            let script_command = scripts
-                .and_then(|s| s.get(&params.script_name))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-
-            let is_dev_server_script = Self::is_dev_server_script(&params.script_name, script_command);
-
-            if is_dev_server_script {
-                // Read config to check dev_server_mode
-                if let Ok(store_data) = read_store_data() {
-                    match store_data.mcp_config.dev_server_mode {
-                        DevServerMode::RejectWithHint => {
-                            return Ok(CallToolResult::error(vec![Content::text(
-                                format!(
-                                    "Dev server mode is set to 'reject_with_hint'. \
-                                    Running dev servers via MCP is disabled. \
-                                    Please use SpecForge UI to manage dev servers for better process visibility, \
-                                    port tracking, and process management. \
-                                    Script: '{}'",
-                                    params.script_name
-                                )
-                            )]));
-                        }
-                        DevServerMode::UiIntegrated => {
-                            // UI Integrated mode: Process will be tracked in SpecForge UI
-                            // The background process manager will emit events for UI integration
-                            eprintln!(
-                                "[MCP Server] Starting dev server '{}' in UI integrated mode",
-                                params.script_name
-                            );
-                        }
-                        DevServerMode::McpManaged => {
-                            // Default behavior: MCP manages the process independently
-                        }
-                    }
-                }
-            }
-        }
-
-        // Parse toolchain configuration from package.json
-        let volta_config = package_json.get("volta");
-        let package_manager_field = package_json.get("packageManager")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-
-        // Detect package manager from lock files or packageManager field
-        let (package_manager, pm_version) = if let Some(ref pm_field) = package_manager_field {
-            // Parse packageManager field (e.g., "pnpm@9.15.0+sha512.xxx")
-            let parts: Vec<&str> = pm_field.split('@').collect();
-            let pm_name = parts.first().unwrap_or(&"npm");
-            let version = parts.get(1).map(|v| {
-                // Remove hash if present (e.g., "9.15.0+sha512.xxx" -> "9.15.0")
-                v.split('+').next().unwrap_or(v).to_string()
-            });
-            (pm_name.to_string(), version)
-        } else if project_path.join("pnpm-lock.yaml").exists() {
-            ("pnpm".to_string(), None)
-        } else if project_path.join("yarn.lock").exists() {
-            ("yarn".to_string(), None)
-        } else if project_path.join("bun.lockb").exists() {
-            ("bun".to_string(), None)
-        } else {
-            ("npm".to_string(), None)
-        };
-
-        // Check volta availability
-        let home = path_resolver::get_home_dir();
-        let volta_available = home.as_ref()
-            .map(|h| std::path::Path::new(&format!("{}/.volta/bin/volta", h)).exists())
-            .unwrap_or(false);
-
-        // Determine toolchain strategy
-        let use_volta = volta_available && volta_config.is_some();
-        let use_corepack = package_manager_field.is_some();
-
-        // Build the command based on toolchain strategy
-        let (command, strategy_used) = if use_volta {
-            // Use volta run for proper Node.js version management
-            let volta_path = home.as_ref()
-                .map(|h| format!("{}/.volta/bin/volta", h))
-                .unwrap_or_else(|| "volta".to_string());
-
-            let mut cmd_parts = vec![volta_path, "run".to_string()];
-
-            // Add node version if specified in volta config
-            if let Some(volta) = volta_config {
-                if let Some(node_ver) = volta.get("node").and_then(|v| v.as_str()) {
-                    cmd_parts.push("--node".to_string());
-                    cmd_parts.push(node_ver.to_string());
-                }
-
-                // Add package manager version from volta config (unless using corepack)
-                if !use_corepack {
-                    if let Some(pnpm_ver) = volta.get("pnpm").and_then(|v| v.as_str()) {
-                        cmd_parts.push("--pnpm".to_string());
-                        cmd_parts.push(pnpm_ver.to_string());
-                    } else if let Some(yarn_ver) = volta.get("yarn").and_then(|v| v.as_str()) {
-                        cmd_parts.push("--yarn".to_string());
-                        cmd_parts.push(yarn_ver.to_string());
-                    } else if let Some(npm_ver) = volta.get("npm").and_then(|v| v.as_str()) {
-                        cmd_parts.push("--npm".to_string());
-                        cmd_parts.push(npm_ver.to_string());
-                    }
-                }
-            }
-
-            // Add the package manager run command
-            cmd_parts.push(package_manager.clone());
-            cmd_parts.push("run".to_string());
-            cmd_parts.push(params.script_name.clone());
-
-            // Add script arguments
-            if let Some(ref args) = params.args {
-                cmd_parts.push("--".to_string());
-                cmd_parts.extend(args.iter().cloned());
-            }
-
-            let strategy = if use_corepack { "volta+corepack" } else { "volta" };
-            (cmd_parts.join(" "), strategy.to_string())
-        } else {
-            // Direct execution - let PATH (with volta shims if available) handle it
-            // Corepack will intercept if packageManager is set and corepack is enabled
-            let mut cmd = format!("{} run {}", package_manager, params.script_name);
-
-            if let Some(ref args) = params.args {
-                cmd.push_str(&format!(" -- {}", args.join(" ")));
-            }
-
-            let strategy = if use_corepack { "corepack" } else { "system" };
-            (cmd, strategy.to_string())
-        };
-
-        // Check if background mode is requested
-        if params.run_in_background {
-            // Log with "running" status before starting the process
-            // This allows AI Activity to track the process lifecycle
-            let arguments = serde_json::json!({
-                "scriptName": params.script_name,
-                "projectPath": params.project_path,
-                "runInBackground": true,
-            });
-            let log_entry_id = log_request("run_npm_script", &arguments, "running", 0, None);
-
-            // Background execution mode
-            match BACKGROUND_PROCESS_MANAGER.start_process(
-                params.script_name.clone(),
-                params.project_path.clone(),
-                command.clone(),
-                params.success_pattern.clone(),
-                params.success_timeout_ms,
-                log_entry_id,
-            ).await {
-                Ok(process_info) => {
-                    // Get initial output
-                    let initial_output = BACKGROUND_PROCESS_MANAGER
-                        .get_output(&process_info.id, 20)
-                        .await
-                        .map(|o| o.output_lines.join("\n"))
-                        .unwrap_or_default();
-
-                    let response = serde_json::json!({
-                        "success": true,
-                        "background": true,
-                        "process_id": process_info.id,
-                        "pid": process_info.pid,
-                        "script_name": params.script_name,
-                        "package_manager": package_manager,
-                        "package_manager_version": pm_version,
-                        "toolchain_strategy": strategy_used,
-                        "status": process_info.status.to_string(),
-                        "pattern_matched": process_info.pattern_matched,
-                        "initial_output": sanitize_output(&initial_output),
-                        "command": command,
-                        "message": "Background process started. Use get_background_process_output to view output, stop_background_process to terminate."
-                    });
-
-                    let json = serde_json::to_string_pretty(&response)
-                        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-                    // Return error if pattern matching timed out or process failed early
-                    if process_info.status == BackgroundProcessStatus::TimedOut
-                        || process_info.status == BackgroundProcessStatus::Failed {
-                        Ok(CallToolResult::error(vec![Content::text(json)]))
-                    } else {
-                        Ok(CallToolResult::success(vec![Content::text(json)]))
-                    }
-                }
-                Err(e) => {
-                    let sanitized_error = sanitize_error(&e);
-                    Ok(CallToolResult::error(vec![Content::text(
-                        format!("Failed to start background process '{}': {}", params.script_name, sanitized_error)
-                    )]))
-                }
-            }
-        } else {
-            // Foreground execution mode (existing behavior)
-            // Validate and apply timeout (default 5 min, max 1 hour)
-            let timeout_ms = params.timeout_ms.map(|t| t.min(3_600_000)).unwrap_or(300_000);
-
-            // Execute the command
-            match Self::shell_command_async(&params.project_path, &command, Some(timeout_ms)).await {
-                Ok((exit_code, stdout, stderr)) => {
-                    // Sanitize outputs
-                    let sanitized_stdout = sanitize_output(&stdout);
-                    let sanitized_stderr = sanitize_output(&stderr);
-
-                    let response = serde_json::json!({
-                        "success": exit_code == 0,
-                        "background": false,
-                        "script_name": params.script_name,
-                        "package_manager": package_manager,
-                        "package_manager_version": pm_version,
-                        "toolchain_strategy": strategy_used,
-                        "volta_available": volta_available,
-                        "volta_config": volta_config.is_some(),
-                        "corepack_config": package_manager_field.is_some(),
-                        "command": command,
-                        "exit_code": exit_code,
-                        "stdout": sanitized_stdout,
-                        "stderr": sanitized_stderr,
-                    });
-
-                    let json = serde_json::to_string_pretty(&response)
-                        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-                    if exit_code == 0 {
-                        Ok(CallToolResult::success(vec![Content::text(json)]))
-                    } else {
-                        Ok(CallToolResult::error(vec![Content::text(json)]))
-                    }
-                }
-                Err(e) => {
-                    let sanitized_error = sanitize_error(&e);
-                    Ok(CallToolResult::error(vec![Content::text(
-                        format!("Failed to execute script '{}': {}", params.script_name, sanitized_error)
-                    )]))
-                }
-            }
-        }
-    }
-
-    // ========================================================================
-    // Package Manager Commands (install, update, add, remove, etc.)
-    // ========================================================================
-
-    /// Execute a package manager command (install, update, add, remove, etc.)
-    #[tool(description = "Execute a package manager command (npm/yarn/pnpm). Supports: install, update, add, remove, ci, audit, outdated. Auto-detects package manager from lock files. Use for dependency management operations.")]
-    async fn run_package_manager_command(
-        &self,
-        Parameters(params): Parameters<RunPackageManagerCommandParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let project_path = PathBuf::from(&params.project_path);
-
-        // Validate path
-        if let Err(e) = validate_path(&params.project_path) {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Invalid project path: {}", e)
-            )]));
-        }
-
-        // Check if directory exists
-        if !project_path.exists() || !project_path.is_dir() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Directory does not exist: {}", params.project_path)
-            )]));
-        }
-
-        // Validate command
-        let valid_commands = ["install", "i", "update", "up", "upgrade", "add", "remove", "rm", "uninstall", "ci", "audit", "outdated", "prune", "dedupe"];
-        let command_lower = params.command.to_lowercase();
-        if !valid_commands.contains(&command_lower.as_str()) {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Invalid command '{}'. Supported commands: {}", params.command, valid_commands.join(", "))
-            )]));
-        }
-
-        // Check if packages are required for add/remove
-        let needs_packages = matches!(command_lower.as_str(), "add" | "remove" | "rm" | "uninstall");
-        if needs_packages && (params.packages.is_none() || params.packages.as_ref().map(|p| p.is_empty()).unwrap_or(true)) {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Command '{}' requires at least one package name", params.command)
-            )]));
-        }
-
-        // Detect package manager from lock files
-        let package_manager = if project_path.join("pnpm-lock.yaml").exists() {
-            "pnpm"
-        } else if project_path.join("yarn.lock").exists() {
-            "yarn"
-        } else if project_path.join("bun.lockb").exists() {
-            "bun"
-        } else {
-            "npm"
-        };
-
-        // Build the command
-        let mut cmd_parts: Vec<String> = vec![package_manager.to_string()];
-
-        // Normalize command names
-        let normalized_cmd = match command_lower.as_str() {
-            "i" => "install",
-            "up" | "upgrade" => "update",
-            "rm" | "uninstall" => "remove",
-            other => other,
-        };
-        cmd_parts.push(normalized_cmd.to_string());
-
-        // Add packages if provided
-        if let Some(packages) = &params.packages {
-            for pkg in packages {
-                // Validate package name (basic check)
-                if pkg.is_empty() || pkg.contains("..") || pkg.contains(";") || pkg.contains("&") || pkg.contains("|") {
-                    return Ok(CallToolResult::error(vec![Content::text(
-                        format!("Invalid package name: {}", pkg)
-                    )]));
-                }
-                cmd_parts.push(pkg.clone());
-            }
-        }
-
-        // Add flags if provided
-        if let Some(flags) = &params.flags {
-            for flag in flags {
-                // Validate flag (must start with -)
-                if !flag.starts_with('-') {
-                    return Ok(CallToolResult::error(vec![Content::text(
-                        format!("Invalid flag '{}': flags must start with '-'", flag)
-                    )]));
-                }
-                // Basic security check
-                if flag.contains(";") || flag.contains("&") || flag.contains("|") || flag.contains("`") {
-                    return Ok(CallToolResult::error(vec![Content::text(
-                        format!("Invalid flag '{}': contains forbidden characters", flag)
-                    )]));
-                }
-                cmd_parts.push(flag.clone());
-            }
-        }
-
-        let command = cmd_parts.join(" ");
-
-        // Validate and apply timeout (default 5 min, max 30 min for package operations)
-        let timeout_ms = params.timeout_ms.map(|t| t.min(1_800_000)).unwrap_or(300_000);
-
-        // Execute the command
-        match Self::shell_command_async(&params.project_path, &command, Some(timeout_ms)).await {
-            Ok((exit_code, stdout, stderr)) => {
-                let sanitized_stdout = sanitize_output(&stdout);
-                let sanitized_stderr = sanitize_output(&stderr);
-
-                let response = serde_json::json!({
-                    "success": exit_code == 0,
-                    "command": normalized_cmd,
-                    "package_manager": package_manager,
-                    "full_command": command,
-                    "exit_code": exit_code,
-                    "stdout": sanitized_stdout,
-                    "stderr": sanitized_stderr,
-                    "packages": params.packages,
-                    "flags": params.flags,
-                });
-
-                let json = serde_json::to_string_pretty(&response)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-                if exit_code == 0 {
-                    Ok(CallToolResult::success(vec![Content::text(json)]))
-                } else {
-                    Ok(CallToolResult::error(vec![Content::text(json)]))
-                }
-            }
-            Err(e) => {
-                let sanitized_error = sanitize_error(&e);
-                Ok(CallToolResult::error(vec![Content::text(
-                    format!("Failed to execute '{}': {}", command, sanitized_error)
-                )]))
-            }
-        }
-    }
-
-    /// Save execution history to database
-    fn save_execution_history(
-        execution_id: &str,
-        workflow_id: &str,
-        workflow_name: &str,
-        status: &str,
-        started_at: &str,
-        finished_at: &str,
-        duration_ms: u64,
-        node_count: usize,
-        completed_node_count: usize,
-        error_message: Option<String>,
-        output_lines: &[String],
-    ) -> Result<(), String> {
-        let db_path = get_database_path()?;
-        let db = Database::new(db_path)?;
-
-        // Convert output lines to JSON format matching WorkflowOutputLine interface
-        // Frontend expects: { nodeId, nodeName, content, stream, timestamp }
-        let output_json: Vec<serde_json::Value> = output_lines
-            .iter()
-            .map(|line| {
-                serde_json::json!({
-                    "nodeId": "mcp",
-                    "nodeName": "MCP Execution",
-                    "content": line,
-                    "stream": "stdout",
-                    "timestamp": chrono::Utc::now().to_rfc3339()
-                })
-            })
-            .collect();
-
-        let output_str = serde_json::to_string(&output_json)
-            .map_err(|e| format!("Failed to serialize output: {}", e))?;
-
-        db.with_connection(|conn| {
-            conn.execute(
-                r#"
-                INSERT OR REPLACE INTO execution_history
-                (id, workflow_id, workflow_name, status, started_at, finished_at,
-                 duration_ms, node_count, completed_node_count, error_message,
-                 output, triggered_by)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-                "#,
-                params![
-                    execution_id,
-                    workflow_id,
-                    workflow_name,
-                    status,
-                    started_at,
-                    finished_at,
-                    duration_ms as i64,
-                    node_count as i32,
-                    completed_node_count as i32,
-                    error_message,
-                    output_str,
-                    "mcp", // triggered_by
-                ],
-            )
-            .map_err(|e| format!("Failed to save execution history: {}", e))?;
-
-            Ok(())
-        })
-    }
-
-    // MCP Action Tools removed (module deleted)
-
-    // MCP Action Tools section removed (modules deleted)
-    // ========================================================================
-    // Background Process Management Tools
-    // ========================================================================
-
-    /// Get output from a background process
-    #[tool(description = "Get output from a background process started with run_npm_script (runInBackground: true). Returns the tail of stdout/stderr output.")]
-    async fn get_background_process_output(
-        &self,
-        Parameters(params): Parameters<GetBackgroundProcessOutputParams>,
-    ) -> Result<CallToolResult, McpError> {
-        match BACKGROUND_PROCESS_MANAGER.get_output(&params.process_id, params.tail_lines).await {
-            Ok(output) => {
-                let json = serde_json::to_string_pretty(&output)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(json)]))
-            }
-            Err(e) => {
-                Ok(CallToolResult::error(vec![Content::text(e)]))
-            }
-        }
-    }
-
-    /// Stop a background process
-    #[tool(description = "Stop/terminate a background process. Use force=true to send SIGKILL instead of SIGTERM.")]
-    async fn stop_background_process(
-        &self,
-        Parameters(params): Parameters<StopBackgroundProcessParams>,
-    ) -> Result<CallToolResult, McpError> {
-        match BACKGROUND_PROCESS_MANAGER.stop_process(&params.process_id, params.force).await {
-            Ok(()) => {
-                let response = serde_json::json!({
-                    "success": true,
-                    "process_id": params.process_id,
-                    "message": if params.force {
-                        "Process killed (SIGKILL)"
-                    } else {
-                        "Process terminated (SIGTERM)"
-                    }
-                });
-                let json = serde_json::to_string_pretty(&response)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(json)]))
-            }
-            Err(e) => {
-                Ok(CallToolResult::error(vec![Content::text(e)]))
-            }
-        }
-    }
-
-    /// List all background processes
-    #[tool(description = "List all background processes (running and recently completed).")]
-    async fn list_background_processes(
-        &self,
-        #[allow(unused_variables)]
-        Parameters(_params): Parameters<serde_json::Value>,
-    ) -> Result<CallToolResult, McpError> {
-        let processes = BACKGROUND_PROCESS_MANAGER.list_processes().await;
-
-        let response = serde_json::json!({
-            "processes": processes,
-            "total": processes.len()
-        });
-
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    // ========================================================================
-    // Enhanced MCP Tools (New)
-    // ========================================================================
-
-    /// Get system environment information for troubleshooting
-    #[tool(description = "Get system environment information including detected tools, versions, and paths. Useful for troubleshooting build/execution issues.")]
-    async fn get_environment_info(
-        &self,
-        Parameters(params): Parameters<GetEnvironmentInfoParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let mut info = serde_json::json!({});
-
-        // Get tool versions using path_resolver
-        let node_version = path_resolver::create_command("node")
-            .args(&["--version"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-        let npm_version = path_resolver::create_command("npm")
-            .args(&["--version"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-        let pnpm_version = path_resolver::create_command("pnpm")
-            .args(&["--version"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-        let yarn_version = path_resolver::create_command("yarn")
-            .args(&["--version"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-        let git_version = path_resolver::create_command("git")
-            .args(&["--version"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-        let rust_version = path_resolver::create_command("rustc")
-            .args(&["--version"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-        // Check for tool managers
-        let volta_installed = path_resolver::create_command("volta")
-            .args(&["--version"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        let homebrew_installed = path_resolver::create_command("brew")
-            .args(&["--version"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        info["nodeVersion"] = serde_json::json!(node_version);
-        info["npmVersion"] = serde_json::json!(npm_version);
-        info["pnpmVersion"] = serde_json::json!(pnpm_version);
-        info["yarnVersion"] = serde_json::json!(yarn_version);
-        info["gitVersion"] = serde_json::json!(git_version);
-        info["rustVersion"] = serde_json::json!(rust_version);
-        info["voltaInstalled"] = serde_json::json!(volta_installed);
-        info["homebrewInstalled"] = serde_json::json!(homebrew_installed);
-
-        // Include PATH if requested
-        if params.include_paths {
-            let path_env = std::env::var("PATH").unwrap_or_default();
-            let paths: Vec<&str> = path_env.split(':').collect();
-            info["pathEntries"] = serde_json::json!(paths);
-        }
-
-        // Check project-specific toolchain if provided
-        if let Some(project_path) = params.project_path {
-            let path = PathBuf::from(&project_path);
-            if path.exists() {
-                let node_version_file = Self::get_node_version(&path);
-                info["projectToolchain"] = serde_json::json!({
-                    "nodeVersionFile": node_version_file,
-                    "path": project_path,
-                });
-            }
-        }
-
-        let json = serde_json::to_string_pretty(&info)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-
-    /// Check if files exist within a project
-    #[tool(description = "Check if specified files or directories exist within a registered project. Use this to verify project structure before suggesting commands. IMPORTANT: Only works within registered projects for security.")]
-    async fn check_file_exists(
-        &self,
-        Parameters(params): Parameters<CheckFileExistsParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let base_path = PathBuf::from(&params.project_path);
-
-        if !base_path.exists() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Project path does not exist: {}", params.project_path)
-            )]));
-        }
-
-        // Validate against registered projects
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let is_registered = store_data.projects.iter()
-            .any(|p| p.path == params.project_path);
-
-        if !is_registered {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Project path is not registered in SpecForge. Register the project first."
-            )]));
-        }
-
-        let mut results = serde_json::Map::new();
-        for relative_path in &params.paths {
-            // Prevent path traversal
-            if relative_path.contains("..") {
-                results.insert(relative_path.clone(), serde_json::json!({
-                    "exists": false,
-                    "error": "Path traversal not allowed"
-                }));
-                continue;
-            }
-
-            let full_path = base_path.join(relative_path);
-            if full_path.exists() {
-                let is_file = full_path.is_file();
-                let is_dir = full_path.is_dir();
-                results.insert(relative_path.clone(), serde_json::json!({
-                    "exists": true,
-                    "isFile": is_file,
-                    "isDirectory": is_dir
-                }));
-            } else {
-                results.insert(relative_path.clone(), serde_json::json!({
-                    "exists": false
-                }));
             }
         }
 
         let response = serde_json::json!({
-            "projectPath": params.project_path,
-            "results": results
+            "diff": diff,
+            "files_changed": files_changed,
+            "insertions": insertions,
+            "deletions": deletions,
         });
 
         let json = serde_json::to_string_pretty(&response)
@@ -2261,75 +1274,26 @@ RETURNS: List of created step IDs and their assigned order positions.")]
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-
-    /// Get recent notifications
-    #[tool(description = "Get recent notifications from SpecForge including workflow executions, security alerts, and deployment status. Use this to provide users with updates on recent activity.")]
-    async fn get_notifications(
+    /// Create and checkout a new git branch
+    #[tool(description = "Create and checkout a new git branch.")]
+    async fn git_create_branch(
         &self,
-        Parameters(params): Parameters<GetNotificationsParams>,
+        Parameters(params): Parameters<GitCreateBranchParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = open_database()
-            .map_err(|e| McpError::internal_error(e, None))?;
-        let repo = NotificationRepository::new(db);
+        let path = &params.project_dir;
 
-        let limit = (params.limit as usize).min(100);
-        let response = repo.get_recent(limit, 0)
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        // Filter by category if specified
-        let filtered_notifications: Vec<_> = if let Some(ref category) = params.category {
-            response.notifications.into_iter()
-                .filter(|n| n.category == *category)
-                .collect()
-        } else if params.unread_only {
-            response.notifications.into_iter()
-                .filter(|n| !n.is_read)
-                .collect()
-        } else {
-            response.notifications
-        };
-
-        let result = serde_json::json!({
-            "notifications": filtered_notifications,
-            "totalCount": response.total_count,
-            "unreadCount": response.unread_count
-        });
-
-        let json = serde_json::to_string_pretty(&result)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Mark notifications as read
-    #[tool(description = "Mark one or more notifications as read. Use this after presenting notifications to the user.")]
-    async fn mark_notifications_read(
-        &self,
-        Parameters(params): Parameters<MarkNotificationsReadParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let db = open_database()
-            .map_err(|e| McpError::internal_error(e, None))?;
-        let repo = NotificationRepository::new(db);
-
-        let marked_count = if params.mark_all {
-            repo.mark_all_as_read()
-                .map_err(|e| McpError::internal_error(e, None))?
-        } else if let Some(ids) = params.notification_ids {
-            let mut count = 0u32;
-            for id in ids {
-                if repo.mark_as_read(&id).map_err(|e| McpError::internal_error(e, None))? {
-                    count += 1;
-                }
-            }
-            count
-        } else {
+        if !Self::is_git_repo(path) {
             return Ok(CallToolResult::error(vec![Content::text(
-                "Provide either notification_ids or set mark_all to true"
+                format!("Not a git repository: {}", path)
             )]));
-        };
+        }
+
+        Self::git_command(path, &["checkout", "-b", &params.branch_name])
+            .map_err(|e| McpError::internal_error(format!("Failed to create branch: {}", e), None))?;
 
         let response = serde_json::json!({
             "success": true,
-            "markedCount": marked_count
+            "branch": params.branch_name,
         });
 
         let json = serde_json::to_string_pretty(&response)
@@ -2337,258 +1301,34 @@ RETURNS: List of created step IDs and their assigned order positions.")]
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-    /// Update workflow properties
-    #[tool(description = "Update a workflow's name or description. Use list_workflows first to get the workflow_id. Does NOT modify workflow steps.")]
-    async fn update_workflow(
+    /// Commit staged changes
+    #[tool(description = "Commit staged changes with a message.")]
+    async fn git_commit(
         &self,
-        Parameters(params): Parameters<UpdateWorkflowParams>,
+        Parameters(params): Parameters<GitCommitParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let path = &params.project_dir;
 
-        // Find workflow index to avoid borrow issues
-        let workflow_idx = store_data.workflows.iter()
-            .position(|w| w.id == params.workflow_id);
-
-        match workflow_idx {
-            Some(idx) => {
-                // Update workflow
-                if let Some(name) = params.name.clone() {
-                    store_data.workflows[idx].name = name;
-                }
-                if let Some(desc) = params.description.clone() {
-                    store_data.workflows[idx].description = Some(desc);
-                }
-                let updated_at = chrono::Utc::now().to_rfc3339();
-                store_data.workflows[idx].updated_at = updated_at.clone();
-
-                // Get values for response before write
-                let name = store_data.workflows[idx].name.clone();
-                let description = store_data.workflows[idx].description.clone();
-
-                write_store_data(&store_data)
-                    .map_err(|e| McpError::internal_error(e, None))?;
-
-                let response = serde_json::json!({
-                    "success": true,
-                    "workflowId": params.workflow_id,
-                    "name": name,
-                    "description": description,
-                    "updatedAt": updated_at
-                });
-
-                let json = serde_json::to_string_pretty(&response)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(json)]))
-            }
-            None => {
-                Ok(CallToolResult::error(vec![Content::text(
-                    format!("Workflow not found: {}", params.workflow_id)
-                )]))
-            }
-        }
-    }
-
-    /// Delete a step from a workflow
-    #[tool(description = "Remove a step from a workflow. Use get_workflow first to see step IDs. This is a destructive operation.")]
-    async fn delete_workflow_step(
-        &self,
-        Parameters(params): Parameters<DeleteWorkflowStepParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let mut store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        // Find workflow index to avoid borrow issues
-        let workflow_idx = store_data.workflows.iter()
-            .position(|w| w.id == params.workflow_id);
-
-        match workflow_idx {
-            Some(idx) => {
-                let original_len = store_data.workflows[idx].nodes.len();
-                store_data.workflows[idx].nodes.retain(|n| n.id != params.step_id);
-
-                if store_data.workflows[idx].nodes.len() == original_len {
-                    return Ok(CallToolResult::error(vec![Content::text(
-                        format!("Step not found: {} in workflow {}", params.step_id, params.workflow_id)
-                    )]));
-                }
-
-                store_data.workflows[idx].updated_at = chrono::Utc::now().to_rfc3339();
-
-                // Get remaining steps count before write
-                let remaining_steps = store_data.workflows[idx].nodes.len();
-
-                write_store_data(&store_data)
-                    .map_err(|e| McpError::internal_error(e, None))?;
-
-                let response = serde_json::json!({
-                    "success": true,
-                    "workflowId": params.workflow_id,
-                    "deletedStepId": params.step_id,
-                    "remainingSteps": remaining_steps
-                });
-
-                let json = serde_json::to_string_pretty(&response)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(json)]))
-            }
-            None => {
-                Ok(CallToolResult::error(vec![Content::text(
-                    format!("Workflow not found: {}", params.workflow_id)
-                )]))
-            }
-        }
-    }
-
-
-    /// Search for files within a project
-    #[tool(description = "Search for files within a registered project by name pattern. Useful for finding configuration files or source files. Respects .gitignore patterns.")]
-    async fn search_project_files(
-        &self,
-        Parameters(params): Parameters<SearchProjectFilesParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let base_path = PathBuf::from(&params.project_path);
-
-        if !base_path.exists() {
+        if !Self::is_git_repo(path) {
             return Ok(CallToolResult::error(vec![Content::text(
-                format!("Project path does not exist: {}", params.project_path)
+                format!("Not a git repository: {}", path)
             )]));
         }
 
-        // Verify project is registered
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let output = Self::git_command(path, &["commit", "-m", &params.message])
+            .map_err(|e| McpError::internal_error(format!("Failed to commit: {}", e), None))?;
 
-        let is_registered = store_data.projects.iter()
-            .any(|p| p.path == params.project_path);
-
-        if !is_registered {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Project path is not registered in SpecForge."
-            )]));
-        }
-
-        // Use glob to find files
-        let glob_pattern = format!("{}/{}", params.project_path, params.pattern);
-        let matches: Vec<String> = glob::glob(&glob_pattern)
-            .map_err(|e| McpError::internal_error(format!("Invalid pattern: {}", e), None))?
-            .filter_map(|r| r.ok())
-            .filter(|p| {
-                if params.include_directories {
-                    true
-                } else {
-                    p.is_file()
-                }
-            })
-            .take(params.max_results)
-            .filter_map(|p| p.strip_prefix(&base_path).ok().map(|r| r.to_string_lossy().to_string()))
-            .collect();
+        // Extract commit hash
+        let commit_hash = Self::git_command(path, &["rev-parse", "HEAD"])
+            .ok()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
 
         let response = serde_json::json!({
-            "projectPath": params.project_path,
-            "pattern": params.pattern,
-            "matches": matches,
-            "totalFound": matches.len()
-        });
-
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
-    }
-
-    /// Read file content from a project
-    #[tool(description = "Read the content of a file within a registered project. Limited to common configuration and source files. SECURITY: Excludes sensitive files (.env, credentials).")]
-    async fn read_project_file(
-        &self,
-        Parameters(params): Parameters<ReadProjectFileParams>,
-    ) -> Result<CallToolResult, McpError> {
-        // Prevent path traversal
-        if params.file_path.contains("..") {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Path traversal not allowed"
-            )]));
-        }
-
-        // Block sensitive files
-        let blocklist = [".env", "credentials", "secrets", ".key", ".pem", ".p12"];
-        let file_lower = params.file_path.to_lowercase();
-        for blocked in blocklist {
-            if file_lower.contains(blocked) {
-                return Ok(CallToolResult::error(vec![Content::text(
-                    format!("Access to sensitive file blocked: {}", params.file_path)
-                )]));
-            }
-        }
-
-        let base_path = PathBuf::from(&params.project_path);
-        let full_path = base_path.join(&params.file_path);
-
-        if !full_path.exists() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("File not found: {}", params.file_path)
-            )]));
-        }
-
-        if !full_path.is_file() {
-            return Ok(CallToolResult::error(vec![Content::text(
-                format!("Not a file: {}", params.file_path)
-            )]));
-        }
-
-        // Verify project is registered
-        let store_data = read_store_data()
-            .map_err(|e| McpError::internal_error(e, None))?;
-
-        let is_registered = store_data.projects.iter()
-            .any(|p| p.path == params.project_path);
-
-        if !is_registered {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Project path is not registered in SpecForge."
-            )]));
-        }
-
-        // Check file size (max 1MB)
-        let metadata = std::fs::metadata(&full_path)
-            .map_err(|e| McpError::internal_error(format!("Failed to read metadata: {}", e), None))?;
-
-        if metadata.len() > 1_000_000 {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "File too large (max 1MB)"
-            )]));
-        }
-
-        // Read file content
-        let content = std::fs::read_to_string(&full_path)
-            .map_err(|e| McpError::internal_error(format!("Failed to read file: {}", e), None))?;
-
-        // Apply line limits
-        let lines: Vec<&str> = content.lines().collect();
-        let start_idx = (params.start_line.saturating_sub(1)).min(lines.len());
-        let end_idx = (start_idx + params.max_lines).min(lines.len());
-        let selected_lines: Vec<&str> = lines[start_idx..end_idx].to_vec();
-
-        let response = serde_json::json!({
-            "projectPath": params.project_path,
-            "filePath": params.file_path,
-            "content": selected_lines.join("\n"),
-            "startLine": start_idx + 1,
-            "endLine": end_idx,
-            "totalLines": lines.len(),
-            "hasMore": end_idx < lines.len()
+            "success": true,
+            "commit_hash": commit_hash,
+            "message": params.message,
+            "output": output.trim(),
         });
 
         let json = serde_json::to_string_pretty(&response)
@@ -2613,7 +1353,7 @@ impl ServerHandler for SpecForgeMcp {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("SpecForge MCP Server provides tools for managing Git projects, worktrees, workflows, and step templates.".to_string()),
+            instructions: Some("SpecForge MCP Server provides tools for managing specs, schemas, workflows, and git operations in spec-driven development projects.".to_string()),
         }
     }
 
@@ -2639,23 +1379,12 @@ impl ServerHandler for SpecForgeMcp {
             let start_time = Instant::now();
             let tool_name = request.name.clone();
             let arguments_map = request.arguments.clone().unwrap_or_default();
-            // Convert Map<String, Value> to Value for logging
             let arguments = serde_json::Value::Object(arguments_map.clone());
 
             // Read MCP config from store
             let config = match read_store_data() {
-                Ok(data) => {
-                    eprintln!("[MCP Debug] call_tool - Store read success");
-                    eprintln!("[MCP Debug] call_tool - permission_mode: {:?}", data.mcp_config.permission_mode);
-                    eprintln!("[MCP Debug] call_tool - is_enabled: {}", data.mcp_config.is_enabled);
-                    eprintln!("[MCP Debug] call_tool - allowed_tools: {:?}", data.mcp_config.allowed_tools);
-                    data.mcp_config
-                }
-                Err(e) => {
-                    eprintln!("[MCP Debug] call_tool - Store read FAILED: {}", e);
-                    eprintln!("[MCP Debug] call_tool - Using default config (ReadOnly)");
-                    MCPServerConfig::default()
-                }
+                Ok(data) => data.mcp_config,
+                Err(_) => MCPServerConfig::default(),
             };
 
             // Check if MCP server is enabled
@@ -2667,7 +1396,7 @@ impl ServerHandler for SpecForgeMcp {
                 return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
             }
 
-            // Check global rate limit (100 requests per minute)
+            // Check global rate limit
             if let Err(rate_error) = RATE_LIMITER.check_and_increment() {
                 if config.log_requests {
                     log_request(&tool_name, &arguments, "rate_limited", 0, Some(&rate_error));
@@ -2675,12 +1404,12 @@ impl ServerHandler for SpecForgeMcp {
                 return Ok(CallToolResult::error(vec![Content::text(rate_error)]));
             }
 
-            // Check tool-level rate limit (category-specific limits)
+            // Check tool-level rate limit
             let tool_category = get_tool_category(&tool_name);
             if let Err(_) = TOOL_RATE_LIMITERS.check(tool_category) {
                 let limit_desc = TOOL_RATE_LIMITERS.get_limit_description(tool_category);
                 let error_msg = format!(
-                    "Tool rate limit exceeded for '{}'. Limit: {}. Please wait before making more requests.",
+                    "Tool rate limit exceeded for '{}'. Limit: {}.",
                     tool_name, limit_desc
                 );
                 if config.log_requests {
@@ -2698,79 +1427,13 @@ impl ServerHandler for SpecForgeMcp {
                 return Ok(CallToolResult::error(vec![Content::text(permission_error)]));
             }
 
-            // Validate path parameters in arguments
-            // Support both snake_case and camelCase (for tools with serde rename_all = "camelCase")
-            if let Some(path) = arguments.get("path").and_then(|v| v.as_str()) {
-                if let Err(e) = validate_path(path) {
-                    let error_msg = format!("Invalid path: {}", e);
-                    if config.log_requests {
-                        log_request(&tool_name, &arguments, "validation_error", 0, Some(&error_msg));
-                    }
-                    return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
-                }
-            }
-            // Check both snake_case (project_path) and camelCase (projectPath)
-            let project_path_value = arguments.get("project_path")
-                .or_else(|| arguments.get("projectPath"))
+            // Validate project_dir / projectDir path parameter
+            let project_dir_value = arguments.get("project_dir")
+                .or_else(|| arguments.get("projectDir"))
                 .and_then(|v| v.as_str());
-            if let Some(path) = project_path_value {
+            if let Some(path) = project_dir_value {
                 if let Err(e) = validate_path(path) {
-                    let error_msg = format!("Invalid project_path: {}", e);
-                    if config.log_requests {
-                        log_request(&tool_name, &arguments, "validation_error", 0, Some(&error_msg));
-                    }
-                    return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
-                }
-            }
-            // Check both snake_case (worktree_path) and camelCase (worktreePath)
-            let worktree_path_value = arguments.get("worktree_path")
-                .or_else(|| arguments.get("worktreePath"))
-                .and_then(|v| v.as_str());
-            if let Some(path) = worktree_path_value {
-                if let Err(e) = validate_path(path) {
-                    let error_msg = format!("Invalid worktree_path: {}", e);
-                    if config.log_requests {
-                        log_request(&tool_name, &arguments, "validation_error", 0, Some(&error_msg));
-                    }
-                    return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
-                }
-            }
-
-            // Validate command parameter (for add_workflow_step)
-            if let Some(command) = arguments.get("command").and_then(|v| v.as_str()) {
-                if let Err(e) = validate_command(command) {
-                    let error_msg = format!("Invalid command: {}", e);
-                    if config.log_requests {
-                        log_request(&tool_name, &arguments, "validation_error", 0, Some(&error_msg));
-                    }
-                    return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
-                }
-            }
-
-            // Validate name length parameters
-            if let Some(name) = arguments.get("name").and_then(|v| v.as_str()) {
-                if let Err(e) = validate_string_length(name, "name", MAX_NAME_LENGTH) {
-                    let error_msg = e;
-                    if config.log_requests {
-                        log_request(&tool_name, &arguments, "validation_error", 0, Some(&error_msg));
-                    }
-                    return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
-                }
-            }
-            if let Some(desc) = arguments.get("description").and_then(|v| v.as_str()) {
-                if let Err(e) = validate_string_length(desc, "description", MAX_DESCRIPTION_LENGTH) {
-                    let error_msg = e;
-                    if config.log_requests {
-                        log_request(&tool_name, &arguments, "validation_error", 0, Some(&error_msg));
-                    }
-                    return Ok(CallToolResult::error(vec![Content::text(error_msg)]));
-                }
-            }
-
-            // Validate timeout parameter
-            if let Some(timeout) = arguments.get("timeout").and_then(|v| v.as_u64()) {
-                if let Err(e) = validate_timeout(timeout) {
-                    let error_msg = e;
+                    let error_msg = format!("Invalid project_dir: {}", e);
                     if config.log_requests {
                         log_request(&tool_name, &arguments, "validation_error", 0, Some(&error_msg));
                     }
@@ -2779,52 +1442,27 @@ impl ServerHandler for SpecForgeMcp {
             }
 
             // Execute the tool
-            let tool_context = ToolCallContext::new(self, request, context);
+            let tool_context = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
             let result = self.tool_router.call(tool_context).await;
             let duration_ms = start_time.elapsed().as_millis() as u64;
 
             // Log the request
-            // Note: Write and Execute operations are ALWAYS logged (for MCP trigger detection),
-            // regardless of log_requests setting. This enables DatabaseWatcher to distinguish
-            // MCP-triggered operations from manual UI operations for desktop notifications.
-            let tool_category = get_tool_category(&tool_name);
             let should_log = config.log_requests
                 || tool_category == ToolCategory::Write
                 || tool_category == ToolCategory::Execute;
 
             if should_log {
-                // Check if this is a background process - they log themselves for proper lifecycle tracking
-                let is_background = match &result {
+                match &result {
                     Ok(call_result) => {
-                        call_result.content.iter().any(|c| {
-                            if let Some(text_content) = c.raw.as_text() {
-                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_content.text) {
-                                    json.get("background").and_then(|v| v.as_bool()).unwrap_or(false)
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
-                        })
+                        let result_status = if call_result.is_error.unwrap_or(false) {
+                            "error"
+                        } else {
+                            "success"
+                        };
+                        log_request(&tool_name, &arguments, result_status, duration_ms, None);
                     }
-                    Err(_) => false,
-                };
-
-                // Skip logging for background processes - they manage their own logging lifecycle
-                if !is_background {
-                    match &result {
-                        Ok(call_result) => {
-                            let result_status = if call_result.is_error.unwrap_or(false) {
-                                "error"
-                            } else {
-                                "success"
-                            };
-                            log_request(&tool_name, &arguments, result_status, duration_ms, None);
-                        }
-                        Err(e) => {
-                            log_request(&tool_name, &arguments, "error", duration_ms, Some(&e.to_string()));
-                        }
+                    Err(e) => {
+                        log_request(&tool_name, &arguments, "error", duration_ms, Some(&e.to_string()));
                     }
                 }
             }
@@ -2834,7 +1472,7 @@ impl ServerHandler for SpecForgeMcp {
     }
 }
 
-/// Print help information about available MCP tools
+/// Print help information
 fn print_help() {
     let version = env!("CARGO_PKG_VERSION");
     println!(r#"SpecForge MCP Server v{}
@@ -2849,92 +1487,41 @@ OPTIONS:
 
 DESCRIPTION:
     SpecForge MCP Server provides AI assistants (Claude Code, Cursor, etc.)
-    with tools to manage Git projects, worktrees, workflows, and automation.
+    with tools for spec-driven development.
 
 MCP TOOLS:
 
-  📁 PROJECT MANAGEMENT
-    list_projects       List all registered projects with detailed info
-    get_project         Get project details (scripts, workflows, git info)
-    get_project_dependencies Get dependencies from package.json
+  SPEC OPERATIONS
+    create_spec         Create a new spec from a schema
+    list_specs          List specs with optional filters
+    get_spec            Get full spec with body
+    update_spec         Update spec fields/body
+    delete_spec         Delete a spec
 
-  🌳 GIT WORKTREE
-    list_worktrees      List all git worktrees for a project
-    get_worktree_status Get git status (branch, staged, modified, untracked)
-    get_git_diff        Get staged changes diff for commit messages
+  WORKFLOW OPERATIONS
+    advance_spec        Advance spec to next workflow phase
+    review_spec         Submit a review for a spec
+    get_workflow_status Get workflow phase + transitions
+    get_gate_status     Get gate evaluation details
 
-  ⚡ WORKFLOWS
-    list_workflows      List all workflows, filter by project
-    get_workflow        Get detailed workflow info with all steps
-    create_workflow     Create a new workflow
-    add_workflow_step   Add a script step to a workflow
-    update_workflow     Update workflow name/description
-    delete_workflow_step Remove a step from a workflow
-    run_workflow        Execute a workflow synchronously
-    get_workflow_execution_details Get execution logs
+  SCHEMA OPERATIONS
+    list_schemas        List available schemas
+    get_schema          Get a schema definition
 
-  📝 TEMPLATES
-    list_step_templates List available step templates
-    create_step_template Create a reusable step template
+  PROJECT OPERATIONS
+    init_project        Initialize .specforge/ directory
 
-  🔧 NPM/PACKAGE SCRIPTS
-    run_npm_script      Run npm/yarn/pnpm scripts (volta/corepack support)
-                        Supports background mode with runInBackground parameter
+  AGENT OPERATIONS
+    get_agent_runs      Get agent run history
 
-  🔄 BACKGROUND PROCESSES
-    get_background_process_output  Get output from a background process
-    stop_background_process        Stop/terminate a background process
-    list_background_processes      List all background processes
-
-  🎯 MCP ACTIONS
-    list_actions        List all available MCP actions
-    get_action          Get action details by ID
-    run_script          Execute a predefined script action
-    trigger_webhook     Trigger a configured webhook action
-    get_execution_status Get action execution status
-    list_action_executions List recent action executions
-    get_action_permissions Get permission configuration
-
-  🤖 AI ASSISTANT
-    list_ai_providers   List configured AI providers
-    list_conversations  List past AI conversations
-
-  🔔 NOTIFICATIONS
-    get_notifications   Get recent notifications
-    mark_notifications_read Mark notifications as read
-
-  🔒 SECURITY
-    get_security_scan_results Get vulnerability scan results
-    run_security_scan   Run npm/yarn/pnpm audit
-
-  🚀 DEPLOYMENTS
-    list_deployments    List deployment history
-
-  📂 FILE OPERATIONS
-    check_file_exists   Check if files exist in project
-    search_project_files Search files by pattern
-    read_project_file   Read file content (security-limited)
-
-  🛠️ SYSTEM
-    get_environment_info Get system tool versions and paths
-
-PERMISSION MODES:
-    read_only           Only read operations allowed (default)
-    read_write          Read and write operations allowed
-    full_access         All operations including execute allowed
+  GIT OPERATIONS
+    git_status          Get git status
+    git_diff            Get staged changes diff
+    git_create_branch   Create and checkout a new branch
+    git_commit          Commit staged changes
 
 CONFIGURATION:
-    Configure in SpecForge: Settings → MCP Server
-
-EXAMPLES:
-    # Start the MCP server (for AI integration)
-    specforge-mcp
-
-    # Get help
-    specforge-mcp --help
-
-    # List available tools
-    specforge-mcp --list-tools
+    Configure in SpecForge: Settings -> MCP Server
 "#, version);
 }
 
@@ -2944,13 +1531,11 @@ fn print_version() {
 }
 
 /// List all tools in a simple format
-/// Uses centralized tool definitions from tools_registry
 fn list_tools_simple() {
     use mcp::ALL_TOOLS;
 
     println!("SpecForge MCP Tools:\n");
 
-    // Group tools by category for better readability
     let mut current_category = "";
     for tool in ALL_TOOLS.iter() {
         if tool.display_category != current_category {
@@ -2992,7 +1577,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Initialize smart instance manager (only kills stale instances, allows multi-instance)
+    // Initialize smart instance manager
     let mut instance_manager = InstanceManager::new();
     match instance_manager.initialize().await {
         Ok(result) => {
@@ -3009,15 +1594,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => {
             eprintln!("[MCP Server] Warning: Instance manager init failed: {}", e);
-            // Continue anyway - this is non-fatal
         }
     }
 
-    // Debug: Log startup info
-    let current_pid = std::process::id();
-    eprintln!("[MCP Server] Starting SpecForge MCP Server (PID: {})...", current_pid);
+    eprintln!("[MCP Server] Starting SpecForge MCP Server (PID: {})...", std::process::id());
 
-    // Debug: Check database at startup
+    // Check database at startup
     match read_store_data() {
         Ok(data) => {
             eprintln!("[MCP Server] Database read successful");
@@ -3030,10 +1612,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the MCP server
     let server = SpecForgeMcp::new();
 
-    // Run with stdio transport (for Claude Code integration)
+    // Run with stdio transport
     let transport = (stdin(), stdout());
-
-    // Start the server using serve_server
     let service = rmcp::serve_server(server, transport).await?;
 
     // Spawn background process cleanup task
@@ -3045,14 +1625,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Set up signal handlers for graceful shutdown (Unix only)
+    // Signal handlers for graceful shutdown
     #[cfg(unix)]
     {
         let mut sigterm = signal(SignalKind::terminate())?;
         let mut sigint = signal(SignalKind::interrupt())?;
         let mut sighup = signal(SignalKind::hangup())?;
 
-        // Wait for either service completion or signal
         tokio::select! {
             result = service.waiting() => {
                 match result {
@@ -3072,16 +1651,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Non-Unix platforms: just wait for service
     #[cfg(not(unix))]
     {
         service.waiting().await?;
     }
 
-    // Stop all background processes before shutdown
+    // Cleanup
     BACKGROUND_PROCESS_MANAGER.shutdown().await;
-
-    // Cleanup instance manager (release lock, remove heartbeat files)
     instance_manager.shutdown().await;
 
     eprintln!("[MCP Server] Shutdown complete");

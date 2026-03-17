@@ -21,24 +21,25 @@ mod tests {
     #[test]
     fn test_all_tools_has_entries() {
         assert!(!ALL_TOOLS.is_empty());
-        // Should have at least 33 tools based on current implementation
-        assert!(ALL_TOOLS.len() >= 33, "Expected at least 33 tools, got {}", ALL_TOOLS.len());
+        // Should have at least 17 tools based on current spec-focused implementation
+        assert!(ALL_TOOLS.len() >= 17, "Expected at least 17 tools, got {}", ALL_TOOLS.len());
     }
 
     #[test]
     fn test_get_permission_category() {
-        assert_eq!(get_permission_category("list_projects"), PermissionCategory::Read);
-        assert_eq!(get_permission_category("run_workflow"), PermissionCategory::Execute);
-        assert_eq!(get_permission_category("create_workflow"), PermissionCategory::Write);
+        assert_eq!(get_permission_category("list_specs"), PermissionCategory::Read);
+        assert_eq!(get_permission_category("create_spec"), PermissionCategory::Write);
+        assert_eq!(get_permission_category("git_status"), PermissionCategory::Read);
+        assert_eq!(get_permission_category("git_commit"), PermissionCategory::Write);
         // Unknown tool should default to Execute
         assert_eq!(get_permission_category("unknown_tool"), PermissionCategory::Execute);
     }
 
     #[test]
     fn test_get_tool() {
-        let tool = get_tool("list_projects").unwrap();
-        assert_eq!(tool.name, "list_projects");
-        assert_eq!(tool.display_category, "Project Management");
+        let tool = get_tool("list_specs").unwrap();
+        assert_eq!(tool.name, "list_specs");
+        assert_eq!(tool.display_category, "Spec Operations");
 
         assert!(get_tool("nonexistent_tool").is_none());
     }
