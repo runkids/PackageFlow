@@ -1,7 +1,7 @@
 // Store helper functions
 // Provides utilities for loading and saving data using tauri-plugin-store
 
-use crate::models::{Execution, Project, SecurityScanData, Workflow};
+use crate::models::{Execution, Workflow};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -273,27 +273,20 @@ pub struct StoreData {
     #[serde(default)]
     pub version: String,
     #[serde(default)]
-    pub projects: Vec<Project>,
-    #[serde(default)]
     pub workflows: Vec<Workflow>,
     #[serde(default)]
     pub running_executions: HashMap<String, Execution>,
     #[serde(default)]
     pub settings: AppSettings,
-    /// Security scan data per project (keyed by project ID)
-    #[serde(default)]
-    pub security_scans: HashMap<String, SecurityScanData>,
 }
 
 impl Default for StoreData {
     fn default() -> Self {
         Self {
             version: String::from("2.0.0"),
-            projects: Vec::new(),
             workflows: Vec::new(),
             running_executions: HashMap::new(),
             settings: AppSettings::default(),
-            security_scans: HashMap::new(),
         }
     }
 }

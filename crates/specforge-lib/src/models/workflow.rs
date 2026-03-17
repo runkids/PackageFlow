@@ -2,8 +2,6 @@
 // Represents an automation workflow
 // Feature 013: Extended to support multiple node types (trigger-workflow)
 
-use crate::models::incoming_webhook::IncomingWebhookConfig;
-use crate::models::webhook::WebhookConfig;
 use serde::{Deserialize, Serialize};
 
 /// Represents an automation workflow
@@ -24,12 +22,6 @@ pub struct Workflow {
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_executed_at: Option<String>,
-    /// Outgoing webhook configuration for notifications
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub webhook: Option<WebhookConfig>,
-    /// Incoming webhook configuration for external triggers
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub incoming_webhook: Option<IncomingWebhookConfig>,
 }
 
 fn default_workflow_timestamp() -> String {
@@ -48,8 +40,6 @@ impl Workflow {
             created_at: now.clone(),
             updated_at: now,
             last_executed_at: None,
-            webhook: None,
-            incoming_webhook: None,
         }
     }
 }

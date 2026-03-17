@@ -333,91 +333,7 @@ pub struct StopBackgroundProcessParams {
     pub force: bool,
 }
 
-// ============================================================================
-// MCP Action Tool Parameters
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListActionsParams {
-    /// Filter by action type (script, webhook, workflow)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action_type: Option<String>,
-    /// Filter by project ID
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    /// Only return enabled actions
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled_only: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetActionParams {
-    /// Action ID to retrieve
-    pub action_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RunScriptParams {
-    /// Action ID of the script to execute
-    pub action_id: String,
-    /// Additional arguments to pass to the script
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub args: Option<Vec<String>>,
-    /// Environment variable overrides
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env: Option<HashMap<String, String>>,
-    /// Working directory override
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct TriggerWebhookParams {
-    /// Action ID of the webhook to trigger
-    pub action_id: String,
-    /// Variables for URL/payload template substitution
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub variables: Option<HashMap<String, String>>,
-    /// Payload override (replaces template)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub payload: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetExecutionStatusParams {
-    /// Execution ID to check
-    pub execution_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListActionExecutionsParams {
-    /// Filter by action ID
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action_id: Option<String>,
-    /// Filter by action type
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action_type: Option<String>,
-    /// Filter by status
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    /// Maximum number of results
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetActionPermissionsParams {
-    /// Optional action ID to get specific permission
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action_id: Option<String>,
-}
+// MCP Action Tool Parameters removed (modules deleted)
 
 // ============================================================================
 // Enhanced MCP Tool Parameters
@@ -435,15 +351,6 @@ pub struct GetEnvironmentInfoParams {
     pub project_path: Option<String>,
 }
 
-/// Parameters for list_ai_providers tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListAIProvidersParams {
-    /// Only return enabled providers (default: true)
-    #[serde(default = "default_true")]
-    pub enabled_only: bool,
-}
-
 /// Parameters for check_file_exists tool
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -452,21 +359,6 @@ pub struct CheckFileExistsParams {
     pub project_path: String,
     /// Relative paths to check (e.g., ['package.json', 'src/index.ts'])
     pub paths: Vec<String>,
-}
-
-/// Parameters for list_conversations tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListConversationsParams {
-    /// Filter by project path
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_path: Option<String>,
-    /// Maximum number of conversations to return (default: 20, max: 100)
-    #[serde(default = "default_limit_20")]
-    pub limit: i64,
-    /// Search in conversation titles
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub search_query: Option<String>,
 }
 
 /// Parameters for get_notifications tool
@@ -496,56 +388,9 @@ pub struct MarkNotificationsReadParams {
     pub mark_all: bool,
 }
 
-/// Parameters for get_security_scan_results tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetSecurityScanResultsParams {
-    /// Path to the project - use actual path from list_projects
-    pub project_path: String,
-}
 
-/// Parameters for run_security_scan tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RunSecurityScanParams {
-    /// Path to the project - must be a registered project
-    pub project_path: String,
-    /// Attempt to auto-fix vulnerabilities (default: false)
-    #[serde(default)]
-    pub fix: bool,
-}
 
-/// Parameters for list_deployments tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListDeploymentsParams {
-    /// Path to the project
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_path: Option<String>,
-    /// Filter by deployment platform (github_pages, netlify, cloudflare_pages)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>,
-    /// Filter by deployment status (pending, building, success, failed, cancelled)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    /// Maximum deployments to return (default: 10)
-    #[serde(default = "default_limit_10")]
-    pub limit: i64,
-}
 
-/// Parameters for get_project_dependencies tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetProjectDependenciesParams {
-    /// Path to the project
-    pub project_path: String,
-    /// Include devDependencies (default: true)
-    #[serde(default = "default_true")]
-    pub include_dev: bool,
-    /// Include peerDependencies (default: false)
-    #[serde(default)]
-    pub include_peer: bool,
-}
 
 /// Parameters for update_workflow tool
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -571,19 +416,6 @@ pub struct DeleteWorkflowStepParams {
     pub step_id: String,
 }
 
-/// Parameters for get_workflow_execution_details tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetWorkflowExecutionDetailsParams {
-    /// The execution ID from list_action_executions
-    pub execution_id: String,
-    /// Include full stdout/stderr output (default: true)
-    #[serde(default = "default_true")]
-    pub include_output: bool,
-    /// Max characters per step output (default: 5000)
-    #[serde(default = "default_output_limit")]
-    pub truncate_output: usize,
-}
 
 /// Parameters for search_project_files tool
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -781,131 +613,5 @@ pub struct FailedStepInfo {
     pub error_message: String,
 }
 
-// ============================================================================
-// Time Machine & Security Guardian Tool Parameters
-// ============================================================================
+// Time Machine & Security Guardian Tool Parameters removed (modules deleted)
 
-/// Parameters for check_dependency_integrity tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckDependencyIntegrityParams {
-    /// Path to the project - use actual path from list_projects
-    pub project_path: String,
-    /// Optional workflow ID to use for reference snapshot
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_id: Option<String>,
-}
-
-/// Parameters for get_security_insights tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetSecurityInsightsParams {
-    /// Path to the project - use actual path from list_projects
-    pub project_path: String,
-}
-
-/// Parameters for list_execution_snapshots tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListExecutionSnapshotsParams {
-    /// Project path to filter snapshots
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_path: Option<String>,
-    /// Maximum number of snapshots to return (default: 10)
-    #[serde(default = "default_snapshot_limit")]
-    pub limit: i32,
-}
-
-fn default_snapshot_limit() -> i32 {
-    10
-}
-
-/// Parameters for get_snapshot_details tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GetSnapshotDetailsParams {
-    /// Snapshot ID to retrieve
-    pub snapshot_id: String,
-    /// Whether to include full dependency list (default: false)
-    #[serde(default)]
-    pub include_dependencies: bool,
-}
-
-/// Parameters for compare_snapshots tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CompareSnapshotsParams {
-    /// ID of the base snapshot (older)
-    pub snapshot_a_id: String,
-    /// ID of the comparison snapshot (newer)
-    pub snapshot_b_id: String,
-}
-
-/// Parameters for search_snapshots tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchSnapshotsParams {
-    /// Package name to search for
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub package_name: Option<String>,
-    /// Package version to filter
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub package_version: Option<String>,
-    /// Project path to filter
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_path: Option<String>,
-    /// Start date (ISO 8601 format)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub from_date: Option<String>,
-    /// End date (ISO 8601 format)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub to_date: Option<String>,
-    /// Maximum number of results (default: 20)
-    #[serde(default = "default_search_limit")]
-    pub limit: i32,
-}
-
-/// Parameters for capture_snapshot tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CaptureSnapshotParams {
-    /// Path to the project directory to snapshot
-    pub project_path: String,
-}
-
-fn default_search_limit() -> i32 {
-    20
-}
-
-/// Parameters for replay_execution tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ReplayExecutionParams {
-    /// Snapshot ID to replay from
-    pub snapshot_id: String,
-    /// Option for handling mismatches: "abort", "view_diff", "restore_lockfile", "proceed_with_current"
-    #[serde(default = "default_replay_option")]
-    pub option: String,
-    /// Force replay even if there are significant mismatches
-    #[serde(default)]
-    pub force: bool,
-}
-
-fn default_replay_option() -> String {
-    "abort".to_string()
-}
-
-/// Parameters for export_security_report tool
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportSecurityReportParams {
-    /// Path to the project
-    pub project_path: String,
-    /// Export format: "json", "markdown", or "html"
-    #[serde(default = "default_export_format")]
-    pub format: String,
-}
-
-fn default_export_format() -> String {
-    "markdown".to_string()
-}

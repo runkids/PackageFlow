@@ -3,7 +3,6 @@
 // Updated to use SQLite database for storage
 
 use chrono::Utc;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -13,15 +12,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
-use crate::commands::monorepo::get_volta_wrapped_command;
-use crate::models::webhook::{
-    WebhookConfig, WebhookDeliveryPayload, WebhookTrigger, DEFAULT_PAYLOAD_TEMPLATE,
-};
-use crate::models::{Execution, ExecutionStatus, Project, Workflow, WorkflowNode};
-use crate::repositories::{ExecutionRepository, ProjectRepository, WorkflowRepository};
-use crate::services::crypto;
+use crate::models::{Execution, ExecutionStatus, Workflow, WorkflowNode};
+use crate::repositories::WorkflowRepository;
 use crate::services::notification::{
-    send_notification, send_webhook_notification, NotificationType, WebhookNotificationType,
+    send_notification, NotificationType,
 };
 use crate::utils::database::Database;
 use crate::utils::path_resolver;
@@ -263,70 +257,9 @@ pub async fn save_workflow(
         workflow.id, workflow.name, workflow.project_id
     );
 
-    // Debug: Log incoming webhook info
-    match &workflow.incoming_webhook {
-        Some(iw) => {
-            println!(
-                "[workflow] incoming_webhook: enabled={}, token_len={}, token_created_at={}",
-                iw.enabled,
-                iw.token.len(),
-                iw.token_created_at
-            );
-        }
-        None => {
-            println!("[workflow] incoming_webhook: None");
-        }
-    }
-
     let repo = WorkflowRepository::new(db.0.as_ref().clone());
-
-    // IMPORTANT: Save workflow FIRST, then token
-    // This is because webhook_tokens has ON DELETE CASCADE reference to workflows.
-    // INSERT OR REPLACE on workflows triggers DELETE + INSERT, which would cascade
-    // delete any existing token if we saved the token first.
-
-    // Prepare workflow for saving (clear token from JSON, it goes in separate encrypted table)
-    let mut workflow_to_save = workflow.clone();
-    let token_to_save = if let Some(ref mut iw) = workflow_to_save.incoming_webhook {
-        if !iw.token.is_empty() {
-            let token = iw.token.clone();
-            iw.token = String::new(); // Clear from JSON
-            Some(token)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // Step 1: Save workflow first (this may trigger cascade delete on old token)
-    repo.save(&workflow_to_save)?;
+    repo.save(&workflow)?;
     println!("[workflow] Saved workflow to database: {}", workflow.name);
-
-    // Step 2: Now save the token (after workflow exists in DB)
-    if let Some(token) = token_to_save {
-        println!(
-            "[workflow] Encrypting and storing webhook token for workflow {}",
-            workflow.id
-        );
-        let encrypted = crypto::encrypt(&token)
-            .map_err(|e| format!("Failed to encrypt webhook token: {}", e))?;
-        repo.store_webhook_token(&workflow.id, &encrypted.ciphertext, &encrypted.nonce)?;
-        println!(
-            "[workflow] Successfully stored encrypted webhook token for workflow {}",
-            workflow.id
-        );
-    } else if workflow.incoming_webhook.is_some() {
-        println!(
-            "[workflow] incoming_webhook.token is empty, skipping encryption for workflow {}",
-            workflow.id
-        );
-    }
-
-    // Sync incoming webhook server state
-    if let Err(e) = crate::commands::incoming_webhook::sync_incoming_webhook_server(&app).await {
-        log::warn!("[workflow] Failed to sync incoming webhook server: {}", e);
-    }
 
     Ok(())
 }
@@ -340,11 +273,6 @@ pub async fn delete_workflow(
 ) -> Result<(), String> {
     let repo = WorkflowRepository::new(db.0.as_ref().clone());
     repo.delete(&workflow_id)?;
-
-    // Sync incoming webhook server state
-    if let Err(e) = crate::commands::incoming_webhook::sync_incoming_webhook_server(&app).await {
-        log::warn!("[workflow] Failed to sync incoming webhook server: {}", e);
-    }
 
     Ok(())
 }
@@ -365,7 +293,6 @@ pub async fn execute_workflow_internal(
 
     // Load workflow from database
     let workflow_repo = WorkflowRepository::new(db.clone());
-    let project_repo = ProjectRepository::new(db.clone());
 
     let workflow = workflow_repo
         .get(&workflow_id)?
@@ -405,12 +332,8 @@ pub async fn execute_workflow_internal(
         return Err(error_msg);
     }
 
-    // Get project path if workflow is associated with a project
-    let project_path: Option<String> = if let Some(ref project_id) = workflow.project_id {
-        project_repo.get(project_id)?.map(|p| p.path)
-    } else {
-        None
-    };
+    // Project path lookup removed (Projects feature deleted)
+    let project_path: Option<String> = None;
 
     println!(
         "[workflow] Project path: {:?}, depth: {}",
@@ -459,7 +382,6 @@ pub async fn execute_workflow_internal(
     // T043: Initialize execution_chain with the starting workflow ID
     let ctx = WorkflowExecutionContext {
         workflows: workflow_repo.list()?,
-        projects: project_repo.list()?,
         execution_chain: vec![workflow_id.clone()],
     };
 
@@ -665,8 +587,8 @@ async fn execute_workflow_nodes_with_context(
                 }
             }
 
-            // Get workflow info for webhook
-            let (workflow_id, workflow_name, webhook_config) = {
+            // Get workflow info
+            let (workflow_id, workflow_name) = {
                 let state = app.state::<WorkflowExecutionState>();
                 let executions = state.executions.lock().unwrap();
                 executions
@@ -675,7 +597,6 @@ async fn execute_workflow_nodes_with_context(
                         (
                             e.workflow.id.clone(),
                             e.workflow.name.clone(),
-                            e.workflow.webhook.clone(),
                         )
                     })
                     .unwrap_or_default()
@@ -722,33 +643,6 @@ async fn execute_workflow_nodes_with_context(
                             finished_at: Utc::now().to_rfc3339(),
                         },
                     );
-                }
-
-                // Send webhook if configured and trigger condition matches
-                if let Some(ref webhook) = webhook_config {
-                    if webhook.enabled && check_trigger_condition(&webhook.trigger, "failed") {
-                        let app_clone = app.clone();
-                        let webhook_clone = webhook.clone();
-                        let wf_id = workflow_id.clone();
-                        let wf_name = workflow_name.clone();
-                        let exec_id = execution_id.clone();
-                        let error_msg = error_msg.clone();
-
-                        // Fire-and-forget webhook
-                        tauri::async_runtime::spawn(async move {
-                            send_webhook(
-                                app_clone,
-                                &webhook_clone,
-                                &wf_id,
-                                &wf_name,
-                                &exec_id,
-                                "failed",
-                                duration_ms,
-                                error_msg.as_deref(),
-                            )
-                            .await;
-                        });
-                    }
                 }
             }
 
@@ -852,7 +746,7 @@ async fn execute_workflow_nodes_with_context(
     }
 
     // All nodes completed successfully
-    let (workflow_id, workflow_name, webhook_config) = {
+    let (workflow_id, workflow_name) = {
         let state = app.state::<WorkflowExecutionState>();
         let mut executions = state.executions.lock().unwrap();
         if let Some(exec) = executions.get_mut(&execution_id) {
@@ -860,10 +754,9 @@ async fn execute_workflow_nodes_with_context(
             (
                 Some(exec.workflow.id.clone()),
                 exec.workflow.name.clone(),
-                exec.workflow.webhook.clone(),
             )
         } else {
-            (None, String::new(), None)
+            (None, String::new())
         }
     };
 
@@ -909,32 +802,6 @@ async fn execute_workflow_nodes_with_context(
                     finished_at: Utc::now().to_rfc3339(),
                 },
             );
-        }
-
-        // Send webhook if configured and trigger condition matches
-        if let Some(ref webhook) = webhook_config {
-            if webhook.enabled && check_trigger_condition(&webhook.trigger, "completed") {
-                let app_clone = app.clone();
-                let webhook_clone = webhook.clone();
-                let wf_id_clone = wf_id.clone();
-                let wf_name = workflow_name.clone();
-                let exec_id = execution_id.clone();
-
-                // Fire-and-forget webhook
-                tauri::async_runtime::spawn(async move {
-                    send_webhook(
-                        app_clone,
-                        &webhook_clone,
-                        &wf_id_clone,
-                        &wf_name,
-                        &exec_id,
-                        "completed",
-                        duration_ms,
-                        None,
-                    )
-                    .await;
-                });
-            }
         }
 
     }
@@ -1080,7 +947,6 @@ async fn execute_trigger_workflow_node(
 #[derive(Clone)]
 struct WorkflowExecutionContext {
     workflows: Vec<Workflow>,
-    projects: Vec<Project>,
     /// Chain of workflow IDs being executed (for runtime cycle detection)
     execution_chain: Vec<String>,
 }
@@ -1148,15 +1014,8 @@ fn execute_child_workflow_sync(
         ));
     }
 
-    // Get project path if workflow is associated with a project
-    let project_path: Option<String> = if let Some(ref project_id) = workflow.project_id {
-        ctx.projects
-            .iter()
-            .find(|p| &p.id == project_id)
-            .map(|p| p.path.clone())
-    } else {
-        None
-    };
+    // Project path lookup removed (Projects feature deleted)
+    let project_path: Option<String> = None;
 
     // Create child execution
     let execution_id = Uuid::new_v4().to_string();
@@ -1284,17 +1143,10 @@ async fn execute_node(
             return execute_trash_command(app, execution_id, workflow_id, node, &args, cwd).await;
         }
 
-        // Check if we should use Volta for version management
-        if let Some(cwd_path) = cwd {
-            let project_path = std::path::Path::new(cwd_path);
-            let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-            get_volta_wrapped_command(project_path, cmd_name, args_vec)
-        } else {
-            (
-                path_resolver::get_tool_path(cmd_name),
-                args.iter().map(|s| s.to_string()).collect(),
-            )
-        }
+        (
+            path_resolver::get_tool_path(cmd_name),
+            args.iter().map(|s| s.to_string()).collect(),
+        )
     };
 
     // Spawn and handle output
@@ -1734,22 +1586,13 @@ pub async fn continue_execution(
     // T043: Initialize execution_chain with the continuing workflow ID
     let db_clone = db.0.as_ref().clone();
     let workflow_repo = WorkflowRepository::new(db_clone.clone());
-    let project_repo = ProjectRepository::new(db_clone.clone());
     let ctx = WorkflowExecutionContext {
         workflows: workflow_repo.list()?,
-        projects: project_repo.list()?,
         execution_chain: vec![workflow_id],
     };
 
-    // Get project path if workflow is associated with a project
-    let project_path: Option<String> = if let Some(ref pid) = project_id {
-        ctx.projects
-            .iter()
-            .find(|p| &p.id == pid)
-            .map(|p| p.path.clone())
-    } else {
-        None
-    };
+    // Project path lookup removed (Projects feature deleted)
+    let project_path: Option<String> = None;
 
     // Continue from current node
     let remaining_nodes: Vec<WorkflowNode> = workflow.into_iter().skip(start_index).collect();
@@ -1838,19 +1681,9 @@ pub async fn get_workflow_output(
 #[tauri::command]
 pub async fn restore_running_executions(
     _app: AppHandle,
-    db: tauri::State<'_, DatabaseState>,
+    _db: tauri::State<'_, DatabaseState>,
 ) -> Result<(), String> {
-    // Load running executions from database if any were saved
-    let repo = ExecutionRepository::new(db.0.as_ref().clone());
-    let running = repo.list_running()?;
-
-    // For now, just mark them as failed since we can't restore actual process state
-    // In a real implementation, you might want to offer to restart them
-    if !running.is_empty() {
-        // Clear the stored running executions
-        repo.clear_running()?;
-    }
-
+    // ExecutionRepository removed - no-op stub
     Ok(())
 }
 
@@ -1883,214 +1716,7 @@ pub async fn kill_process(app: AppHandle, execution_id: String) -> Result<(), St
     }
 }
 
-// ============================================================================
-// Webhook Functions
-// ============================================================================
-
-/// Check if webhook should be triggered based on execution status
-fn check_trigger_condition(trigger: &WebhookTrigger, status: &str) -> bool {
-    match trigger {
-        WebhookTrigger::Always => true,
-        WebhookTrigger::OnSuccess => status == "completed",
-        WebhookTrigger::OnFailure => status == "failed",
-    }
-}
-
-/// Render payload template by substituting variables
-/// Supported variables: {{workflow_id}}, {{workflow_name}}, {{execution_id}}, {{status}}, {{duration}}, {{timestamp}}, {{error_message}}
-fn render_template(
-    template: &str,
-    workflow_id: &str,
-    workflow_name: &str,
-    execution_id: &str,
-    status: &str,
-    duration_ms: u64,
-    error_message: Option<&str>,
-) -> String {
-    let timestamp = Utc::now().to_rfc3339();
-    let error = error_message.unwrap_or("");
-
-    // Use regex for variable substitution
-    let re = Regex::new(r"\{\{(\w+)\}\}").unwrap();
-
-    re.replace_all(template, |caps: &regex::Captures| {
-        match &caps[1] {
-            "workflow_id" => workflow_id.to_string(),
-            "workflow_name" => workflow_name.to_string(),
-            "execution_id" => execution_id.to_string(),
-            "status" => status.to_string(),
-            "duration" => duration_ms.to_string(),
-            "timestamp" => timestamp.clone(),
-            "error_message" => error.to_string(),
-            _ => caps[0].to_string(), // Keep unknown variables as-is
-        }
-    })
-    .to_string()
-}
-
-/// Send webhook notification (fire-and-forget)
-async fn send_webhook(
-    app: AppHandle,
-    webhook: &WebhookConfig,
-    workflow_id: &str,
-    workflow_name: &str,
-    execution_id: &str,
-    status: &str,
-    duration_ms: u64,
-    error_message: Option<&str>,
-) {
-    let start = std::time::Instant::now();
-
-    // Get payload template
-    let template = webhook
-        .payload_template
-        .as_deref()
-        .unwrap_or(DEFAULT_PAYLOAD_TEMPLATE);
-
-    // Render payload
-    let payload = render_template(
-        template,
-        workflow_id,
-        workflow_name,
-        execution_id,
-        status,
-        duration_ms,
-        error_message,
-    );
-
-    println!("[webhook] Sending to {}: {}", webhook.url, payload);
-
-    // Build HTTP client with 10 second timeout
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = emit_webhook_delivery(
-                &app,
-                execution_id,
-                workflow_id,
-                false,
-                None,
-                Some(format!("Failed to create HTTP client: {}", e)),
-                Some(start.elapsed().as_millis() as u64),
-            );
-            return;
-        }
-    };
-
-    // Build request
-    let mut request = client
-        .post(&webhook.url)
-        .header("Content-Type", "application/json")
-        .body(payload);
-
-    // Add custom headers
-    if let Some(headers) = &webhook.headers {
-        for (key, value) in headers {
-            request = request.header(key, value);
-        }
-    }
-
-    // Send request
-    match request.send().await {
-        Ok(response) => {
-            let status_code = response.status().as_u16();
-            let success = response.status().is_success();
-
-            let _ = emit_webhook_delivery(
-                &app,
-                execution_id,
-                workflow_id,
-                success,
-                Some(status_code),
-                if success {
-                    None
-                } else {
-                    Some(format!("HTTP {}", status_code))
-                },
-                Some(start.elapsed().as_millis() as u64),
-            );
-
-            // Send desktop notification
-            if success {
-                let _ = send_webhook_notification(
-                    &app,
-                    WebhookNotificationType::OutgoingSuccess {
-                        workflow_name: workflow_name.to_string(),
-                        url: webhook.url.clone(),
-                    },
-                );
-            } else {
-                let _ = send_webhook_notification(
-                    &app,
-                    WebhookNotificationType::OutgoingFailure {
-                        workflow_name: workflow_name.to_string(),
-                        error: format!("HTTP {}", status_code),
-                    },
-                );
-            }
-
-            println!("[webhook] Response: {} (success={})", status_code, success);
-        }
-        Err(e) => {
-            let error_msg = if e.is_timeout() {
-                "Request timed out (10s)".to_string()
-            } else if e.is_connect() {
-                "Connection failed".to_string()
-            } else {
-                e.to_string()
-            };
-
-            let _ = emit_webhook_delivery(
-                &app,
-                execution_id,
-                workflow_id,
-                false,
-                None,
-                Some(error_msg.clone()),
-                Some(start.elapsed().as_millis() as u64),
-            );
-
-            // Send desktop notification for failure
-            let _ = send_webhook_notification(
-                &app,
-                WebhookNotificationType::OutgoingFailure {
-                    workflow_name: workflow_name.to_string(),
-                    error: error_msg.clone(),
-                },
-            );
-
-            println!("[webhook] Error: {}", e);
-        }
-    }
-}
-
-/// Emit webhook delivery event
-fn emit_webhook_delivery(
-    app: &AppHandle,
-    execution_id: &str,
-    workflow_id: &str,
-    success: bool,
-    status_code: Option<u16>,
-    error: Option<String>,
-    response_time: Option<u64>,
-) -> Result<(), String> {
-    app.emit(
-        "webhook_delivery",
-        WebhookDeliveryPayload {
-            execution_id: execution_id.to_string(),
-            workflow_id: workflow_id.to_string(),
-            attempted_at: Utc::now().to_rfc3339(),
-            success,
-            status_code,
-            error,
-            response_time,
-        },
-    )
-    .map_err(|e| e.to_string())
-}
+// Webhook functions removed
 
 // ============================================================================
 // Available Workflows (Feature 013: Workflow Trigger Workflow)
@@ -2116,33 +1742,22 @@ pub async fn get_available_workflows(
     exclude_workflow_id: String,
 ) -> Result<Vec<AvailableWorkflowInfo>, String> {
     let workflow_repo = WorkflowRepository::new(db.0.as_ref().clone());
-    let project_repo = ProjectRepository::new(db.0.as_ref().clone());
 
-    // Load workflows and projects
+    // Load workflows
     let workflows = workflow_repo.list()?;
-    let projects = project_repo.list()?;
-
-    // Build project name lookup map
-    let project_map: HashMap<String, String> =
-        projects.into_iter().map(|p| (p.id, p.name)).collect();
 
     // Filter and map workflows
     let available: Vec<AvailableWorkflowInfo> = workflows
         .into_iter()
         .filter(|w| w.id != exclude_workflow_id)
         .map(|w| {
-            let project_name = w
-                .project_id
-                .as_ref()
-                .and_then(|pid| project_map.get(pid).cloned());
-
             AvailableWorkflowInfo {
                 id: w.id,
                 name: w.name,
                 description: w.description,
                 step_count: w.nodes.len() as u32,
                 project_id: w.project_id,
-                project_name,
+                project_name: None, // Projects feature removed
                 last_executed_at: w.last_executed_at,
             }
         })
@@ -2377,106 +1992,64 @@ const EXECUTION_HISTORY_SETTINGS_KEY: &str = "execution_history_settings";
 /// Load execution history for a workflow
 #[tauri::command]
 pub async fn load_execution_history(
-    db: tauri::State<'_, DatabaseState>,
-    workflow_id: String,
+    _db: tauri::State<'_, DatabaseState>,
+    _workflow_id: String,
 ) -> Result<Vec<ExecutionHistoryItem>, String> {
-    let repo = ExecutionRepository::new(db.0.as_ref().clone());
-    repo.list_history_by_workflow(&workflow_id, None)
+    // ExecutionRepository removed - return empty
+    Ok(vec![])
 }
 
 /// Load all execution history
 #[tauri::command]
 pub async fn load_all_execution_history(
-    db: tauri::State<'_, DatabaseState>,
+    _db: tauri::State<'_, DatabaseState>,
 ) -> Result<ExecutionHistoryStore, String> {
-    use crate::repositories::SettingsRepository;
-
-    let execution_repo = ExecutionRepository::new(db.0.as_ref().clone());
-    let settings_repo = SettingsRepository::new(db.0.as_ref().clone());
-
-    let histories = execution_repo.list_all_history_grouped()?;
-    let settings: Option<ExecutionHistorySettings> =
-        settings_repo.get(EXECUTION_HISTORY_SETTINGS_KEY)?;
-
+    // ExecutionRepository removed - return empty
     Ok(ExecutionHistoryStore {
         version: "3.0".to_string(),
-        histories,
-        settings,
+        histories: HashMap::new(),
+        settings: None,
     })
 }
 
 /// Save a new execution history item
 #[tauri::command]
 pub async fn save_execution_history(
-    db: tauri::State<'_, DatabaseState>,
-    item: ExecutionHistoryItem,
+    _db: tauri::State<'_, DatabaseState>,
+    _item: ExecutionHistoryItem,
 ) -> Result<(), String> {
-    use crate::repositories::SettingsRepository;
-
-    let execution_repo = ExecutionRepository::new(db.0.as_ref().clone());
-    let settings_repo = SettingsRepository::new(db.0.as_ref().clone());
-
-    // Get settings for trimming
-    let settings: ExecutionHistorySettings = settings_repo
-        .get(EXECUTION_HISTORY_SETTINGS_KEY)?
-        .unwrap_or_default();
-
-    // Trim output if needed
-    let mut trimmed_item = item;
-    if trimmed_item.output.len() > settings.max_output_lines {
-        trimmed_item.output = trimmed_item
-            .output
-            .into_iter()
-            .rev()
-            .take(settings.max_output_lines)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-    }
-
-    // Save history item
-    execution_repo.save_history(&trimmed_item)?;
-
-    // Prune old history (enforce max limit per workflow)
-    execution_repo.prune_history(settings.max_history_per_workflow)?;
-
+    // ExecutionRepository removed - no-op stub
     Ok(())
 }
 
 /// Delete a specific history item
 #[tauri::command]
 pub async fn delete_execution_history(
-    db: tauri::State<'_, DatabaseState>,
+    _db: tauri::State<'_, DatabaseState>,
     _workflow_id: String,
-    history_id: String,
+    _history_id: String,
 ) -> Result<(), String> {
-    let repo = ExecutionRepository::new(db.0.as_ref().clone());
-    repo.delete_history(&history_id)?;
+    // ExecutionRepository removed - no-op stub
     Ok(())
 }
 
 /// Clear all history for a workflow
 #[tauri::command]
 pub async fn clear_workflow_execution_history(
-    db: tauri::State<'_, DatabaseState>,
-    workflow_id: String,
+    _db: tauri::State<'_, DatabaseState>,
+    _workflow_id: String,
 ) -> Result<(), String> {
-    let repo = ExecutionRepository::new(db.0.as_ref().clone());
-    repo.clear_workflow_history(&workflow_id)?;
+    // ExecutionRepository removed - no-op stub
     Ok(())
 }
 
 /// Update execution history settings
 #[tauri::command]
 pub async fn update_execution_history_settings(
-    db: tauri::State<'_, DatabaseState>,
-    settings: ExecutionHistorySettings,
+    _db: tauri::State<'_, DatabaseState>,
+    _settings: ExecutionHistorySettings,
 ) -> Result<(), String> {
-    use crate::repositories::SettingsRepository;
-
-    let settings_repo = SettingsRepository::new(db.0.as_ref().clone());
-    settings_repo.set(EXECUTION_HISTORY_SETTINGS_KEY, &settings)?;
+    // ExecutionRepository removed - no-op stub
     Ok(())
 }
 

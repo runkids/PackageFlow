@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 
 use specforge_lib::models::mcp::MCPServerConfig;
 use specforge_lib::repositories::{
-    MCPRepository, McpLogEntry, ProjectRepository, SettingsRepository,
-    TemplateRepository, WorkflowRepository,
+    MCPRepository, McpLogEntry, SettingsRepository,
+    WorkflowRepository,
 };
 use specforge_lib::utils::database::{Database, DATABASE_FILE};
 use specforge_lib::utils::shared_store::{get_app_data_dir, sanitize_error};
@@ -77,31 +77,18 @@ pub fn read_store_data() -> Result<StoreData, String> {
     let db = open_database()?;
 
     // Read from repositories
-    let project_repo = ProjectRepository::new(db.clone());
     let workflow_repo = WorkflowRepository::new(db.clone());
     let settings_repo = SettingsRepository::new(db.clone());
-    let template_repo = TemplateRepository::new(db.clone());
 
     // Get MCP config
     let mcp_config: MCPServerConfig = settings_repo
         .get(MCP_CONFIG_KEY)?
         .unwrap_or_default();
 
-    // Get projects (map library Project to local simplified Project)
-    let projects: Vec<Project> = project_repo
-        .list()?
-        .into_iter()
-        .map(|p| Project {
-            id: p.id,
-            name: p.name,
-            path: p.path,
-            description: p.description,
-        })
-        .collect();
+    // Projects feature removed - return empty
+    let projects: Vec<Project> = vec![];
 
     // Get workflows (map library Workflow to local Workflow)
-    // Note: Library WorkflowNode uses `name` and `config` (JSON),
-    //       position is Option<NodePosition> which needs conversion
     let workflows: Vec<Workflow> = workflow_repo
         .list()?
         .into_iter()
@@ -111,7 +98,6 @@ pub fn read_store_data() -> Result<StoreData, String> {
             description: w.description,
             project_id: w.project_id,
             nodes: w.nodes.into_iter().map(|n| {
-                // Convert library NodePosition to local NodePosition
                 let position = n.position.map(|p| NodePosition { x: p.x, y: p.y });
                 WorkflowNode {
                     id: n.id,
@@ -125,31 +111,17 @@ pub fn read_store_data() -> Result<StoreData, String> {
             created_at: w.created_at,
             updated_at: w.updated_at,
             last_executed_at: w.last_executed_at,
-            webhook: w.webhook.map(|wh| serde_json::to_value(wh).unwrap_or_default()),
-            incoming_webhook: w.incoming_webhook.map(|iwh| serde_json::to_value(iwh).unwrap_or_default()),
         })
         .collect();
 
-    // Get custom step templates
-    let custom_step_templates: Vec<CustomStepTemplate> = template_repo
-        .list()?
-        .into_iter()
-        .map(|t| CustomStepTemplate {
-            id: t.id,
-            name: t.name,
-            command: t.command,
-            category: format!("{:?}", t.category).to_lowercase().replace("_", "-"),
-            description: t.description,
-            is_custom: t.is_custom,
-            created_at: t.created_at,
-        })
-        .collect();
+    // Step templates feature removed - return empty
+    let custom_step_templates: Vec<CustomStepTemplate> = vec![];
 
     Ok(StoreData {
         version: "1.0".to_string(),
         projects,
         workflows,
-        running_executions: HashMap::new(), // Running executions are in memory
+        running_executions: HashMap::new(),
         settings: serde_json::Value::Null,
         security_scans: HashMap::new(),
         custom_step_templates,
@@ -170,7 +142,6 @@ pub fn write_store_data(data: &StoreData) -> Result<(), String> {
 
     let db = open_database()?;
     let workflow_repo = WorkflowRepository::new(db.clone());
-    let template_repo = TemplateRepository::new(db.clone());
     let settings_repo = SettingsRepository::new(db.clone());
 
     // Save workflows
@@ -181,7 +152,6 @@ pub fn write_store_data(data: &StoreData) -> Result<(), String> {
             description: workflow.description.clone(),
             project_id: workflow.project_id.clone(),
             nodes: workflow.nodes.iter().map(|n| {
-                // Convert local NodePosition to library NodePosition
                 let position = n.position.as_ref().map(|p| {
                     specforge_lib::models::workflow::NodePosition { x: p.x, y: p.y }
                 });
@@ -194,8 +164,6 @@ pub fn write_store_data(data: &StoreData) -> Result<(), String> {
                     position,
                 }
             }).collect(),
-            webhook: None,
-            incoming_webhook: None,
             created_at: workflow.created_at.clone(),
             updated_at: workflow.updated_at.clone(),
             last_executed_at: workflow.last_executed_at.clone(),
@@ -203,19 +171,7 @@ pub fn write_store_data(data: &StoreData) -> Result<(), String> {
         workflow_repo.save(&w)?;
     }
 
-    // Save custom step templates
-    for template in &data.custom_step_templates {
-        let t = specforge_lib::models::step_template::CustomStepTemplate {
-            id: template.id.clone(),
-            name: template.name.clone(),
-            command: template.command.clone(),
-            category: specforge_lib::models::step_template::TemplateCategory::Custom,
-            description: template.description.clone(),
-            is_custom: template.is_custom,
-            created_at: template.created_at.clone(),
-        };
-        template_repo.save(&t)?;
-    }
+    // Step templates feature removed - skip saving
 
     // Save MCP config
     settings_repo.set(MCP_CONFIG_KEY, &data.mcp_config)?;
@@ -383,10 +339,6 @@ pub struct Workflow {
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_executed_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub incoming_webhook: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -477,8 +429,6 @@ mod tests {
             created_at: "2025-01-01T00:00:00Z".to_string(),
             updated_at: "2025-01-01T00:00:00Z".to_string(),
             last_executed_at: None,
-            webhook: None,
-            incoming_webhook: None,
         };
 
         let json = serde_json::to_string(&workflow).unwrap();
