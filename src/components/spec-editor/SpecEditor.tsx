@@ -6,13 +6,15 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, AlertTriangle, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { FrontmatterForm } from './FrontmatterForm';
 import { MarkdownEditor } from './MarkdownEditor';
 import { cn } from '../../lib/utils';
+import { useWorkflowStatus } from '../../hooks/useWorkflowStatus';
 import type { Spec } from '../../types/spec';
 import type { SchemaDefinition } from '../../types/schema';
+import type { AdvanceResult } from '../../types/workflow-phase';
 
 // ---------------------------------------------------------------------------
 // Status badge (reused from SpecList)
@@ -28,15 +30,154 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const PHASE_COLORS: Record<string, string> = {
-  draft: 'text-zinc-400',
+  discuss: 'text-indigo-400',
+  specify: 'text-blue-400',
   review: 'text-yellow-400',
   implement: 'text-green-400',
   verify: 'text-cyan-400',
   deploy: 'text-blue-400',
+  done: 'text-emerald-400',
 };
 
-function phaseColor(phase: string): string {
+const PHASE_DOT_COLORS: Record<string, string> = {
+  discuss: 'bg-indigo-400',
+  specify: 'bg-blue-400',
+  review: 'bg-yellow-400',
+  implement: 'bg-green-400',
+  verify: 'bg-cyan-400',
+  deploy: 'bg-blue-400',
+  done: 'bg-emerald-400',
+};
+
+function phaseTextColor(phase: string): string {
   return PHASE_COLORS[phase] ?? 'text-indigo-400';
+}
+
+function phaseDotColor(phase: string): string {
+  return PHASE_DOT_COLORS[phase] ?? 'bg-indigo-400';
+}
+
+// ---------------------------------------------------------------------------
+// WorkflowSection — extracted sub-component
+// ---------------------------------------------------------------------------
+
+interface WorkflowSectionProps {
+  specId: string;
+  projectDir: string;
+  workflowPhase?: string;
+}
+
+function WorkflowSection({ specId, projectDir, workflowPhase }: WorkflowSectionProps) {
+  const { status, loading: wfLoading } = useWorkflowStatus(
+    workflowPhase ? specId : null,
+    projectDir
+  );
+  const [advancing, setAdvancing] = useState(false);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
+
+  const handleAdvance = useCallback(
+    async (toPhase?: string) => {
+      setAdvancing(true);
+      setAdvanceError(null);
+      try {
+        await invoke<AdvanceResult>('advance_spec', {
+          specId,
+          toPhase: toPhase ?? null,
+          projectDir,
+        });
+      } catch (e) {
+        setAdvanceError(String(e));
+      } finally {
+        setAdvancing(false);
+      }
+    },
+    [specId, projectDir]
+  );
+
+  return (
+    <div className="p-4 space-y-3">
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        Workflow
+      </h3>
+
+      {!workflowPhase ? (
+        <p className="text-xs text-muted-foreground">No workflow assigned</p>
+      ) : (
+        <div className="space-y-3">
+          {/* Current phase */}
+          <div className="flex items-center gap-2">
+            <span className={cn('w-2 h-2 rounded-full', phaseDotColor(workflowPhase))} />
+            <span className={cn('text-sm font-medium', phaseTextColor(workflowPhase))}>
+              {workflowPhase}
+            </span>
+            {wfLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+          </div>
+
+          {/* Workflow name */}
+          {status?.workflowName && (
+            <p className="text-[11px] text-muted-foreground">
+              Workflow: {status.workflowName}
+            </p>
+          )}
+
+          {/* Available transitions */}
+          {status && status.availableTransitions.length > 0 && (
+            <div className="space-y-1.5">
+              {status.availableTransitions.map((t) => (
+                <div key={t.to} className="space-y-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={advancing}
+                    onClick={() => handleAdvance(t.to)}
+                    className={cn(
+                      'w-full text-xs justify-between',
+                      t.gatePassed
+                        ? 'border-green-500/30 hover:border-green-500/50'
+                        : 'border-amber-500/30 hover:border-amber-500/50'
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {advancing ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <ChevronRight className="w-3 h-3" />
+                      )}
+                      Advance to {t.to}
+                    </span>
+                    <span
+                      className={cn(
+                        'w-2 h-2 rounded-full',
+                        t.gatePassed ? 'bg-green-500' : 'bg-amber-500'
+                      )}
+                    />
+                  </Button>
+
+                  {/* Gate warning message */}
+                  {!t.gatePassed && t.gateMessage && (
+                    <div className="flex items-start gap-1.5 px-2 py-1.5 rounded bg-amber-500/10 border border-amber-500/20">
+                      <AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-[10px] text-amber-400 leading-snug">
+                        {t.gateMessage}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Advance error */}
+          {advanceError && (
+            <div className="flex items-start gap-1.5 px-2 py-1.5 rounded bg-red-500/10 border border-red-500/20">
+              <AlertTriangle className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" />
+              <span className="text-[10px] text-red-400 leading-snug">{advanceError}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -256,35 +397,11 @@ export function SpecEditor({ specId, projectDir, onBack }: SpecEditorProps) {
           <div className="mx-4 border-t border-border" />
 
           {/* Workflow section */}
-          <div className="p-4 space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Workflow
-            </h3>
-
-            {spec.workflow_phase ? (
-              <div className="space-y-2">
-                {/* Current phase */}
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      'w-2 h-2 rounded-full',
-                      phaseColor(spec.workflow_phase).replace('text-', 'bg-')
-                    )}
-                  />
-                  <span className={cn('text-sm font-medium', phaseColor(spec.workflow_phase))}>
-                    {spec.workflow_phase}
-                  </span>
-                </div>
-
-                {/* Advance button (disabled — workflow engine not yet implemented) */}
-                <Button variant="outline" size="sm" disabled className="w-full text-xs">
-                  Advance phase (coming soon)
-                </Button>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">No workflow assigned</p>
-            )}
-          </div>
+          <WorkflowSection
+            specId={spec.id}
+            projectDir={projectDir}
+            workflowPhase={spec.workflow_phase}
+          />
         </div>
 
         {/* Right panel — Markdown editor */}
