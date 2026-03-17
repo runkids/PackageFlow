@@ -26,7 +26,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          ASSET_NAME="PackageFlow_${VERSION}_aarch64.dmg"
+          ASSET_NAME="SpecForge_${VERSION}_aarch64.dmg"
           MAX_ATTEMPTS=20
           ATTEMPT=0
 
@@ -71,7 +71,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          ASSET_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/PackageFlow_${VERSION}_aarch64.dmg"
+          ASSET_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/SpecForge_${VERSION}_aarch64.dmg"
           MAX_RETRIES=5
           RETRY_DELAY=10
           ATTEMPT=0
@@ -82,16 +82,16 @@ jobs:
             ATTEMPT=$((ATTEMPT + 1))
             echo "Download attempt $ATTEMPT/$MAX_RETRIES..."
 
-            if curl -fSL --retry 3 --retry-delay 5 "$ASSET_URL" -o "packageflow.dmg"; then
+            if curl -fSL --retry 3 --retry-delay 5 "$ASSET_URL" -o "specforge.dmg"; then
               # Verify file size matches expected size from API
-              ACTUAL_SIZE=$(stat -c%s "packageflow.dmg" 2>/dev/null || stat -f%z "packageflow.dmg" 2>/dev/null)
+              ACTUAL_SIZE=$(stat -c%s "specforge.dmg" 2>/dev/null || stat -f%z "specforge.dmg" 2>/dev/null)
 
               if [ "$ACTUAL_SIZE" -eq "$EXPECTED_SIZE" ]; then
                 echo "Download successful, size verified: $ACTUAL_SIZE bytes"
-                SHA256=$(shasum -a 256 packageflow.dmg | cut -d ' ' -f 1)
+                SHA256=$(shasum -a 256 specforge.dmg | cut -d ' ' -f 1)
                 echo "SHA256: $SHA256"
                 echo "SHA256_AARCH64=$SHA256" >> $GITHUB_OUTPUT
-                rm -f packageflow.dmg
+                rm -f specforge.dmg
                 exit 0
               else
                 echo "Size mismatch: expected $EXPECTED_SIZE, got $ACTUAL_SIZE"
@@ -118,30 +118,30 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
           SHA256: ${{ steps.sha.outputs.SHA256_AARCH64 }}
         run: |
-          cat > homebrew-tap/Casks/packageflow.rb << 'EOF'
-          cask "packageflow" do
+          cat > homebrew-tap/Casks/specforge.rb << 'EOF'
+          cask "specforge" do
             version "VERSION_PLACEHOLDER"
             sha256 "SHA256_PLACEHOLDER"
 
-            url "https://github.com/runkids/PackageFlow/releases/download/v#{version}/PackageFlow_#{version}_aarch64.dmg"
-            name "PackageFlow"
+            url "https://github.com/runkids/PackageFlow/releases/download/v#{version}/SpecForge_#{version}_aarch64.dmg"
+            name "SpecForge"
             desc "Developer workflow management tool for frontend and Node.js projects"
             homepage "https://github.com/runkids/PackageFlow"
 
             depends_on macos: ">= :catalina"
 
-            app "PackageFlow.app"
+            app "SpecForge.app"
 
             zap trash: [
-              "~/Library/Application Support/com.packageflow.PackageFlow-macOS",
-              "~/Library/Caches/com.packageflow.PackageFlow-macOS",
-              "~/Library/Preferences/com.packageflow.PackageFlow-macOS.plist",
+              "~/Library/Application Support/com.specforge.SpecForge-macOS",
+              "~/Library/Caches/com.specforge.SpecForge-macOS",
+              "~/Library/Preferences/com.specforge.SpecForge-macOS.plist",
             ]
           end
           EOF
 
-          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" homebrew-tap/Casks/packageflow.rb
-          sed -i "s/SHA256_PLACEHOLDER/${SHA256}/g" homebrew-tap/Casks/packageflow.rb
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" homebrew-tap/Casks/specforge.rb
+          sed -i "s/SHA256_PLACEHOLDER/${SHA256}/g" homebrew-tap/Casks/specforge.rb
 
       - name: Commit and push
         env:
@@ -150,6 +150,6 @@ jobs:
           cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/packageflow.rb
-          git commit -m "Update packageflow to ${VERSION}"
+          git add Casks/specforge.rb
+          git commit -m "Update specforge to ${VERSION}"
           git push

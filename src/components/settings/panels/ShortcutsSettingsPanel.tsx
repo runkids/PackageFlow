@@ -313,7 +313,7 @@ export const ShortcutsSettingsPanel: React.FC = () => {
         {/* Global Toggle Shortcut Section */}
         <SettingSection
           title="Global Toggle"
-          description="Show or hide PackageFlow from anywhere on your system"
+          description="Show or hide SpecForge from anywhere on your system"
           icon={<Globe className="w-4 h-4" />}
         >
           <div
@@ -353,7 +353,7 @@ export const ShortcutsSettingsPanel: React.FC = () => {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Quickly show or hide PackageFlow window from any application
+                  Quickly show or hide SpecForge window from any application
                 </p>
               </div>
             </div>
@@ -421,7 +421,7 @@ export const ShortcutsSettingsPanel: React.FC = () => {
         {/* Search and Filter Section */}
         <SettingSection
           title="Application Shortcuts"
-          description="Shortcuts that work within the PackageFlow application"
+          description="Shortcuts that work within the SpecForge application"
           icon={<Command className="w-4 h-4" />}
         >
           {/* Search and Reset Bar */}

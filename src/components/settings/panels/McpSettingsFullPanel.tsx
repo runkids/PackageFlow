@@ -300,7 +300,7 @@ const DevServerModeSelector: React.FC<DevServerModeSelectorProps> = ({
               UI Integrated
             </span>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              Processes are tracked in PackageFlow UI for better visibility.
+              Processes are tracked in SpecForge UI for better visibility.
             </p>
           </div>
 
@@ -822,7 +822,7 @@ const AvailableToolsSection: React.FC<AvailableToolsSectionProps> = ({ tools }) 
 
       {/* Tip */}
       <p className="text-xs text-muted-foreground">
-        Run <code className="px-1.5 py-0.5 bg-muted rounded font-mono">packageflow-mcp --help</code>{' '}
+        Run <code className="px-1.5 py-0.5 bg-muted rounded font-mono">specforge-mcp --help</code>{' '}
         for detailed documentation
       </p>
 

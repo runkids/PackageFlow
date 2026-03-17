@@ -68,7 +68,7 @@ export const AppearanceSettingsPanel: React.FC = () => {
           Appearance
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Customize the look and feel of PackageFlow
+          Customize the look and feel of SpecForge
         </p>
       </div>
 

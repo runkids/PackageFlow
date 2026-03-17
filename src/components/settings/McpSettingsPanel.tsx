@@ -321,11 +321,11 @@ const ClientSetupCard: React.FC<{
 }> = ({ client, serverInfo, isExpanded, onToggle }) => {
   const command =
     client.id === 'claude-code'
-      ? `claude mcp add packageflow ${serverInfo.binary_path}`
+      ? `claude mcp add specforge ${serverInfo.binary_path}`
       : client.id === 'codex'
-        ? `codex mcp add packageflow ${serverInfo.binary_path}`
+        ? `codex mcp add specforge ${serverInfo.binary_path}`
         : client.id === 'gemini'
-          ? `gemini mcp add packageflow ${serverInfo.binary_path}`
+          ? `gemini mcp add specforge ${serverInfo.binary_path}`
           : undefined;
 
   const config = client.configFormat === 'json' ? serverInfo.config_json : serverInfo.config_toml;
@@ -918,7 +918,7 @@ export function McpSettingsPanel({ isOpen, onClose }: McpSettingsPanelProps) {
                         <div className="min-w-0">
                           <span className="font-medium text-foreground">MCP Server</span>
                           <p className="text-xs text-muted-foreground truncate">
-                            Allow AI assistants to interact with PackageFlow
+                            Allow AI assistants to interact with SpecForge
                           </p>
                         </div>
                       </div>

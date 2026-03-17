@@ -157,7 +157,7 @@ export const McpStatusButton: React.FC<McpStatusButtonProps> = ({
                 <Lock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground mb-1">MCP Server is disabled</p>
                 <p className="text-xs text-muted-foreground/60">
-                  Enable to allow AI tools to access PackageFlow
+                  Enable to allow AI tools to access SpecForge
                 </p>
               </div>
             ) : config && permissionInfo ? (

@@ -69,7 +69,7 @@ body:
   - type: input
     id: app-version
     attributes:
-      label: PackageFlow Version
+      label: SpecForge Version
       description: You can find this in the app's About section
       placeholder: "1.0.0"
     validations:

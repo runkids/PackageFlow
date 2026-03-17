@@ -44,7 +44,7 @@ interface ServerStatusCardProps {
 export const ServerStatusCard: React.FC<ServerStatusCardProps> = ({
   isEnabled,
   isAvailable,
-  serverName = 'packageflow-mcp',
+  serverName = 'specforge-mcp',
   serverVersion,
   binaryPath,
   onToggleEnabled,
@@ -104,7 +104,7 @@ export const ServerStatusCard: React.FC<ServerStatusCardProps> = ({
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Allow AI assistants to interact with PackageFlow
+            Allow AI assistants to interact with SpecForge
           </p>
           {binaryPath && (
             <div className="relative group mt-1">

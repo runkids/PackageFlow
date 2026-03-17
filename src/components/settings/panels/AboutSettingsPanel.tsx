@@ -229,7 +229,7 @@ export const AboutSettingsPanel: React.FC<AboutSettingsPanelProps> = () => {
       <div className="flex-1 overflow-y-auto pt-4 space-y-6">
         {/* App Identity Section */}
         <SettingSection
-          title="PackageFlow"
+          title="SpecForge"
           description="Project management and automation tool"
           icon={<Package className="w-4 h-4" />}
         >
@@ -250,12 +250,12 @@ export const AboutSettingsPanel: React.FC<AboutSettingsPanelProps> = () => {
                   'flex items-center justify-center overflow-hidden'
                 )}
               >
-                <img src="/image.png" alt="PackageFlow" className="w-12 h-12 object-contain" />
+                <img src="/image.png" alt="SpecForge" className="w-12 h-12 object-contain" />
               </div>
 
               {/* Version Info */}
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-semibold text-foreground">PackageFlow</h3>
+                <h3 className="text-lg font-semibold text-foreground">SpecForge</h3>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   Version {currentVersion || '...'}
                 </p>
@@ -467,8 +467,8 @@ export const AboutSettingsPanel: React.FC<AboutSettingsPanelProps> = () => {
         {/* Info Box */}
         <SettingInfoBox title="Automatic Updates" variant="info">
           <p className="text-xs">
-            PackageFlow automatically checks for updates when you start the app. You can also
-            manually check for updates at any time using the button above.
+            SpecForge automatically checks for updates when you start the app. You can also manually
+            check for updates at any time using the button above.
           </p>
         </SettingInfoBox>
       </div>

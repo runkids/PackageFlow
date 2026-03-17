@@ -149,7 +149,7 @@ export interface AppSettings {
   webhookNotificationsEnabled?: boolean;
   workflowSortMode?: WorkflowSortMode;
   workflowOrder?: string[];
-  /** Custom store path for packageflow.json (undefined = use default app data directory) */
+  /** Custom store path for specforge.json (undefined = use default app data directory) */
   customStorePath?: string;
   /** Keyboard shortcuts settings (for export/import) */
   keyboardShortcuts?: import('./shortcuts').KeyboardShortcutsSettings;

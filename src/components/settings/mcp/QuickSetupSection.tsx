@@ -192,11 +192,11 @@ const ClientSetupCard: React.FC<{
   const getCommand = (): string | undefined => {
     switch (client.id) {
       case 'claude-code':
-        return `claude mcp add packageflow ${binaryPath}`;
+        return `claude mcp add specforge ${binaryPath}`;
       case 'codex':
-        return `codex mcp add packageflow ${binaryPath}`;
+        return `codex mcp add specforge ${binaryPath}`;
       case 'gemini':
-        return `gemini mcp add packageflow ${binaryPath}`;
+        return `gemini mcp add specforge ${binaryPath}`;
       default:
         return undefined;
     }

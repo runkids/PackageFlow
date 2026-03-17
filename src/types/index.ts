@@ -1,5 +1,5 @@
 /**
- * PackageFlow Type Definitions
+ * SpecForge Type Definitions
  */
 export type {
   Workflow,

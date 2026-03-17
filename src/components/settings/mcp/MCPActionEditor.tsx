@@ -102,7 +102,7 @@ const ACTION_TYPES: {
     value: 'workflow',
     label: 'Workflow',
     icon: <GitBranch className="w-4 h-4" />,
-    description: 'Execute PackageFlow workflows',
+    description: 'Execute SpecForge workflows',
     color: 'purple',
   },
 ];
@@ -608,7 +608,7 @@ export const MCPActionEditor: React.FC<MCPActionEditorProps> = ({
                   <div>
                     <p className="font-medium text-foreground">Workflow</p>
                     <p className="text-muted-foreground mt-0.5">
-                      Trigger a PackageFlow workflow by its UUID. The workflow will execute with its
+                      Trigger a SpecForge workflow by its UUID. The workflow will execute with its
                       configured steps.
                     </p>
                   </div>
@@ -849,7 +849,7 @@ export const MCPActionEditor: React.FC<MCPActionEditorProps> = ({
               required
               error={errors.workflowId}
               htmlFor="workflow-id"
-              description="Select a PackageFlow workflow to execute"
+              description="Select a SpecForge workflow to execute"
             >
               {isLoadingWorkflows ? (
                 <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">

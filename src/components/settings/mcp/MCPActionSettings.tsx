@@ -61,7 +61,7 @@ const ACTION_TYPE_CONFIG: Record<
     icon: <GitBranch className="w-3.5 h-3.5" />,
     colorClass: 'text-purple-500',
     bgClass: 'bg-purple-500/10',
-    description: 'Execute PackageFlow workflows',
+    description: 'Execute SpecForge workflows',
   },
 };
 

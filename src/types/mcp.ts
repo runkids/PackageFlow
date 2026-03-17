@@ -298,7 +298,7 @@ export const MCP_TOOL_DEFINITIONS: McpToolWithPermission[] = [
   // Read-only tools
   {
     name: 'list_projects',
-    description: 'List all registered projects in PackageFlow',
+    description: 'List all registered projects in SpecForge',
     category: 'read',
   },
   {

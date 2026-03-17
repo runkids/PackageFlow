@@ -9,7 +9,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 
 /** localStorage key for chat history */
-const STORAGE_KEY = 'packageflow:ai-chat-history';
+const STORAGE_KEY = 'specforge:ai-chat-history';
 
 /** Maximum number of history entries to keep */
 const MAX_HISTORY_SIZE = 50;
@@ -17,7 +17,7 @@ const MAX_HISTORY_SIZE = 50;
 interface UseInputHistoryOptions {
   /** Maximum history entries (default: 50) */
   maxSize?: number;
-  /** localStorage key (default: 'packageflow:ai-chat-history') */
+  /** localStorage key (default: 'specforge:ai-chat-history') */
   storageKey?: string;
 }
 
