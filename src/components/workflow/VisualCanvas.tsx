@@ -25,6 +25,8 @@ import '@xyflow/react/dist/style.css';
 import { ScriptNode, type ScriptNodeData } from './nodes/ScriptNode';
 import { StartNode, type StartNodeData } from './nodes/StartNode';
 import { TriggerWorkflowNode, type TriggerWorkflowNodeData } from './nodes/TriggerWorkflowNode';
+import { PhaseNode } from './nodes/PhaseNode';
+import { GateNode } from './nodes/GateNode';
 import { AnimatedEdge } from './edges/AnimatedEdge';
 import { InsertableEdge, type InsertableEdgeData } from './edges/InsertableEdge';
 import { WorkflowEmptyState } from './WorkflowEmptyState';
@@ -34,6 +36,8 @@ const nodeTypes: NodeTypes = {
   script: ScriptNode,
   start: StartNode,
   'trigger-workflow': TriggerWorkflowNode,
+  phase: PhaseNode,
+  gate: GateNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -226,6 +230,91 @@ function workflowNodesToFlowEdges(
   }
 
   return edges;
+}
+
+/**
+ * Convert workflow phase definitions to React Flow nodes and edges.
+ * Used by the spec-workflow visualization (PhaseNode + GateNode).
+ */
+export function phaseDefinitionToFlowElements(
+  phases: import('../../types/workflow-phase').Phase[],
+  transitions: import('../../types/workflow-phase').WorkflowTransition[],
+  currentPhase?: string
+): { nodes: Node[]; edges: Edge[] } {
+  const flowNodes: Node[] = [];
+  const flowEdges: Edge[] = [];
+
+  const PHASE_SPACING_X = 300;
+  const GATE_OFFSET_X = 140;
+  const ROW_Y = 100;
+
+  // Create phase nodes in order
+  phases.forEach((phase, index) => {
+    flowNodes.push({
+      id: `phase-${phase.id}`,
+      type: 'phase',
+      position: { x: index * PHASE_SPACING_X, y: ROW_Y },
+      data: {
+        phase,
+        isCurrentPhase: phase.id === currentPhase,
+      },
+      draggable: false,
+      selectable: true,
+    });
+  });
+
+  // Create gate nodes and edges for transitions
+  transitions.forEach((transition, tIndex) => {
+    const fromIndex = phases.findIndex((p) => p.id === transition.from);
+    const toIndex = phases.findIndex((p) => p.id === transition.to);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    if (transition.gate) {
+      // Insert a GateNode between the two phases
+      const gateId = `gate-${transition.from}-${transition.to}`;
+      const midX = fromIndex * PHASE_SPACING_X + GATE_OFFSET_X;
+
+      flowNodes.push({
+        id: gateId,
+        type: 'gate',
+        position: { x: midX, y: ROW_Y + 10 },
+        data: {
+          gate: transition.gate,
+        },
+        draggable: false,
+        selectable: true,
+      });
+
+      // Phase -> Gate edge
+      flowEdges.push({
+        id: `edge-${transition.from}-to-gate-${tIndex}`,
+        source: `phase-${transition.from}`,
+        target: gateId,
+        type: 'animated',
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+      });
+
+      // Gate -> Phase edge
+      flowEdges.push({
+        id: `edge-gate-${tIndex}-to-${transition.to}`,
+        source: gateId,
+        target: `phase-${transition.to}`,
+        type: 'animated',
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+      });
+    } else {
+      // Direct edge between phases (no gate)
+      flowEdges.push({
+        id: `edge-${transition.from}-to-${transition.to}`,
+        source: `phase-${transition.from}`,
+        target: `phase-${transition.to}`,
+        type: 'animated',
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+      });
+    }
+  });
+
+  return { nodes: flowNodes, edges: flowEdges };
 }
 
 export function VisualCanvas({

@@ -1,9 +1,11 @@
 // Repository Layer
 // Provides data access abstractions for SQLite database
 
-// Re-export repositories from packageflow-lib
-pub use packageflow_lib::repositories::*;
+// Re-export repositories from specforge-lib
+pub use specforge_lib::repositories::*;
 
-// Tauri-dependent repository (local)
-pub mod execution_repo;
-pub use execution_repo::ExecutionRepository;
+// Local repositories (spec and schema index)
+pub mod agent_run_repo;
+pub mod schema_repo;
+pub mod spec_repo;
+pub mod workflow_instance_repo;

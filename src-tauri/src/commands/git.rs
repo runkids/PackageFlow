@@ -2645,3 +2645,71 @@ fn get_deleted_file_diff(repo_path: &Path, file_path: &str) -> Result<GetFileDif
         }),
     }
 }
+
+// ============================================================================
+// Spec-aware Git Commands
+// ============================================================================
+
+/// Create a git commit with a spec-prefixed message: `[spec:{id}] {message}`.
+#[tauri::command]
+pub async fn git_commit_for_spec(
+    spec_id: String,
+    message: String,
+    project_dir: String,
+) -> Result<String, String> {
+    let prefixed = format!("[spec:{}] {}", spec_id, message);
+
+    let output = std::process::Command::new("git")
+        .args(["commit", "-m", &prefixed])
+        .current_dir(&project_dir)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
+
+/// Get branch info for a spec: branch name, whether it exists, and commit count.
+#[tauri::command]
+pub async fn get_spec_branch_info(
+    spec_id: String,
+    project_dir: String,
+) -> Result<serde_json::Value, String> {
+    let branch_name = format!("spec/{}", spec_id);
+
+    // Check if the branch exists
+    let exists = std::process::Command::new("git")
+        .args(["rev-parse", "--verify", &branch_name])
+        .current_dir(&project_dir)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    // Count commits on branch relative to main (if the branch exists)
+    let commit_count = if exists {
+        std::process::Command::new("git")
+            .args(["rev-list", "--count", &format!("main..{}", branch_name)])
+            .current_dir(&project_dir)
+            .output()
+            .ok()
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u32>()
+                    .ok()
+            })
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    Ok(serde_json::json!({
+        "branch_name": branch_name,
+        "exists": exists,
+        "commit_count": commit_count,
+    }))
+}

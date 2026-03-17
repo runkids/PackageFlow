@@ -1,10 +1,10 @@
 [package]
-name = "PackageFlow"
-version = "0.3.5"
-description = "The AI-Driven package.json Project Manager"
+name = "SpecForge"
+version = "0.4.0"
+description = "The spec-driven development platform"
 authors = ["runkids <https://github.com/runkids/PackageFlow>"]
 edition = "2021"
-default-run = "PackageFlow"
+default-run = "SpecForge"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -27,7 +27,7 @@ type_complexity = "allow"
 
 [lib]
 # Tauri app library - contains commands and Tauri-specific code
-name = "packageflow_app"
+name = "specforge_app"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -35,7 +35,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Shared library (models, repositories, services, utils)
-packageflow-lib = { path = "../crates/packageflow-lib" }
+specforge-lib = { path = "../crates/specforge-lib" }
 
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
@@ -56,6 +56,7 @@ whoami = "1"
 node-semver = "2"
 regex = "1"
 dirs = "5"
+toml = "0.8"
 once_cell = "1"
 trash = "5"
 shellexpand = "3"
@@ -72,6 +73,7 @@ sha1 = "0.10"
 notify = "7"
 notify-debouncer-mini = "0.5"
 dotenvy = "0.15.7"
+tera = "1"
 
 # Secure token storage
 aes-gcm = "0.10"
@@ -101,6 +103,7 @@ rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 # Time Machine - Snapshot compression and security analysis
 zstd = "0.13"
 serde_yaml = "0.9"
+evalexpr = "13"
 strsim = "0.11"
 rayon = "1.10"
 

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_notification::NotificationExt;
 
 /// Event payload sent to frontend when package.json changes
@@ -291,7 +291,7 @@ impl DatabaseWatcher {
                         // Check if any event is for database files
                         let has_db_change = events.iter().any(|e| {
                             let path_str = e.path.to_string_lossy();
-                            path_str.contains("packageflow.db")
+                            path_str.contains("specforge.db")
                         });
 
                         if has_db_change {
@@ -353,7 +353,7 @@ impl DatabaseWatcher {
                                 if let Err(e) = app_handle
                                     .notification()
                                     .builder()
-                                    .title("PackageFlow")
+                                    .title("SpecForge")
                                     .body(&notification_body)
                                     .show()
                                 {
@@ -410,419 +410,436 @@ impl DatabaseWatcher {
     }
 }
 
-// =============================================================================
-// Lockfile Watcher (Time Machine Feature 025)
-// =============================================================================
+// ---------------------------------------------------------------------------
+// SpecForge Directory Watcher
+// Monitors .specforge/specs/ and .specforge/schemas/ for external file changes
+// and auto-syncs the SQLite index.
+// ---------------------------------------------------------------------------
 
-use crate::models::snapshot::{LockfileState, LockfileType};
-use crate::repositories::SnapshotRepository;
-use crate::services::snapshot::{SnapshotCaptureService, SnapshotStorage};
-use crate::utils::database::Database;
-use sha2::{Digest, Sha256};
-use std::fs;
+use crate::local_models::schema::SchemaDefinition;
+use crate::local_models::spec::Spec;
+use crate::repositories::{schema_repo, spec_repo};
+use std::time::Instant;
+use utils::database::Database;
 
-/// Event payload sent to frontend when a lockfile changes
+use specforge_lib::utils;
+
+/// Event payload sent to frontend when a spec file changes externally
 #[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LockfileChangedPayload {
-    /// The project path
-    pub project_path: String,
-    /// The lockfile type that changed
-    pub lockfile_type: String,
-    /// The new lockfile hash
-    pub new_hash: String,
+pub struct SpecChangedPayload {
+    pub id: String,
 }
 
-/// Event payload sent to frontend when a snapshot is auto-captured
+/// Event payload sent to frontend when a schema file changes externally
 #[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SnapshotAutoCapturedPayload {
-    /// The project path
-    pub project_path: String,
-    /// The new snapshot ID
-    pub snapshot_id: String,
-    /// The trigger source
-    pub trigger_source: String,
+pub struct SchemaChangedPayload {
+    pub name: String,
 }
 
-/// Lockfile watcher configuration
-#[derive(Clone)]
-pub struct LockfileWatcherConfig {
-    /// Debounce duration in milliseconds (default: 2000)
-    pub debounce_ms: u64,
-    /// Whether to auto-capture snapshots on change
-    pub auto_capture: bool,
+/// Watches `.specforge/specs/` and `.specforge/schemas/` directories for
+/// changes made by external tools (AI agents, VS Code, etc.) and auto-syncs
+/// the SQLite index.
+pub struct SpecforgeWatcher {
+    /// The underlying debounced watcher (None until started)
+    watcher: Arc<Mutex<Option<Debouncer<RecommendedWatcher>>>>,
+    /// Tracks timestamps of app-initiated writes to skip re-processing.
+    /// Key = absolute file path, Value = instant of last app write.
+    app_writes: Arc<Mutex<HashMap<PathBuf, Instant>>>,
+    /// Autopilot state for rate-limiting and failure tracking.
+    autopilot_state: Arc<super::autopilot::AutopilotState>,
 }
 
-impl Default for LockfileWatcherConfig {
-    fn default() -> Self {
-        Self {
-            debounce_ms: 2000,
-            auto_capture: true,
-        }
-    }
-}
-
-/// Manages lockfile watchers for Time Machine
-/// Monitors lockfile changes and triggers snapshot capture
-pub struct LockfileWatcherManager {
-    /// Map of project path -> watcher
-    watchers: Arc<Mutex<HashMap<String, Debouncer<RecommendedWatcher>>>>,
-    /// Configuration
-    config: Arc<Mutex<LockfileWatcherConfig>>,
-}
-
-impl Default for LockfileWatcherManager {
+impl Default for SpecforgeWatcher {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl LockfileWatcherManager {
+impl SpecforgeWatcher {
     pub fn new() -> Self {
         Self {
-            watchers: Arc::new(Mutex::new(HashMap::new())),
-            config: Arc::new(Mutex::new(LockfileWatcherConfig::default())),
+            watcher: Arc::new(Mutex::new(None)),
+            app_writes: Arc::new(Mutex::new(HashMap::new())),
+            autopilot_state: Arc::new(super::autopilot::AutopilotState::new()),
         }
     }
 
-    /// Set the watcher configuration
-    pub fn set_config(&self, config: LockfileWatcherConfig) -> Result<(), String> {
-        let mut guard = self.config.lock().map_err(|e| e.to_string())?;
-        *guard = config;
-        Ok(())
-    }
-
-    /// Get the current configuration
-    pub fn get_config(&self) -> Result<LockfileWatcherConfig, String> {
-        let guard = self.config.lock().map_err(|e| e.to_string())?;
-        Ok(guard.clone())
-    }
-
-    /// Detect which lockfile exists in a project
-    fn detect_lockfile(project_path: &Path) -> Option<(LockfileType, PathBuf)> {
-        let lockfile_checks = [
-            (LockfileType::Pnpm, "pnpm-lock.yaml"),
-            (LockfileType::Npm, "package-lock.json"),
-            (LockfileType::Yarn, "yarn.lock"),
-            (LockfileType::Bun, "bun.lockb"),
-        ];
-
-        for (lockfile_type, filename) in lockfile_checks {
-            let path = project_path.join(filename);
-            if path.exists() {
-                return Some((lockfile_type, path));
-            }
+    /// Record that the app itself just wrote this file.
+    /// The watcher will ignore events for this path within 1 second.
+    pub fn record_app_write(&self, path: &Path) {
+        if let Ok(mut writes) = self.app_writes.lock() {
+            writes.insert(path.to_path_buf(), Instant::now());
         }
-        None
     }
 
-    /// Compute SHA-256 hash of a file
-    fn compute_file_hash(path: &Path) -> Result<String, String> {
-        let content = fs::read(path)
-            .map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
-        let mut hasher = Sha256::new();
-        hasher.update(&content);
-        Ok(format!("{:x}", hasher.finalize()))
-    }
-
-    /// Start watching a project's lockfile
-    pub fn watch_project<R: Runtime>(
+    /// Start watching a project's `.specforge/specs/` and `.specforge/schemas/` directories.
+    ///
+    /// If the directories don't exist yet, this returns Ok(()) without error —
+    /// the watcher can be started later (e.g., after `init_specforge_project`).
+    pub fn start_watching<R: Runtime>(
         &self,
         app_handle: &AppHandle<R>,
-        db: Database,
-        project_path: &str,
+        project_dir: &Path,
+        db: Arc<Database>,
     ) -> Result<(), String> {
-        let mut watchers = self.watchers.lock().map_err(|e| e.to_string())?;
+        let mut watcher_guard = self.watcher.lock().map_err(|e| e.to_string())?;
 
-        // Already watching this path
-        if watchers.contains_key(project_path) {
-            log::info!("[LockfileWatcher] Already watching: {}", project_path);
+        // Already watching
+        if watcher_guard.is_some() {
+            log::info!("[SpecforgeWatcher] Already watching");
             return Ok(());
         }
 
-        let project_path_buf = PathBuf::from(project_path);
+        let specs_dir = project_dir.join(".specforge").join("specs");
+        let schemas_dir = project_dir.join(".specforge").join("schemas");
 
-        // Detect lockfile
-        let (lockfile_type, lockfile_path) = Self::detect_lockfile(&project_path_buf)
-            .ok_or_else(|| format!("No lockfile found in project: {}", project_path))?;
-
-        log::info!(
-            "[LockfileWatcher] Detected {} lockfile at: {}",
-            lockfile_type.as_str(),
-            lockfile_path.display()
-        );
-
-        // Get initial hash and store state
-        let initial_hash = Self::compute_file_hash(&lockfile_path)?;
-        let repo = SnapshotRepository::new(db.clone());
-
-        // Initialize or update lockfile state
-        let state = LockfileState {
-            project_path: project_path.to_string(),
-            lockfile_type: Some(lockfile_type.clone()),
-            lockfile_hash: initial_hash.clone(),
-            last_snapshot_id: None,
-            updated_at: chrono::Utc::now().to_rfc3339(),
-        };
-        repo.update_lockfile_state(&state)?;
-
-        // Get debounce duration from config
-        let config = self.config.lock().map_err(|e| e.to_string())?;
-        let debounce_ms = config.debounce_ms;
-        let auto_capture = config.auto_capture;
-        drop(config);
+        // If neither directory exists, skip silently — they'll be created by init_specforge_project
+        if !specs_dir.exists() && !schemas_dir.exists() {
+            log::info!(
+                "[SpecforgeWatcher] .specforge/ directories not found at {}, skipping watch",
+                project_dir.display()
+            );
+            return Ok(());
+        }
 
         let app_handle = app_handle.clone();
-        let project_path_owned = project_path.to_string();
-        let lockfile_path_clone = lockfile_path.clone();
-        let lockfile_type_clone = lockfile_type.clone();
-        let db_clone = db.clone();
-        let last_hash = Arc::new(Mutex::new(initial_hash));
+        let app_writes = self.app_writes.clone();
+        let autopilot_state = self.autopilot_state.clone();
+        let project_dir_owned = project_dir.to_path_buf();
+        let specs_dir_clone = specs_dir.clone();
+        let schemas_dir_clone = schemas_dir.clone();
 
-        // Create debounced watcher
+        // Use 3-second debounce for specforge file changes
         let mut debouncer = new_debouncer(
-            Duration::from_millis(debounce_ms),
+            Duration::from_secs(3),
             move |res: Result<Vec<DebouncedEvent>, notify::Error>| {
                 match res {
                     Ok(events) => {
-                        // Check if any event is for our lockfile
-                        let lockfile_changed = events.iter().any(|e| {
-                            e.path == lockfile_path_clone
-                        });
-
-                        if lockfile_changed {
-                            log::info!(
-                                "[LockfileWatcher] Lockfile change detected: {}",
-                                lockfile_path_clone.display()
-                            );
-
-                            // Compute new hash
-                            match Self::compute_file_hash(&lockfile_path_clone) {
-                                Ok(new_hash) => {
-                                    // Check if hash actually changed
-                                    let mut last_hash_guard = last_hash.lock().unwrap();
-                                    if new_hash == *last_hash_guard {
-                                        log::info!(
-                                            "[LockfileWatcher] Hash unchanged, ignoring: {}",
-                                            project_path_owned
-                                        );
-                                        return;
-                                    }
-
-                                    log::info!(
-                                        "[LockfileWatcher] Hash changed: {} -> {}",
-                                        &last_hash_guard[..8],
-                                        &new_hash[..8]
-                                    );
-                                    *last_hash_guard = new_hash.clone();
-                                    drop(last_hash_guard);
-
-                                    // Emit lockfile-changed event
-                                    let payload = LockfileChangedPayload {
-                                        project_path: project_path_owned.clone(),
-                                        lockfile_type: lockfile_type_clone.as_str().to_string(),
-                                        new_hash: new_hash.clone(),
-                                    };
-
-                                    if let Err(e) = app_handle.emit("lockfile-changed", payload) {
-                                        log::error!(
-                                            "[LockfileWatcher] Failed to emit lockfile-changed event: {}",
-                                            e
-                                        );
-                                    }
-
-                                    // Auto-capture snapshot if enabled
-                                    if auto_capture {
-                                        let storage_base = app_handle
-                                            .path()
-                                            .app_data_dir()
-                                            .unwrap_or_else(|_| PathBuf::from("."));
-                                        let storage = SnapshotStorage::new(storage_base.join("snapshots"));
-                                        let capture_service = SnapshotCaptureService::new(storage, db_clone.clone());
-
-                                        match capture_service.capture_lockfile_change_snapshot(&project_path_owned) {
-                                            Ok(snapshot) => {
-                                                log::info!(
-                                                    "[LockfileWatcher] Auto-captured snapshot: {}",
-                                                    snapshot.id
-                                                );
-
-                                                // Update lockfile state with new snapshot
-                                                let repo = SnapshotRepository::new(db_clone.clone());
-                                                let state = LockfileState {
-                                                    project_path: project_path_owned.clone(),
-                                                    lockfile_type: Some(lockfile_type_clone.clone()),
-                                                    lockfile_hash: new_hash,
-                                                    last_snapshot_id: Some(snapshot.id.clone()),
-                                                    updated_at: chrono::Utc::now().to_rfc3339(),
-                                                };
-                                                if let Err(e) = repo.update_lockfile_state(&state) {
-                                                    log::error!(
-                                                        "[LockfileWatcher] Failed to update lockfile state: {}",
-                                                        e
-                                                    );
-                                                }
-
-                                                // Emit snapshot-auto-captured event
-                                                let snapshot_payload = SnapshotAutoCapturedPayload {
-                                                    project_path: project_path_owned.clone(),
-                                                    snapshot_id: snapshot.id,
-                                                    trigger_source: "lockfile_change".to_string(),
-                                                };
-
-                                                if let Err(e) = app_handle.emit("snapshot:auto-captured", snapshot_payload) {
-                                                    log::error!(
-                                                        "[LockfileWatcher] Failed to emit snapshot event: {}",
-                                                        e
-                                                    );
-                                                }
-                                            }
-                                            Err(e) => {
-                                                log::error!(
-                                                    "[LockfileWatcher] Failed to capture snapshot: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("[LockfileWatcher] Failed to compute hash: {}", e);
-                                }
+                        for event in &events {
+                            if let DebouncedEventKind::Any = event.kind {
+                                Self::handle_event(
+                                    &event.path,
+                                    &specs_dir_clone,
+                                    &schemas_dir_clone,
+                                    &project_dir_owned,
+                                    &db,
+                                    &app_handle,
+                                    &app_writes,
+                                    &autopilot_state,
+                                );
                             }
                         }
                     }
                     Err(e) => {
-                        log::error!("[LockfileWatcher] Watch error: {:?}", e);
+                        log::error!("[SpecforgeWatcher] Watch error: {:?}", e);
                     }
                 }
             },
         )
-        .map_err(|e| format!("Failed to create lockfile watcher: {}", e))?;
+        .map_err(|e| format!("Failed to create specforge watcher: {}", e))?;
 
-        // Watch the lockfile
-        debouncer
-            .watcher()
-            .watch(&lockfile_path, RecursiveMode::NonRecursive)
-            .map_err(|e| format!("Failed to watch lockfile: {}", e))?;
-
-        log::info!(
-            "[LockfileWatcher] Started watching: {} ({})",
-            project_path,
-            lockfile_type.as_str()
-        );
-        watchers.insert(project_path.to_string(), debouncer);
-
-        Ok(())
-    }
-
-    /// Stop watching a project's lockfile
-    pub fn unwatch_project(&self, project_path: &str) -> Result<(), String> {
-        let mut watchers = self.watchers.lock().map_err(|e| e.to_string())?;
-
-        if watchers.remove(project_path).is_some() {
-            log::info!("[LockfileWatcher] Stopped watching: {}", project_path);
-        }
-
-        Ok(())
-    }
-
-    /// Stop watching all projects
-    pub fn unwatch_all(&self) -> Result<(), String> {
-        let mut watchers = self.watchers.lock().map_err(|e| e.to_string())?;
-        let count = watchers.len();
-        watchers.clear();
-        log::info!("[LockfileWatcher] Stopped watching {} projects", count);
-        Ok(())
-    }
-
-    /// Get list of watched project paths
-    pub fn get_watched_paths(&self) -> Result<Vec<String>, String> {
-        let watchers = self.watchers.lock().map_err(|e| e.to_string())?;
-        Ok(watchers.keys().cloned().collect())
-    }
-
-    /// Check if a project is being watched
-    pub fn is_watching(&self, project_path: &str) -> Result<bool, String> {
-        let watchers = self.watchers.lock().map_err(|e| e.to_string())?;
-        Ok(watchers.contains_key(project_path))
-    }
-
-    /// Check if lockfile has changed since last snapshot
-    pub fn has_lockfile_changed(&self, db: &Database, project_path: &str) -> Result<bool, String> {
-        let project_path_buf = PathBuf::from(project_path);
-
-        // Detect lockfile
-        let (_, lockfile_path) = Self::detect_lockfile(&project_path_buf)
-            .ok_or_else(|| format!("No lockfile found in project: {}", project_path))?;
-
-        // Compute current hash
-        let current_hash = Self::compute_file_hash(&lockfile_path)?;
-
-        // Get stored state
-        let repo = SnapshotRepository::new(db.clone());
-        match repo.get_lockfile_state(project_path)? {
-            Some(state) => Ok(current_hash != state.lockfile_hash),
-            None => Ok(true), // No previous state, consider it changed
-        }
-    }
-
-    /// Manually trigger a snapshot check for a project
-    pub fn check_and_trigger_snapshot<R: Runtime>(
-        &self,
-        app_handle: &AppHandle<R>,
-        db: &Database,
-        project_path: &str,
-    ) -> Result<Option<String>, String> {
-        // Check if lockfile changed
-        if !self.has_lockfile_changed(db, project_path)? {
+        // Watch specs directory if it exists
+        if specs_dir.exists() {
+            debouncer
+                .watcher()
+                .watch(&specs_dir, RecursiveMode::NonRecursive)
+                .map_err(|e| format!("Failed to watch specs dir: {}", e))?;
             log::info!(
-                "[LockfileWatcher] No lockfile change for: {}",
-                project_path
+                "[SpecforgeWatcher] Watching specs: {}",
+                specs_dir.display()
             );
-            return Ok(None);
         }
 
-        // Capture snapshot
-        let storage_base = app_handle
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| PathBuf::from("."));
-        let storage = SnapshotStorage::new(storage_base.join("snapshots"));
-        let capture_service = SnapshotCaptureService::new(storage, db.clone());
-
-        let snapshot = capture_service.capture_lockfile_change_snapshot(project_path)?;
-
-        // Update lockfile state
-        let project_path_buf = PathBuf::from(project_path);
-        if let Some((lockfile_type, lockfile_path)) = Self::detect_lockfile(&project_path_buf) {
-            let current_hash = Self::compute_file_hash(&lockfile_path)?;
-            let repo = SnapshotRepository::new(db.clone());
-            let state = LockfileState {
-                project_path: project_path.to_string(),
-                lockfile_type: Some(lockfile_type),
-                lockfile_hash: current_hash,
-                last_snapshot_id: Some(snapshot.id.clone()),
-                updated_at: chrono::Utc::now().to_rfc3339(),
-            };
-            repo.update_lockfile_state(&state)?;
+        // Watch schemas directory if it exists
+        if schemas_dir.exists() {
+            debouncer
+                .watcher()
+                .watch(&schemas_dir, RecursiveMode::NonRecursive)
+                .map_err(|e| format!("Failed to watch schemas dir: {}", e))?;
+            log::info!(
+                "[SpecforgeWatcher] Watching schemas: {}",
+                schemas_dir.display()
+            );
         }
 
-        // Emit event
-        let payload = SnapshotAutoCapturedPayload {
-            project_path: project_path.to_string(),
-            snapshot_id: snapshot.id.clone(),
-            trigger_source: "lockfile_change".to_string(),
+        *watcher_guard = Some(debouncer);
+        Ok(())
+    }
+
+    /// Stop watching specforge directories.
+    pub fn stop_watching(&self) -> Result<(), String> {
+        let mut watcher_guard = self.watcher.lock().map_err(|e| e.to_string())?;
+        if watcher_guard.take().is_some() {
+            log::info!("[SpecforgeWatcher] Stopped watching");
+        }
+        Ok(())
+    }
+
+    /// Check if currently watching.
+    pub fn is_watching(&self) -> bool {
+        self.watcher
+            .lock()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Handle a single debounced file event.
+    fn handle_event<R: Runtime>(
+        path: &Path,
+        specs_dir: &Path,
+        schemas_dir: &Path,
+        project_dir: &Path,
+        db: &Arc<Database>,
+        app_handle: &AppHandle<R>,
+        app_writes: &Arc<Mutex<HashMap<PathBuf, Instant>>>,
+        autopilot_state: &Arc<super::autopilot::AutopilotState>,
+    ) {
+        // Check if this event was caused by the app itself (skip if < 1 second ago)
+        if let Ok(mut writes) = app_writes.lock() {
+            if let Some(write_time) = writes.get(path) {
+                if write_time.elapsed() < Duration::from_secs(1) {
+                    log::debug!(
+                        "[SpecforgeWatcher] Skipping app-initiated change: {}",
+                        path.display()
+                    );
+                    return;
+                }
+                // Clean up stale entry
+                writes.remove(path);
+            }
+        }
+
+        let file_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name.to_string(),
+            None => return,
         };
 
-        if let Err(e) = app_handle.emit("snapshot:auto-captured", payload) {
+        // Determine if this is a spec or schema event
+        if path.starts_with(specs_dir) && file_name.ends_with(".md") {
+            Self::handle_spec_event(path, &file_name, project_dir, db, app_handle, autopilot_state);
+        } else if path.starts_with(schemas_dir) && file_name.ends_with(".schema.yaml") {
+            Self::handle_schema_event(path, &file_name, project_dir, db, app_handle);
+        }
+    }
+
+    /// Handle a spec file change or deletion.
+    fn handle_spec_event<R: Runtime>(
+        path: &Path,
+        file_name: &str,
+        project_dir: &Path,
+        db: &Arc<Database>,
+        app_handle: &AppHandle<R>,
+        autopilot_state: &Arc<super::autopilot::AutopilotState>,
+    ) {
+        // Derive spec ID from filename: "{id}.md" -> "{id}"
+        let spec_id = file_name.trim_end_matches(".md");
+
+        if path.exists() {
+            // File created or modified — parse and upsert
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!(
+                        "[SpecforgeWatcher] Failed to read spec file {}: {}",
+                        path.display(),
+                        e
+                    );
+                    return;
+                }
+            };
+
+            let spec = match Spec::from_markdown(&content) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!(
+                        "[SpecforgeWatcher] Failed to parse spec {}: {}",
+                        path.display(),
+                        e
+                    );
+                    return;
+                }
+            };
+
+            // Compute relative file path
+            let rel_path = path
+                .strip_prefix(project_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string();
+
+            let row = spec_to_row_from_spec(&spec, &rel_path);
+
+            if let Err(e) = db.with_connection(|conn| spec_repo::upsert_spec(conn, &row)) {
+                log::error!("[SpecforgeWatcher] Failed to upsert spec {}: {}", spec.id, e);
+                return;
+            }
+
+            log::info!("[SpecforgeWatcher] Synced spec: {}", spec.id);
+
+            // Check autopilot: if the spec has a workflow with autopilot enabled,
+            // evaluate gates and potentially trigger an auto-advance event.
+            if spec.workflow.is_some() && spec.workflow_phase.is_some() {
+                let ap_state = autopilot_state.clone();
+                let _ = db.with_connection(|conn| {
+                    // Load workflow definition
+                    let workflow_name = spec.workflow.as_deref().unwrap_or("default");
+                    let workflow_path = project_dir
+                        .join(".specforge")
+                        .join("workflows")
+                        .join(format!("{workflow_name}.workflow.yaml"));
+
+                    let workflow = if workflow_path.exists() {
+                        match std::fs::read_to_string(&workflow_path) {
+                            Ok(content) => {
+                                super::workflow_engine::WorkflowEngine::load_workflow(&content).ok()
+                            }
+                            Err(_) => None,
+                        }
+                    } else {
+                        Some(super::workflow_engine::WorkflowEngine::get_default_workflow())
+                    };
+
+                    if let Some(wf) = workflow {
+                        super::autopilot::check_autopilot(
+                            &spec,
+                            &wf,
+                            conn,
+                            project_dir,
+                            app_handle,
+                            &ap_state,
+                        );
+                    }
+                    Ok::<(), String>(())
+                });
+            }
+
+            let payload = SpecChangedPayload { id: spec.id };
+            if let Err(e) = app_handle.emit("specforge://spec-changed", payload) {
+                log::error!("[SpecforgeWatcher] Failed to emit spec-changed event: {}", e);
+            }
+        } else {
+            // File deleted — remove from SQLite index
+            if let Err(e) = db.with_connection(|conn| spec_repo::delete_spec(conn, spec_id)) {
+                log::error!(
+                    "[SpecforgeWatcher] Failed to delete spec {}: {}",
+                    spec_id,
+                    e
+                );
+                return;
+            }
+
+            log::info!("[SpecforgeWatcher] Deleted spec from index: {}", spec_id);
+
+            let payload = SpecChangedPayload {
+                id: spec_id.to_string(),
+            };
+            if let Err(e) = app_handle.emit("specforge://spec-deleted", payload) {
+                log::error!(
+                    "[SpecforgeWatcher] Failed to emit spec-deleted event: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Handle a schema file change.
+    fn handle_schema_event<R: Runtime>(
+        path: &Path,
+        file_name: &str,
+        project_dir: &Path,
+        db: &Arc<Database>,
+        app_handle: &AppHandle<R>,
+    ) {
+        if !path.exists() {
+            // Schema deletion is not tracked in SQLite for now
+            log::info!(
+                "[SpecforgeWatcher] Schema file deleted (not tracked): {}",
+                file_name
+            );
+            return;
+        }
+
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!(
+                    "[SpecforgeWatcher] Failed to read schema file {}: {}",
+                    path.display(),
+                    e
+                );
+                return;
+            }
+        };
+
+        let schema = match SchemaDefinition::from_yaml(&content) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!(
+                    "[SpecforgeWatcher] Failed to parse schema {}: {}",
+                    path.display(),
+                    e
+                );
+                return;
+            }
+        };
+
+        let fields_json =
+            serde_json::to_string(&schema.fields).unwrap_or_else(|_| "{}".to_string());
+        let rel_path = path
+            .strip_prefix(project_dir)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string();
+
+        if let Err(e) = db.with_connection(|conn| {
+            schema_repo::upsert_schema(
+                conn,
+                &schema.name,
+                schema.display_name.as_deref(),
+                &rel_path,
+                &fields_json,
+            )
+        }) {
             log::error!(
-                "[LockfileWatcher] Failed to emit snapshot event: {}",
+                "[SpecforgeWatcher] Failed to upsert schema {}: {}",
+                schema.name,
+                e
+            );
+            return;
+        }
+
+        log::info!("[SpecforgeWatcher] Synced schema: {}", schema.name);
+
+        let payload = SchemaChangedPayload {
+            name: schema.name,
+        };
+        if let Err(e) = app_handle.emit("specforge://schema-changed", payload) {
+            log::error!(
+                "[SpecforgeWatcher] Failed to emit schema-changed event: {}",
                 e
             );
         }
+    }
+}
 
-        Ok(Some(snapshot.id))
+/// Convert a Spec into a SpecRow for SQLite (used by the watcher).
+fn spec_to_row_from_spec(spec: &Spec, file_path: &str) -> spec_repo::SpecRow {
+    let fields_json = if spec.fields.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&spec.fields).ok()
+    };
+
+    spec_repo::SpecRow {
+        id: spec.id.clone(),
+        schema_id: spec.schema.clone(),
+        title: spec.title.clone(),
+        status: spec.status.clone(),
+        workflow_id: spec.workflow.clone(),
+        workflow_phase: spec.workflow_phase.clone(),
+        file_path: file_path.to_string(),
+        fields_json,
+        created_at: spec.created_at.clone(),
+        updated_at: spec.updated_at.clone(),
     }
 }
