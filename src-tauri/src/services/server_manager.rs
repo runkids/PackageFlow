@@ -27,10 +27,15 @@ impl ServerManager {
 
     /// Start the skillshare UI server. Stops any existing process first.
     /// Tries ports from 19420 to 19430 until one works.
+    ///
+    /// The server is launched via `current_dir()`:
+    /// - Project mode: `cd {project_dir} && skillshare ui -p --port N --no-open`
+    /// - Global mode:  `cd ~ && skillshare ui --port N --no-open`
     pub async fn start(
         &self,
         cli_path: &str,
         project_dir: Option<&str>,
+        is_project_mode: bool,
     ) -> Result<u16, String> {
         self.stop().await?;
 
@@ -49,10 +54,22 @@ impl ServerManager {
         }
 
         let mut cmd = Command::new(cli_path);
-        cmd.args(["ui", "--port", &chosen_port.to_string(), "--no-open"]);
+
+        if is_project_mode {
+            cmd.args(["ui", "-p", "--port", &chosen_port.to_string(), "--no-open"]);
+        } else {
+            cmd.args(["ui", "--port", &chosen_port.to_string(), "--no-open"]);
+        }
 
         if let Some(dir) = project_dir {
-            cmd.args(["--dir", dir]);
+            let resolved = if dir.starts_with('~') {
+                let home = dirs::home_dir()
+                    .ok_or_else(|| "Unable to resolve home directory".to_string())?;
+                dir.replacen('~', &home.to_string_lossy(), 1)
+            } else {
+                dir.to_string()
+            };
+            cmd.current_dir(&resolved);
         }
 
         // Prevent the child from inheriting stdin and suppress stdout/stderr
@@ -95,9 +112,10 @@ impl ServerManager {
         &self,
         cli_path: &str,
         project_dir: Option<&str>,
+        is_project_mode: bool,
     ) -> Result<u16, String> {
         self.stop().await?;
-        self.start(cli_path, project_dir).await
+        self.start(cli_path, project_dir, is_project_mode).await
     }
 
     /// Check if the server is currently responding on its port.
