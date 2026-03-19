@@ -53,6 +53,17 @@ pub fn remove_project(store: &mut ProjectStore, id: &str) {
     }
 }
 
+/// Returns (project_dir, is_project_mode) for the active project.
+/// Used by server start/restart to determine CLI flags.
+pub fn active_project_mode(store: &ProjectStore) -> (Option<String>, bool) {
+    let active = store.active_project();
+    let dir = active.map(|p| p.path.clone());
+    let is_project = active
+        .map(|p| p.project_type == ProjectType::Project)
+        .unwrap_or(false);
+    (dir, is_project)
+}
+
 pub fn set_active(store: &mut ProjectStore, id: &str) -> Result<(), String> {
     if store.projects.iter().any(|p| p.id == id) {
         store.active_project_id = Some(id.to_string());

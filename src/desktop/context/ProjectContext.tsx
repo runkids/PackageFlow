@@ -53,7 +53,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       await refresh();
       return project;
     },
-    [refresh],
+    [refresh]
   );
 
   const switchProject = useCallback(
@@ -66,7 +66,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setSwitching(false);
       }
     },
-    [refresh],
+    [refresh]
   );
 
   const switchWithRestart = useCallback(
@@ -77,18 +77,18 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       try {
         await tauriBridge.stopServer();
         await tauriBridge.switchProject(id);
-        await refresh();
-        const cliPath = await tauriBridge.detectCli();
+        const [, cliPath] = await Promise.all([refresh(), tauriBridge.detectCli()]);
+        if (!cliPath) throw new Error('CLI not found');
+        // activeProject is updated by refresh(); read from store for the dir
         const active = await tauriBridge.getActiveProject();
-        const projectDir = active?.path;
-        const port = await tauriBridge.startServer(cliPath!, projectDir);
+        const port = await tauriBridge.startServer(cliPath, active?.path);
         return port;
       } finally {
         setSwitching(false);
         switchLock.current = false;
       }
     },
-    [refresh],
+    [refresh]
   );
 
   const removeProject = useCallback(
@@ -96,7 +96,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       await tauriBridge.removeProject(id);
       await refresh();
     },
-    [refresh],
+    [refresh]
   );
 
   useEffect(() => {

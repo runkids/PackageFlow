@@ -9,14 +9,15 @@ export default function ProjectDropdown() {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  // Close on click outside
+  // Close on click outside — only listen when dropdown is open
   useEffect(() => {
+    if (!open) return;
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [open]);
 
   const globalProjects = projects.filter((p) => p.projectType === 'global');
   const localProjects = projects.filter((p) => p.projectType === 'project');

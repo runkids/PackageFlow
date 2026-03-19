@@ -266,11 +266,7 @@ async fn auto_start_server(server: ServerManager) {
     };
 
     // Get active project path and determine mode
-    let active = store.active_project();
-    let project_dir = active.map(|p| p.path.clone());
-    let is_project_mode = active
-        .map(|p| p.project_type == models::project::ProjectType::Project)
-        .unwrap_or(false);
+    let (project_dir, is_project_mode) = services::project_store::active_project_mode(&store);
 
     // Start the server
     match server.start(&cli_path, project_dir.as_deref(), is_project_mode).await {

@@ -72,11 +72,7 @@ pub async fn upgrade_cli(server: State<'_, ServerManager>) -> Result<String, Str
     // Restart server if it was running
     if server.is_running().await {
         let store = crate::services::project_store::load();
-        let active = store.active_project();
-        let project_dir = active.map(|p| p.path.clone());
-        let is_project_mode = active
-            .map(|p| p.project_type == crate::models::project::ProjectType::Project)
-            .unwrap_or(false);
+        let (project_dir, is_project_mode) = crate::services::project_store::active_project_mode(&store);
         server.restart(&path, project_dir.as_deref(), is_project_mode).await?;
     }
 

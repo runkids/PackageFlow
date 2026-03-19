@@ -33,7 +33,7 @@ export default function CliWebView() {
         const healthy = await tauriBridge.healthCheck();
         if (healthy) {
           failCount.current = 0;
-          setServerDown(false);
+          if (serverDown) setServerDown(false);
         } else {
           failCount.current++;
           if (failCount.current >= HEALTH_FAIL_THRESHOLD) setServerDown(true);

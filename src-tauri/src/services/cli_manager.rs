@@ -85,17 +85,15 @@ pub async fn get_version(cli_path: &str) -> Result<String, String> {
     extract_version(&raw).ok_or_else(|| "Could not parse version from CLI output".to_string())
 }
 
-/// Strip ANSI escape codes and extract a semver version (e.g. "v0.17.6" or "0.17.6").
-fn extract_version(raw: &str) -> Option<String> {
-    // Strip ANSI escape sequences: ESC[ ... m, ESC[ ... ;...m, OSC sequences
+/// Strip ANSI escape codes (CSI and OSC sequences) from a string.
+fn strip_ansi(raw: &str) -> String {
     let mut clean = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == '\x1b' {
-            // Skip ESC sequences
             if let Some(&next) = chars.peek() {
                 if next == '[' {
-                    // CSI sequence: consume until letter
+                    // CSI sequence: consume until ASCII letter
                     chars.next();
                     while let Some(&c) = chars.peek() {
                         chars.next();
@@ -121,6 +119,12 @@ fn extract_version(raw: &str) -> Option<String> {
             clean.push(ch);
         }
     }
+    clean
+}
+
+/// Strip ANSI escape codes and extract a semver version (e.g. "v0.17.6" or "0.17.6").
+fn extract_version(raw: &str) -> Option<String> {
+    let clean = strip_ansi(raw);
 
     // Find version pattern: v?MAJOR.MINOR.PATCH
     for word in clean.split_whitespace() {
@@ -153,10 +157,11 @@ pub async fn exec(
         .map_err(|e| format!("Failed to exec CLI: {e}"))?;
 
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(strip_ansi(&raw))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr).trim().to_string());
+        let stdout = strip_ansi(&String::from_utf8_lossy(&output.stdout).trim().to_string());
         Err(format!(
             "CLI exited with {}: {}",
             output.status,
