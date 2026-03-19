@@ -48,6 +48,18 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
       setPhase('done');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // "already initialized" is not a real error — treat as success
+      if (msg.includes('already initialized')) {
+        if (choice === 'global') {
+          await tauriBridge.addProject('Global', '~', 'global');
+        } else if (choice === 'project' && selectedDir) {
+          const name = selectedDir.split('/').pop() || 'Project';
+          await tauriBridge.addProject(name, selectedDir, 'project');
+        }
+        setOutput('Already initialized — using existing configuration.');
+        setPhase('done');
+        return;
+      }
       setError(msg);
       setPhase('choose');
     }
@@ -72,14 +84,14 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
         >
           Set Up Your Project
         </h2>
-        <p className="text-pencil-light mt-2 max-w-md mx-auto">
+        <p className="text-pencil-light mt-2 mx-auto">
           Choose how you want to manage your dotfiles.
         </p>
       </div>
 
       {phase === 'choose' && (
         <>
-          <div className="space-y-3 max-w-md mx-auto">
+          <div className="space-y-3 mx-auto">
             <button
               type="button"
               className={optionClass('global')}
@@ -113,7 +125,7 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
           </div>
 
           {choice === 'project' && (
-            <div className="flex items-center gap-3 max-w-md mx-auto">
+            <div className="flex items-center gap-3 mx-auto">
               <Button variant="secondary" size="sm" onClick={handleSelectDir}>
                 Select Directory
               </Button>
@@ -150,7 +162,7 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
             <span className="font-medium">Project initialized</span>
           </div>
           {output && (
-            <pre className="text-xs text-pencil-light bg-muted/30 p-3 rounded-[var(--radius-sm)] max-w-md w-full overflow-x-auto max-h-32">
+            <pre className="text-xs text-pencil-light bg-muted/30 p-3 rounded-[var(--radius-sm)] w-full overflow-x-auto max-h-32">
               {output}
             </pre>
           )}

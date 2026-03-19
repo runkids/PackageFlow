@@ -62,15 +62,11 @@ export default function WelcomeStep({ onComplete }: WelcomeStepProps) {
 
   return (
     <div className="text-center space-y-6">
-      <h2
-        className="text-3xl font-bold text-pencil"
-        style={{ fontFamily: 'var(--font-heading)' }}
-      >
+      <h2 className="text-3xl font-bold text-pencil" style={{ fontFamily: 'var(--font-heading)' }}>
         Welcome to Skillshare
       </h2>
-      <p className="text-pencil-light max-w-md mx-auto">
-        Let&apos;s get you set up. First, we need the Skillshare CLI to manage
-        your dotfiles.
+      <p className="text-pencil-light mx-auto">
+        Let&apos;s get you set up. First, we need the Skillshare CLI to manage your dotfiles.
       </p>
 
       <div className="min-h-[120px] flex items-center justify-center">
@@ -85,9 +81,7 @@ export default function WelcomeStep({ onComplete }: WelcomeStepProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-center gap-2 text-success">
               <CheckCircle size={20} strokeWidth={2.5} />
-              <span className="font-medium">
-                CLI found{version ? ` (${version})` : ''}
-              </span>
+              <span className="font-medium">CLI found{version ? ` (${version})` : ''}</span>
             </div>
             <Button onClick={handleContinue}>Use Existing CLI</Button>
           </div>
@@ -95,15 +89,9 @@ export default function WelcomeStep({ onComplete }: WelcomeStepProps) {
 
         {phase === 'not-found' && (
           <div className="space-y-4">
-            <p className="text-pencil-light text-sm">
-              No Skillshare CLI detected on this system.
-            </p>
-            {error && (
-              <p className="text-danger text-sm">{error}</p>
-            )}
-            <Button onClick={handleDownload}>
-              Download Skillshare CLI
-            </Button>
+            <p className="text-pencil-light text-sm">No Skillshare CLI detected on this system.</p>
+            {error && <p className="text-danger text-sm">{error}</p>}
+            <Button onClick={handleDownload}>Download Skillshare CLI</Button>
           </div>
         )}
 
@@ -115,7 +103,10 @@ export default function WelcomeStep({ onComplete }: WelcomeStepProps) {
             </div>
             {downloading && (
               <div className="w-48 mx-auto h-1.5 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-pencil animate-shimmer rounded-full" style={{ width: '60%' }} />
+                <div
+                  className="h-full bg-pencil animate-shimmer rounded-full"
+                  style={{ width: '60%' }}
+                />
               </div>
             )}
           </div>
@@ -124,9 +115,7 @@ export default function WelcomeStep({ onComplete }: WelcomeStepProps) {
         {phase === 'done' && (
           <div className="flex items-center justify-center gap-2 text-success">
             <CheckCircle size={20} strokeWidth={2.5} />
-            <span className="font-medium">
-              CLI ready{version ? ` (${version})` : ''}
-            </span>
+            <span className="font-medium">CLI ready{version ? ` (${version})` : ''}</span>
           </div>
         )}
       </div>

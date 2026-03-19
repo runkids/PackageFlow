@@ -34,7 +34,9 @@ export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProp
     }
 
     runSync();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [cliPath]);
 
   const handleRetry = async () => {
@@ -53,13 +55,10 @@ export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProp
 
   return (
     <div className="space-y-6 text-center">
-      <h2
-        className="text-3xl font-bold text-pencil"
-        style={{ fontFamily: 'var(--font-heading)' }}
-      >
+      <h2 className="text-3xl font-bold text-pencil" style={{ fontFamily: 'var(--font-heading)' }}>
         First Sync
       </h2>
-      <p className="text-pencil-light max-w-md mx-auto">
+      <p className="text-pencil-light mx-auto">
         Syncing your dotfiles to build the initial snapshot.
       </p>
 
@@ -78,7 +77,7 @@ export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProp
               <span className="font-medium">Sync complete</span>
             </div>
             {output && (
-              <pre className="text-xs text-pencil-light bg-muted/30 p-3 rounded-[var(--radius-sm)] max-w-md w-full overflow-x-auto max-h-32 text-left">
+              <pre className="text-xs text-pencil-light bg-muted/30 p-3 rounded-[var(--radius-sm)] w-full overflow-x-auto max-h-32 text-left">
                 {output}
               </pre>
             )}
@@ -92,11 +91,11 @@ export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProp
               <AlertCircle size={20} strokeWidth={2.5} />
               <span className="font-medium">Sync failed</span>
             </div>
-            {error && (
-              <p className="text-sm text-danger max-w-md">{error}</p>
-            )}
+            {error && <p className="text-sm text-danger ">{error}</p>}
             <div className="flex gap-3">
-              <Button variant="secondary" onClick={handleRetry}>Retry</Button>
+              <Button variant="secondary" onClick={handleRetry}>
+                Retry
+              </Button>
               <Button onClick={onComplete}>Skip & Continue</Button>
             </div>
           </>
