@@ -23,6 +23,9 @@ import {
   ChevronUp,
   ChevronDown,
   Stethoscope,
+  Folder,
+  Globe,
+  Plus,
 } from 'lucide-react';
 import { radius } from '../design';
 import { useAppContext } from '../context/AppContext';
@@ -31,6 +34,8 @@ import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 import ShortcutHUD from './ShortcutHUD';
 import ThemePopover from './ThemePopover';
 import { useTour } from './tour';
+import ProjectSwitcher from '../desktop/components/ProjectSwitcher';
+import { useProjects } from '../desktop/hooks/useProjects';
 
 interface NavItem {
   to: string;
@@ -46,9 +51,7 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
-    items: [
-      { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    ],
+    items: [{ to: '/', icon: LayoutDashboard, label: 'Dashboard' }],
   },
   {
     label: 'MANAGE',
@@ -92,13 +95,20 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(() => {
-    try { return localStorage.getItem('ss-sidebar-tools') !== 'closed'; } catch { return true; }
+    try {
+      return localStorage.getItem('ss-sidebar-tools') !== 'closed';
+    } catch {
+      return true;
+    }
   });
   useEffect(() => {
-    try { localStorage.setItem('ss-sidebar-tools', toolsOpen ? 'open' : 'closed'); } catch {}
+    try {
+      localStorage.setItem('ss-sidebar-tools', toolsOpen ? 'open' : 'closed');
+    } catch {}
   }, [toolsOpen]);
   const { isProjectMode } = useAppContext();
   const { startTour } = useTour();
+  const { projects } = useProjects();
 
   const nav = useNavigate();
   const location = useLocation();
@@ -110,10 +120,12 @@ export default function Layout() {
     onSync: handleSync,
   });
 
-  const filteredGroups = navGroups.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => !(isProjectMode && item.hideInProject)),
-  })).filter((group) => group.items.length > 0);
+  const filteredGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !(isProjectMode && item.hideInProject)),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <div className="min-h-screen">
@@ -147,18 +159,9 @@ export default function Layout() {
       >
         {/* Logo */}
         <div className="p-5 pb-4 border-b border-muted">
-          <h1
-            className="text-2xl font-bold text-pencil tracking-wide"
-
-          >
-            skillshare
-          </h1>
+          <h1 className="text-2xl font-bold text-pencil tracking-wide">skillshare</h1>
           <div className="flex items-center gap-2 mt-0.5">
-            <p
-              className="text-sm text-pencil-light"
-                         >
-              Web Dashboard
-            </p>
+            <p className="text-sm text-pencil-light">Web Dashboard</p>
             {isProjectMode && (
               <span
                 className="text-xs px-1.5 py-0.5 bg-info-light text-blue border border-blue font-medium"
@@ -168,6 +171,11 @@ export default function Layout() {
               </span>
             )}
           </div>
+        </div>
+
+        {/* Project Switcher */}
+        <div className="py-2 border-b border-muted">
+          <ProjectSwitcher />
         </div>
 
         {/* Navigation */}
@@ -192,7 +200,6 @@ export default function Layout() {
                         : 'text-pencil-light hover:text-pencil hover:bg-muted/20'
                     }`
                   }
-
                 >
                   <Icon size={16} strokeWidth={2.5} />
                   {label}
@@ -201,6 +208,38 @@ export default function Layout() {
             </div>
           ))}
         </nav>
+
+        {/* All Projects section */}
+        {projects.length > 0 && (
+          <div className="border-t border-muted px-2 py-2">
+            <div className="px-3 pt-1 pb-1 text-xs font-medium tracking-wider text-muted-dark uppercase">
+              ALL PROJECTS
+            </div>
+            {projects.map((project) => (
+              <NavLink
+                key={project.id}
+                to="/projects"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-3 py-1.5 mb-0.5 text-sm text-pencil-light hover:text-pencil hover:bg-muted/20 transition-colors duration-100"
+              >
+                {project.projectType === 'global' ? (
+                  <Globe size={14} strokeWidth={2.5} />
+                ) : (
+                  <Folder size={14} strokeWidth={2.5} />
+                )}
+                <span className="truncate">{project.name}</span>
+              </NavLink>
+            ))}
+            <NavLink
+              to="/projects"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 px-3 py-1.5 text-sm text-pencil-light hover:text-pencil hover:bg-muted/20 transition-colors duration-100"
+            >
+              <Plus size={14} strokeWidth={2.5} />
+              <span>Add Project</span>
+            </NavLink>
+          </div>
+        )}
 
         {/* Bottom bar — collapsible tools */}
         <div className="mt-auto border-t border-muted">
@@ -211,9 +250,11 @@ export default function Layout() {
             aria-label={toolsOpen ? 'Collapse tools' : 'Expand tools'}
           >
             Tools
-            {toolsOpen
-              ? <ChevronDown size={14} strokeWidth={2.5} />
-              : <ChevronUp size={14} strokeWidth={2.5} />}
+            {toolsOpen ? (
+              <ChevronDown size={14} strokeWidth={2.5} />
+            ) : (
+              <ChevronUp size={14} strokeWidth={2.5} />
+            )}
           </button>
           {toolsOpen && (
             <div className="px-2 pb-2 flex flex-col gap-0.5">
