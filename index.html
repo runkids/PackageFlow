@@ -56,6 +56,10 @@
 
         // Set background color immediately to prevent white flash
         document.documentElement.style.backgroundColor = isDark ? DARK_BG : LIGHT_BG;
+
+        // Force clean mode — remove any leftover playful theme
+        document.documentElement.removeAttribute('data-theme');
+        try { localStorage.setItem('skillshare-style', 'clean'); } catch(e) {}
       })();
     </script>
   </head>
