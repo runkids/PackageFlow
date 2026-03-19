@@ -12,10 +12,11 @@ export default function CliWebView() {
   const { appInfo, refresh: refreshAppInfo } = useTauri();
   const { switching, activeProject } = useProjects();
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  const [iframeKey, setIframeKey] = useState(0); // force iframe reload on switch
   const [serverDown, setServerDown] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const failCount = useRef(0);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     if (appInfo?.serverPort) {
@@ -45,10 +46,14 @@ export default function CliWebView() {
     return () => clearInterval(pollRef.current);
   }, [iframeUrl]);
 
+  // Force iframe reload when switching completes
+  const prevSwitching = useRef(false);
   useEffect(() => {
-    if (!switching) {
+    if (prevSwitching.current && !switching) {
       refreshAppInfo();
+      setIframeKey((k) => k + 1);
     }
+    prevSwitching.current = switching;
   }, [switching, refreshAppInfo]);
 
   const handleRestart = useCallback(async () => {
@@ -73,9 +78,7 @@ export default function CliWebView() {
       <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-paper">
         <Spinner size="lg" />
         <span className="text-pencil-light text-sm">
-          {switching
-            ? `Switching to ${activeProject?.name || 'project'}...`
-            : 'Starting server...'}
+          {switching ? `Switching to ${activeProject?.name || 'project'}...` : 'Starting server...'}
         </span>
       </div>
     );
@@ -85,9 +88,7 @@ export default function CliWebView() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-paper">
         <p className="text-pencil font-medium">Server disconnected</p>
-        <p className="text-pencil-light text-sm">
-          The CLI server is no longer responding.
-        </p>
+        <p className="text-pencil-light text-sm">The CLI server is no longer responding.</p>
         <Button onClick={handleRestart} loading={restarting}>
           Restart Server
         </Button>
@@ -97,7 +98,7 @@ export default function CliWebView() {
 
   return (
     <iframe
-      key={iframeUrl}
+      key={`${iframeUrl}-${iframeKey}`}
       src={iframeUrl}
       className="flex-1 w-full border-0"
       allow="clipboard-write"
