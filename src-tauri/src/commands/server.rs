@@ -1,4 +1,5 @@
-use crate::services::server_manager::ServerManager;
+use crate::models::project::ProjectType;
+use crate::services::{project_store, server_manager::ServerManager};
 use tauri::State;
 
 #[tauri::command]
@@ -7,8 +8,13 @@ pub async fn start_server(
     cli_path: String,
     project_dir: Option<String>,
 ) -> Result<u16, String> {
+    let store = project_store::load();
+    let is_project_mode = store
+        .active_project()
+        .map(|p| p.project_type == ProjectType::Project)
+        .unwrap_or(false);
     server
-        .start(&cli_path, project_dir.as_deref())
+        .start(&cli_path, project_dir.as_deref(), is_project_mode)
         .await
 }
 
@@ -23,8 +29,13 @@ pub async fn restart_server(
     cli_path: String,
     project_dir: Option<String>,
 ) -> Result<u16, String> {
+    let store = project_store::load();
+    let is_project_mode = store
+        .active_project()
+        .map(|p| p.project_type == ProjectType::Project)
+        .unwrap_or(false);
     server
-        .restart(&cli_path, project_dir.as_deref())
+        .restart(&cli_path, project_dir.as_deref(), is_project_mode)
         .await
 }
 

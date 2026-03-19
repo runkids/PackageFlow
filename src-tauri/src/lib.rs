@@ -265,11 +265,15 @@ async fn auto_start_server(server: ServerManager) {
         }
     };
 
-    // Get active project path
-    let project_dir = store.active_project().map(|p| p.path.clone());
+    // Get active project path and determine mode
+    let active = store.active_project();
+    let project_dir = active.map(|p| p.path.clone());
+    let is_project_mode = active
+        .map(|p| p.project_type == models::project::ProjectType::Project)
+        .unwrap_or(false);
 
     // Start the server
-    match server.start(&cli_path, project_dir.as_deref()).await {
+    match server.start(&cli_path, project_dir.as_deref(), is_project_mode).await {
         Ok(port) => log::info!("Auto-started server on port {port}"),
         Err(e) => log::warn!("Auto-start server failed: {e}"),
     }

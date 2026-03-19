@@ -8,7 +8,20 @@ pub async fn detect_cli() -> Result<Option<String>, String> {
 
 #[tauri::command]
 pub async fn get_cli_version(cli_path: String) -> Result<String, String> {
-    cli_manager::get_version(&cli_path).await
+    let version = cli_manager::get_version(&cli_path).await?;
+
+    // Persist CLI info so onboarding.completed can become true
+    let mut meta = cli_manager::load_meta();
+    if meta.version.is_none() || meta.path.as_deref() != Some(&cli_path) {
+        meta.version = Some(version.clone());
+        meta.path = Some(cli_path);
+        if meta.source.is_none() {
+            meta.source = Some("system-path".to_string());
+        }
+        cli_manager::save_meta(&meta)?;
+    }
+
+    Ok(version)
 }
 
 #[tauri::command]
@@ -58,7 +71,13 @@ pub async fn upgrade_cli(server: State<'_, ServerManager>) -> Result<String, Str
 
     // Restart server if it was running
     if server.is_running().await {
-        server.restart(&path, None).await?;
+        let store = crate::services::project_store::load();
+        let active = store.active_project();
+        let project_dir = active.map(|p| p.path.clone());
+        let is_project_mode = active
+            .map(|p| p.project_type == crate::models::project::ProjectType::Project)
+            .unwrap_or(false);
+        server.restart(&path, project_dir.as_deref(), is_project_mode).await?;
     }
 
     Ok(path)
