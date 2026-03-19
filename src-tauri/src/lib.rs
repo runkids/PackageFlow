@@ -44,6 +44,13 @@ pub fn run() {
         ])
         .setup(|app| {
             setup_system_tray(app)?;
+
+            // Background CLI update check (non-blocking)
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                check_cli_update_background(&app_handle).await;
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -162,4 +169,64 @@ async fn handle_quick_sync(app: &tauri::AppHandle) {
             Err(e) => format!("Sync failed: {e}"),
         })
         .show();
+}
+
+// ── Background Update Check ─────────────────────────────────────────
+
+/// Check if a newer CLI version is available. Skips if checked within 24 hours.
+/// Sends a notification if an update is found.
+async fn check_cli_update_background(app: &tauri::AppHandle) {
+    use chrono::Utc;
+
+    let mut meta = services::cli_manager::load_meta();
+
+    // Skip if we checked within the last 24 hours
+    if let Some(ref last_check) = meta.last_update_check {
+        if let Ok(last) = chrono::DateTime::parse_from_rfc3339(last_check) {
+            let hours_since = Utc::now()
+                .signed_duration_since(last)
+                .num_hours();
+            if hours_since < 24 {
+                log::info!("CLI update check skipped — last checked {hours_since}h ago");
+                return;
+            }
+        }
+    }
+
+    let current_version = meta.version.clone().unwrap_or_default();
+    if current_version.is_empty() {
+        // No CLI installed yet, nothing to compare
+        return;
+    }
+
+    // Fetch latest release
+    let (latest_tag, _url) = match services::cli_manager::check_latest_release().await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("CLI update check failed: {e}");
+            return;
+        }
+    };
+
+    // Update last_update_check regardless of result
+    meta.last_update_check = Some(Utc::now().to_rfc3339());
+    if let Err(e) = services::cli_manager::save_meta(&meta) {
+        log::warn!("Failed to save CLI meta after update check: {e}");
+    }
+
+    // Compare versions (strip leading 'v')
+    let current = current_version.trim_start_matches('v');
+    let latest = latest_tag.trim_start_matches('v');
+
+    if current != latest {
+        log::info!("CLI update available: {current} -> {latest}");
+        let _ = app
+            .notification()
+            .builder()
+            .title("Skillshare Update Available")
+            .body(format!("Version {latest_tag} is available"))
+            .show();
+    } else {
+        log::info!("CLI is up to date ({current})");
+    }
 }
