@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Globe, Folder, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useProjects } from '../hooks/useProjects';
+import { useProjects } from '../context/ProjectContext';
 
 export default function ProjectDropdown() {
   const { projects, activeProject, switchWithRestart } = useProjects();
@@ -39,9 +39,7 @@ export default function ProjectDropdown() {
         ) : (
           <Folder size={14} strokeWidth={2.5} />
         )}
-        <span className="max-w-[160px] truncate">
-          {activeProject?.name || 'No Project'}
-        </span>
+        <span className="max-w-[160px] truncate">{activeProject?.name || 'No Project'}</span>
         <ChevronDown size={12} strokeWidth={2.5} />
       </button>
 
@@ -53,9 +51,7 @@ export default function ProjectDropdown() {
               type="button"
               onClick={() => handleSwitch(p.id)}
               className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted/30 transition-colors ${
-                p.id === activeProject?.id
-                  ? 'text-pencil font-medium'
-                  : 'text-pencil-light'
+                p.id === activeProject?.id ? 'text-pencil font-medium' : 'text-pencil-light'
               }`}
             >
               <Globe size={14} strokeWidth={2.5} className="shrink-0" />
@@ -71,9 +67,7 @@ export default function ProjectDropdown() {
               type="button"
               onClick={() => handleSwitch(p.id)}
               className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted/30 transition-colors ${
-                p.id === activeProject?.id
-                  ? 'text-pencil font-medium'
-                  : 'text-pencil-light'
+                p.id === activeProject?.id ? 'text-pencil font-medium' : 'text-pencil-light'
               }`}
             >
               <Folder size={14} strokeWidth={2.5} className="shrink-0" />

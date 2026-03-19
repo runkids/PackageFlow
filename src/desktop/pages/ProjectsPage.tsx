@@ -6,17 +6,11 @@ import { homeDir } from '@tauri-apps/api/path';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import Badge from '../../components/Badge';
-import { useProjects } from '../hooks/useProjects';
+import { useProjects } from '../context/ProjectContext';
 import { tauriBridge } from '../api/tauri-bridge';
 
 export default function ProjectsPage() {
-  const {
-    projects,
-    activeProject,
-    addProject,
-    removeProject,
-    switchWithRestart,
-  } = useProjects();
+  const { projects, activeProject, addProject, removeProject, switchWithRestart } = useProjects();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,51 +96,30 @@ export default function ProjectsPage() {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             {isGlobal ? (
-              <Globe
-                size={18}
-                strokeWidth={2.5}
-                className="shrink-0 mt-0.5 text-pencil-light"
-              />
+              <Globe size={18} strokeWidth={2.5} className="shrink-0 mt-0.5 text-pencil-light" />
             ) : (
-              <Folder
-                size={18}
-                strokeWidth={2.5}
-                className="shrink-0 mt-0.5 text-pencil-light"
-              />
+              <Folder size={18} strokeWidth={2.5} className="shrink-0 mt-0.5 text-pencil-light" />
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-pencil truncate">
-                  {project.name}
-                </h3>
+                <h3 className="font-semibold text-pencil truncate">{project.name}</h3>
                 {isActive && (
                   <Badge variant="success" size="sm">
                     Active
                   </Badge>
                 )}
-                <Badge size="sm">
-                  {isGlobal ? 'Global' : 'Project'}
-                </Badge>
+                <Badge size="sm">{isGlobal ? 'Global' : 'Project'}</Badge>
               </div>
-              <p
-                className="text-sm text-pencil-light truncate mt-0.5"
-                title={project.path}
-              >
+              <p className="text-sm text-pencil-light truncate mt-0.5" title={project.path}>
                 {project.path}
               </p>
-              <p className="text-xs text-muted-dark mt-1">
-                Added {formatDate(project.addedAt)}
-              </p>
+              <p className="text-xs text-muted-dark mt-1">Added {formatDate(project.addedAt)}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
             {!isActive && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleSwitch(project.id)}
-              >
+              <Button variant="ghost" size="sm" onClick={() => handleSwitch(project.id)}>
                 Switch
               </Button>
             )}
@@ -196,12 +169,7 @@ export default function ProjectsPage() {
               Global
             </h2>
             {globalProjects.length === 0 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleAddGlobal}
-                loading={adding}
-              >
+              <Button variant="secondary" size="sm" onClick={handleAddGlobal} loading={adding}>
                 <Globe size={14} strokeWidth={2.5} />
                 Add Global
               </Button>
@@ -214,9 +182,7 @@ export default function ProjectsPage() {
               </p>
             </Card>
           ) : (
-            <div className="space-y-3">
-              {globalProjects.map(renderProjectRow)}
-            </div>
+            <div className="space-y-3">{globalProjects.map(renderProjectRow)}</div>
           )}
         </section>
 
@@ -241,9 +207,7 @@ export default function ProjectsPage() {
               </p>
             </Card>
           ) : (
-            <div className="space-y-3">
-              {localProjects.map(renderProjectRow)}
-            </div>
+            <div className="space-y-3">{localProjects.map(renderProjectRow)}</div>
           )}
         </section>
       </div>

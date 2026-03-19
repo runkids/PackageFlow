@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Spinner from '../../components/Spinner';
 import Button from '../../components/Button';
-import { useProjects } from '../hooks/useProjects';
+import { useProjects } from '../context/ProjectContext';
 import { tauriBridge } from '../api/tauri-bridge';
 import { useTauri } from '../context/TauriContext';
 

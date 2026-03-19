@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, Plus, Folder, Globe, Check } from 'lucide-react';
-import { useProjects } from '../hooks/useProjects';
+import { useProjects } from '../context/ProjectContext';
 import SwitchOverlay from './SwitchOverlay';
 import { tauriBridge } from '../api/tauri-bridge';
 import { useTauri } from '../context/TauriContext';
@@ -81,9 +81,7 @@ export default function ProjectSwitcher() {
             ) : (
               <Folder size={14} strokeWidth={2.5} className="shrink-0 text-pencil-light" />
             )}
-            <span className="truncate font-medium">
-              {activeProject?.name || 'No Project'}
-            </span>
+            <span className="truncate font-medium">{activeProject?.name || 'No Project'}</span>
           </span>
           <ChevronDown
             size={14}
@@ -114,7 +112,10 @@ export default function ProjectSwitcher() {
             ))}
             <div className="border-t border-muted">
               <button
-                onClick={() => { setOpen(false); navigate('/projects'); }}
+                onClick={() => {
+                  setOpen(false);
+                  navigate('/projects');
+                }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-pencil-light hover:text-pencil hover:bg-muted/20 transition-colors cursor-pointer"
               >
                 <Plus size={14} strokeWidth={2.5} className="shrink-0" />
@@ -125,9 +126,7 @@ export default function ProjectSwitcher() {
         )}
       </div>
 
-      {switchingName && !switchError && (
-        <SwitchOverlay name={switchingName} />
-      )}
+      {switchingName && !switchError && <SwitchOverlay name={switchingName} />}
       {switchError && (
         <SwitchOverlay
           name={switchingName || ''}

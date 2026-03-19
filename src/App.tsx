@@ -4,6 +4,7 @@ import { queryClient } from './lib/queryClient';
 import { ToastProvider } from './components/Toast';
 import { ThemeProvider } from './context/ThemeContext';
 import { TauriProvider, useTauri } from './desktop/context/TauriContext';
+import { ProjectProvider } from './desktop/context/ProjectContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import TitleBar from './desktop/components/TitleBar';
 import CliWebView from './desktop/components/CliWebView';
@@ -33,20 +34,22 @@ export default function App() {
       <ThemeProvider>
         <ToastProvider>
           <TauriProvider>
-            <BrowserRouter>
-              <ErrorBoundary>
-                <div className="h-screen flex flex-col">
-                  <ConditionalTitleBar />
-                  <OnboardingGuard>
-                    <Routes>
-                      <Route path="/onboarding" element={<OnboardingPage />} />
-                      <Route path="/projects" element={<ProjectsPage />} />
-                      <Route path="/*" element={<CliWebView />} />
-                    </Routes>
-                  </OnboardingGuard>
-                </div>
-              </ErrorBoundary>
-            </BrowserRouter>
+            <ProjectProvider>
+              <BrowserRouter>
+                <ErrorBoundary>
+                  <div className="h-screen flex flex-col">
+                    <ConditionalTitleBar />
+                    <OnboardingGuard>
+                      <Routes>
+                        <Route path="/onboarding" element={<OnboardingPage />} />
+                        <Route path="/projects" element={<ProjectsPage />} />
+                        <Route path="/*" element={<CliWebView />} />
+                      </Routes>
+                    </OnboardingGuard>
+                  </div>
+                </ErrorBoundary>
+              </BrowserRouter>
+            </ProjectProvider>
           </TauriProvider>
         </ToastProvider>
       </ThemeProvider>
