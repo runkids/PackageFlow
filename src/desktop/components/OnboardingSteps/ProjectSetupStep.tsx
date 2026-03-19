@@ -60,13 +60,11 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
 
   const optionClass = (value: ProjectChoice) =>
     `flex items-center gap-3 p-4 border-2 cursor-pointer transition-all duration-150 rounded-[var(--radius-md)] ${
-      choice === value
-        ? 'border-pencil bg-muted/30'
-        : 'border-muted hover:border-pencil-light'
+      choice === value ? 'border-pencil bg-muted/30' : 'border-muted hover:border-pencil-light'
     }`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-center">
       <div className="text-center">
         <h2
           className="text-3xl font-bold text-pencil"
@@ -85,7 +83,10 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
             <button
               type="button"
               className={optionClass('global')}
-              onClick={() => { setChoice('global'); setSelectedDir(null); }}
+              onClick={() => {
+                setChoice('global');
+                setSelectedDir(null);
+              }}
             >
               <Globe size={20} strokeWidth={2.5} className="text-pencil-light shrink-0" />
               <div className="text-left">
@@ -122,9 +123,7 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
             </div>
           )}
 
-          {error && (
-            <p className="text-danger text-sm text-center">{error}</p>
-          )}
+          {error && <p className="text-danger text-sm text-center">{error}</p>}
 
           <div className="text-center">
             <Button
