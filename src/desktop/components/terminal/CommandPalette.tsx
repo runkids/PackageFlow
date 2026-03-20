@@ -41,7 +41,13 @@ export default function CommandPalette({ onExecute, onClose }: CommandPalettePro
 
     // Group by category, preserving order
     const categoryOrder: CommandCategory[] = [
-      'core', 'sync', 'skill-mgmt', 'backup', 'security', 'extras', 'other',
+      'core',
+      'sync',
+      'skill-mgmt',
+      'backup',
+      'security',
+      'extras',
+      'other',
     ];
     const grouped = new Map<CommandCategory, SkillshareCommand[]>();
     for (const cmd of filtered) {
@@ -62,10 +68,6 @@ export default function CommandPalette({ onExecute, onClose }: CommandPalettePro
       }
     }
     return { items: result, flatCommands: flat };
-  }, [query]);
-
-  useEffect(() => {
-    setSelectedFlatIndex(0);
   }, [query]);
 
   // Scroll selected item into view
@@ -106,7 +108,10 @@ export default function CommandPalette({ onExecute, onClose }: CommandPalettePro
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelectedFlatIndex(0);
+            }}
             onKeyDown={handleKeyDown}
             className="flex-1 bg-transparent text-sm text-gray-200 outline-none placeholder:text-gray-600"
             placeholder="Type a skillshare command..."
@@ -116,7 +121,7 @@ export default function CommandPalette({ onExecute, onClose }: CommandPalettePro
           {items.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-gray-500">No matching commands</div>
           ) : (
-            items.map((item, i) => {
+            items.map((item) => {
               if (item.type === 'header') {
                 return (
                   <div
@@ -135,7 +140,10 @@ export default function CommandPalette({ onExecute, onClose }: CommandPalettePro
                   key={cmd.name}
                   type="button"
                   data-selected={isSelected}
-                  onClick={() => { onExecute(cmd.command); onClose(); }}
+                  onClick={() => {
+                    onExecute(cmd.command);
+                    onClose();
+                  }}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
                     isSelected ? 'bg-gray-800' : 'hover:bg-gray-800/50'
                   }`}
@@ -145,7 +153,9 @@ export default function CommandPalette({ onExecute, onClose }: CommandPalettePro
                     <div className="text-sm text-gray-200 font-medium">{cmd.label}</div>
                     <div className="text-xs text-gray-500 truncate">{cmd.description}</div>
                   </div>
-                  <span className="text-[10px] text-gray-600 font-mono shrink-0">{cmd.command}</span>
+                  <span className="text-[10px] text-gray-600 font-mono shrink-0">
+                    {cmd.command}
+                  </span>
                 </button>
               );
             })

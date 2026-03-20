@@ -6,25 +6,34 @@ const DEFAULT_PORT: u16 = 19420;
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
 const HEALTH_POLL_MAX_RETRIES: u32 = 20;
 
-/// Kill orphaned `skillshare` processes listening on the given port range.
+/// Kill orphaned `skillshare` CLI processes listening on the given port range.
 /// This handles the case where a previous app instance was killed without
 /// graceful shutdown (e.g., dev mode restart, crash, SIGKILL).
+///
+/// IMPORTANT: Uses exact command match (`-c /^skillshare$/`) to avoid killing
+/// `skillshare-app` (the Tauri binary) which would match the prefix.
+/// Also skips our own PID as a safety net.
 async fn kill_orphaned_servers(base_port: u16, end_port: u16) {
+    let own_pid = std::process::id();
+
     for port in base_port..=end_port {
         if !is_port_in_use(port).await {
             continue;
         }
-        // lsof -ti filters by both port and command name in one step,
-        // eliminating the need for a separate ps verification pass.
+        // lsof -ti filters by port; -c /^skillshare$/ uses regex for exact
+        // command name match (avoids matching skillshare-app).
         let output = tokio::process::Command::new("lsof")
-            .args(["-ti", &format!("tcp:{port}"), "-c", "skillshare"])
+            .args(["-ti", &format!("tcp:{port}"), "-c", "/^skillshare$/"])
             .output()
             .await;
 
         if let Ok(output) = output {
             let pids = String::from_utf8_lossy(&output.stdout);
             for pid_str in pids.trim().lines() {
-                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                    if pid == own_pid {
+                        continue;
+                    }
                     log::info!("Killing orphaned skillshare process (pid={pid}) on port {port}");
                     let _ = tokio::process::Command::new("kill")
                         .args(["-TERM", &pid.to_string()])
