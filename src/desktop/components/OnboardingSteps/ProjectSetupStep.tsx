@@ -22,13 +22,19 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
     async function initGlobal() {
       try {
         const home = await homeDir();
+        // Run init (ignore "already initialized")
         try {
           await tauriBridge.runCli(cliPath, ['init'], home);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           if (!msg.includes('already initialized')) throw err;
         }
-        await tauriBridge.addProject('Global', home, 'global');
+        // Add to store (ignore "already exists")
+        try {
+          await tauriBridge.addProject('Global', home, 'global');
+        } catch {
+          // Global already in store — that's fine
+        }
         if (!cancelled) setPhase('done');
       } catch (err) {
         if (cancelled) return;
@@ -38,7 +44,9 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
     }
 
     initGlobal();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [cliPath]);
 
   // Auto-advance after success
@@ -60,7 +68,11 @@ export default function ProjectSetupStep({ cliPath, onComplete }: ProjectSetupSt
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes('already initialized')) throw err;
       }
-      await tauriBridge.addProject('Global', home, 'global');
+      try {
+        await tauriBridge.addProject('Global', home, 'global');
+      } catch {
+        // Already exists — fine
+      }
       setPhase('done');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

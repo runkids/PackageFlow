@@ -229,7 +229,7 @@ Read more: [Security & Privacy](./docs/security-and-privacy.md)
 
 ## 📚 Documentation
 
-Documentation home: [English](./docs/README.md) • [繁體中文](./docs/zh-TW/README.md) • [简体中文](./docs/zh-CN/README.md)
+Documentation home: [English](./docs/README.md)
 
 <details>
 <summary><strong>📖 Full Feature Documentation</strong></summary>
