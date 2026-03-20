@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Globe, Folder, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useProjects } from '../context/ProjectContext';
@@ -22,10 +22,10 @@ export default function ProjectDropdown() {
   const globalProjects = projects.filter((p) => p.projectType === 'global');
   const localProjects = projects.filter((p) => p.projectType === 'project');
 
-  const handleSwitch = async (id: string) => {
+  const handleSwitch = async (id: string, e: React.MouseEvent) => {
     setOpen(false);
     if (id === activeProject?.id) return;
-    await switchWithRestart(id);
+    await switchWithRestart(id, { newSession: e.altKey });
   };
 
   return (
@@ -50,7 +50,7 @@ export default function ProjectDropdown() {
             <button
               key={p.id}
               type="button"
-              onClick={() => handleSwitch(p.id)}
+              onClick={(e) => handleSwitch(p.id, e)}
               className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted/30 transition-colors ${
                 p.id === activeProject?.id ? 'text-pencil font-medium' : 'text-pencil-light'
               }`}
@@ -66,7 +66,7 @@ export default function ProjectDropdown() {
             <button
               key={p.id}
               type="button"
-              onClick={() => handleSwitch(p.id)}
+              onClick={(e) => handleSwitch(p.id, e)}
               className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted/30 transition-colors ${
                 p.id === activeProject?.id ? 'text-pencil font-medium' : 'text-pencil-light'
               }`}

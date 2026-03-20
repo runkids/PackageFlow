@@ -1,6 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { tauriBridge, type Project } from '../api/tauri-bridge';
+
+export interface SwitchOptions {
+  newSession?: boolean;
+}
 
 interface ProjectContextValue {
   projects: Project[];
@@ -9,9 +13,10 @@ interface ProjectContextValue {
   refresh: () => Promise<void>;
   addProject: (name: string, path: string, projectType: 'global' | 'project') => Promise<Project>;
   switchProject: (id: string) => Promise<void>;
-  switchWithRestart: (id: string) => Promise<number | undefined>;
+  switchWithRestart: (id: string, options?: SwitchOptions) => Promise<number | undefined>;
   removeProject: (id: string) => Promise<void>;
   registerOnProjectRemoved: (callback: (projectId: string) => void) => () => void;
+  lastSwitchOptionsRef: RefObject<SwitchOptions | null>;
 }
 
 const ProjectContext = createContext<ProjectContextValue>({
@@ -24,6 +29,7 @@ const ProjectContext = createContext<ProjectContextValue>({
   switchWithRestart: async () => undefined,
   removeProject: async () => {},
   registerOnProjectRemoved: () => () => {},
+  lastSwitchOptionsRef: { current: null },
 });
 
 export function useProjects() {
@@ -35,6 +41,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [switching, setSwitching] = useState(false);
   const switchLock = useRef(false);
+  const lastSwitchOptionsRef = useRef<SwitchOptions | null>(null);
   const projectRemovedCallbacks = useRef<Set<(projectId: string) => void>>(new Set());
 
   const registerOnProjectRemoved = useCallback((callback: (projectId: string) => void) => {
@@ -80,8 +87,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   );
 
   const switchWithRestart = useCallback(
-    async (id: string) => {
+    async (id: string, options?: SwitchOptions) => {
       if (switchLock.current) return undefined;
+      lastSwitchOptionsRef.current = options ?? null;
       switchLock.current = true;
       setSwitching(true);
       try {
@@ -128,6 +136,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         switchWithRestart,
         removeProject,
         registerOnProjectRemoved,
+        lastSwitchOptionsRef,
       }}
     >
       {children}
