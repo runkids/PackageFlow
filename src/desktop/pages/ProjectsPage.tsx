@@ -139,19 +139,21 @@ export default function ProjectsPage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {!isActive && (
+            {!isActive && !isGlobal && (
               <Button variant="ghost" size="sm" onClick={() => handleSwitch(project.id)}>
                 Switch
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleRemove(project.id)}
-              className="text-danger hover:text-danger"
-            >
-              <Trash2 size={14} strokeWidth={2.5} />
-            </Button>
+            {!isGlobal && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRemove(project.id)}
+                className="text-danger hover:text-danger"
+              >
+                <Trash2 size={14} strokeWidth={2.5} />
+              </Button>
+            )}
           </div>
         </div>
       </Card>
