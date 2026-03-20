@@ -13,7 +13,6 @@ type Phase = 'syncing' | 'done' | 'error';
 
 export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProps) {
   const [phase, setPhase] = useState<Phase>('syncing');
-  const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -21,9 +20,8 @@ export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProp
 
     async function runSync() {
       try {
-        const result = await tauriBridge.runCli(cliPath, ['sync']);
+        await tauriBridge.runCli(cliPath, ['sync']);
         if (cancelled) return;
-        setOutput(result);
         setPhase('done');
       } catch (err) {
         if (cancelled) return;
@@ -43,8 +41,7 @@ export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProp
     setPhase('syncing');
     setError(null);
     try {
-      const result = await tauriBridge.runCli(cliPath, ['sync']);
-      setOutput(result);
+      await tauriBridge.runCli(cliPath, ['sync']);
       setPhase('done');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -76,11 +73,6 @@ export default function FirstSyncStep({ cliPath, onComplete }: FirstSyncStepProp
               <CheckCircle size={20} strokeWidth={2.5} />
               <span className="font-medium">Sync complete</span>
             </div>
-            {output && (
-              <pre className="text-xs text-pencil-light bg-muted/30 p-3 rounded-[var(--radius-sm)] w-full overflow-x-auto max-h-32 text-left">
-                {output}
-              </pre>
-            )}
             <Button onClick={onComplete}>Enter skillshare App</Button>
           </>
         )}
