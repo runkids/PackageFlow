@@ -14,7 +14,7 @@ type Status = 'loading' | 'ready' | 'error' | 'server-down';
 export default function CliWebView() {
   const { appInfo, refresh: refreshAppInfo } = useTauri();
   const { switching, activeProject } = useProjects();
-  const { style, resolvedMode } = useTheme();
+  const { style, setStyle, resolvedMode, setModePreference } = useTheme();
   const [status, setStatus] = useState<Status>('loading');
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [iframeKey, setIframeKey] = useState(0);
@@ -30,6 +30,29 @@ export default function CliWebView() {
     if (style === 'playful') return 'playful';
     return resolvedMode === 'dark' ? 'dark' : 'clean';
   }, [style, resolvedMode]);
+
+  // Listen for theme changes from CLI UI (iframe postMessage)
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type !== 'theme-change') return;
+      const theme = event.data.theme as string;
+      // CLI theme values: dark, light, playful, clean
+      // Map back to shell's style + mode
+      if (theme === 'playful') {
+        setStyle('playful');
+      } else if (theme === 'dark') {
+        setStyle('clean');
+        setModePreference('dark');
+      } else if (theme === 'clean' || theme === 'light') {
+        setStyle('clean');
+        setModePreference('light');
+      }
+      // Persist for next launch
+      tauriBridge.setPreferredTheme(theme);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [setStyle, setModePreference]);
 
   // Reload iframe when theme changes
   useEffect(() => {
