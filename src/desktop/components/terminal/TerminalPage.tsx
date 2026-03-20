@@ -76,11 +76,7 @@ export default function TerminalPage() {
         onOpenPalette={() => setShowPalette(true)}
       />
       <TerminalContainer showSearch={showSearch} onCloseSearch={() => setShowSearch(false)} />
-      <TerminalStatusBar
-        session={activeSession}
-        projectPath={activeSession?.projectPath ?? null}
-        activeView={activeView}
-      />
+      <TerminalStatusBar session={activeSession} />
       {showPalette && (
         <CommandPalette onExecute={handleExecuteCommand} onClose={() => setShowPalette(false)} />
       )}

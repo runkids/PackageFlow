@@ -72,7 +72,7 @@ export function useTerminal() {
 }
 
 export function TerminalProvider({ children }: { children: ReactNode }) {
-  const { activeProject, registerOnProjectRemoved } = useProjects();
+  const { activeProject, registerOnProjectRemoved, lastSwitchOptionsRef } = useProjects();
 
   // React state: grouped by project
   const [sessionStore, setSessionStore] = useState<Map<string, TerminalSessionState[]>>(new Map());
@@ -86,6 +86,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const visibleSessionRef = useRef<string | null>(null);
   const sessionStoreRef = useRef(sessionStore);
   sessionStoreRef.current = sessionStore;
+  const prevProjectIdRef = useRef<string | null>(null);
 
   const currentProjectId = activeProject?.id ?? 'global';
   const currentProjectPath = activeProject?.path ?? '~';
@@ -337,6 +338,42 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       updateSession(activeSessionId, { hasUnread: false });
     }
   }, [activeSessionId, activeView, updateSession]);
+
+  // Auto-cd on project switch when in terminal view
+  useEffect(() => {
+    const newProjectId = activeProject?.id ?? 'global';
+    const newProjectPath = activeProject?.path;
+
+    // Skip on initial mount
+    if (prevProjectIdRef.current === null) {
+      prevProjectIdRef.current = newProjectId;
+      return;
+    }
+
+    // Skip if project didn't actually change
+    if (prevProjectIdRef.current === newProjectId) return;
+    prevProjectIdRef.current = newProjectId;
+
+    // Only act when in terminal view
+    if (activeView !== 'terminal') return;
+    if (!newProjectPath) return;
+
+    const options = lastSwitchOptionsRef.current;
+    lastSwitchOptionsRef.current = null; // consume
+
+    // Read from refs to avoid sessionStore/activeSessionIds in deps (they change too often)
+    const newSessions = sessionStoreRef.current.get(newProjectId) ?? [];
+    const newActiveId = activeSessionIds.get(newProjectId) ?? null;
+    const activeSession = newSessions.find((s) => s.id === newActiveId);
+
+    if (options?.newSession || !activeSession || activeSession.status !== 'running') {
+      // Option+click, no session, or session dead → spawn new session
+      spawnSession();
+    } else {
+      // Normal click + running session → cd into it
+      executeInSession(activeSession.id, `cd '${newProjectPath.replace(/'/g, "'\\''")}'`);
+    }
+  }, [activeProject, activeView, lastSwitchOptionsRef, spawnSession, executeInSession]);
 
   return (
     <TerminalContext.Provider
