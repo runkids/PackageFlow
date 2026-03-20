@@ -44,6 +44,12 @@ pub fn run() {
             commands::app::get_onboarding_status,
             commands::app::get_preferred_port,
             commands::app::set_preferred_port,
+            commands::app::get_preferred_theme,
+            commands::app::set_preferred_theme,
+            commands::app::get_notify_sync,
+            commands::app::set_notify_sync,
+            commands::app::get_notify_update,
+            commands::app::set_notify_update,
         ])
         .setup(|app| {
             setup_system_tray(app)?;

@@ -54,3 +54,44 @@ pub fn set_preferred_port(port: u16) -> Result<(), String> {
     meta.preferred_port = Some(port);
     cli_manager::save_meta(&meta)
 }
+
+#[tauri::command]
+pub fn get_preferred_theme() -> String {
+    cli_manager::load_meta()
+        .preferred_theme
+        .unwrap_or_else(|| "system".to_string())
+}
+
+#[tauri::command]
+pub fn set_preferred_theme(theme: String) -> Result<(), String> {
+    if !["light", "dark", "system"].contains(&theme.as_str()) {
+        return Err("Theme must be light, dark, or system".to_string());
+    }
+    let mut meta = cli_manager::load_meta();
+    meta.preferred_theme = Some(theme);
+    cli_manager::save_meta(&meta)
+}
+
+#[tauri::command]
+pub fn get_notify_sync() -> bool {
+    cli_manager::load_meta().notify_sync.unwrap_or(true)
+}
+
+#[tauri::command]
+pub fn set_notify_sync(enabled: bool) -> Result<(), String> {
+    let mut meta = cli_manager::load_meta();
+    meta.notify_sync = Some(enabled);
+    cli_manager::save_meta(&meta)
+}
+
+#[tauri::command]
+pub fn get_notify_update() -> bool {
+    cli_manager::load_meta().notify_update.unwrap_or(true)
+}
+
+#[tauri::command]
+pub fn set_notify_update(enabled: bool) -> Result<(), String> {
+    let mut meta = cli_manager::load_meta();
+    meta.notify_update = Some(enabled);
+    cli_manager::save_meta(&meta)
+}

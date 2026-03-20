@@ -55,4 +55,10 @@ export const tauriBridge = {
   getOnboardingStatus: () => invoke<OnboardingStatus>('get_onboarding_status'),
   getPreferredPort: () => invoke<number>('get_preferred_port'),
   setPreferredPort: (port: number) => invoke<void>('set_preferred_port', { port }),
+  getPreferredTheme: () => invoke<string>('get_preferred_theme'),
+  setPreferredTheme: (theme: string) => invoke<void>('set_preferred_theme', { theme }),
+  getNotifySync: () => invoke<boolean>('get_notify_sync'),
+  setNotifySync: (enabled: boolean) => invoke<void>('set_notify_sync', { enabled }),
+  getNotifyUpdate: () => invoke<boolean>('get_notify_update'),
+  setNotifyUpdate: (enabled: boolean) => invoke<void>('set_notify_update', { enabled }),
 };

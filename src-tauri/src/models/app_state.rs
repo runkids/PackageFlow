@@ -9,6 +9,9 @@ pub struct CliMeta {
     pub installed_at: Option<String>,
     pub last_update_check: Option<String>,
     pub preferred_port: Option<u16>,
+    pub preferred_theme: Option<String>,
+    pub notify_sync: Option<bool>,
+    pub notify_update: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
