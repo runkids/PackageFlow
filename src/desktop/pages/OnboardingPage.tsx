@@ -6,7 +6,7 @@ import FirstSyncStep from '../components/OnboardingSteps/FirstSyncStep';
 import { tauriBridge } from '../api/tauri-bridge';
 import { useTauri } from '../context/TauriContext';
 
-const STEPS = ['CLI Setup', 'Project', 'Sync'] as const;
+const STEPS = ['CLI Setup', 'Init', 'Sync'] as const;
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(0);
@@ -44,9 +44,7 @@ export default function OnboardingPage() {
           <div key={label} className="flex items-center gap-2">
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
-                i <= step
-                  ? 'bg-pencil text-paper'
-                  : 'bg-muted text-muted-dark'
+                i <= step ? 'bg-pencil text-paper' : 'bg-muted text-muted-dark'
               }`}
             >
               {i + 1}
@@ -59,11 +57,7 @@ export default function OnboardingPage() {
               {label}
             </span>
             {i < STEPS.length - 1 && (
-              <div
-                className={`w-12 h-0.5 mx-1 ${
-                  i < step ? 'bg-pencil' : 'bg-muted'
-                }`}
-              />
+              <div className={`w-12 h-0.5 mx-1 ${i < step ? 'bg-pencil' : 'bg-muted'}`} />
             )}
           </div>
         ))}
