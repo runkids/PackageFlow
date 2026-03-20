@@ -1,13 +1,14 @@
 {
   "name": "skillshare",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:tauri": "tauri dev",
     "build": "tsc -b && vite build",
     "build:tauri": "tauri build --bundles dmg",
+    "bump": "bash scripts/bump.sh",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint .",
