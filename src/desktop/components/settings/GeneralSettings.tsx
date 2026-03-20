@@ -25,6 +25,13 @@ export default function GeneralSettings() {
     try {
       setError(null);
       await tauriBridge.setPreferredPort(num);
+      // Restart server with new port
+      await tauriBridge.stopServer().catch(() => {});
+      const cliPath = await tauriBridge.detectCli();
+      if (cliPath) {
+        const active = await tauriBridge.getActiveProject();
+        await tauriBridge.startServer(cliPath, active?.path);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {

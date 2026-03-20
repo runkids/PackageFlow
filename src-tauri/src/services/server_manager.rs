@@ -38,25 +38,26 @@ impl ServerManager {
     ) -> Result<u16, String> {
         self.stop().await?;
 
-        // Use preferred port from settings, or scan for an available one
+        // Use preferred port from settings, try up to 10 ports from there
         let meta = crate::services::cli_manager::load_meta();
         let base_port = meta.preferred_port.unwrap_or(DEFAULT_PORT);
-        let max_port = base_port + 10;
+        let end_port = base_port + 10;
 
-        let mut chosen_port = base_port;
+        let mut chosen_port = None;
 
-        for port in base_port..=max_port {
+        for port in base_port..=end_port {
             if !is_port_in_use(port).await {
-                chosen_port = port;
+                chosen_port = Some(port);
                 break;
             }
-            if port == max_port {
-                return Err(format!(
-                    "All ports {base_port}-{max_port} are in use. \
-                     Try changing the port in Settings or kill existing processes."
-                ));
-            }
         }
+
+        let chosen_port = chosen_port.ok_or_else(|| {
+            format!(
+                "All ports {base_port}-{end_port} are in use. \
+                 Try changing the port in Settings or kill existing processes."
+            )
+        })?;
 
         let mut cmd = Command::new(cli_path);
 
