@@ -1,10 +1,9 @@
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Settings, Palette, FolderOpen, Terminal, Bell, Info } from 'lucide-react';
+import { ArrowLeft, Settings, Palette, FolderOpen, Terminal, Info } from 'lucide-react';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import AppearanceSettings from '../components/settings/AppearanceSettings';
 import ProjectSettings from '../components/settings/ProjectSettings';
 import CliSettings from '../components/settings/CliSettings';
-import NotificationSettings from '../components/settings/NotificationSettings';
 import AboutSettings from '../components/settings/AboutSettings';
 
 const TABS = [
@@ -12,7 +11,6 @@ const TABS = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'projects', label: 'Projects', icon: FolderOpen },
   { id: 'cli', label: 'CLI', icon: Terminal },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'about', label: 'About', icon: Info },
 ] as const;
 
@@ -27,7 +25,6 @@ export default function SettingsPage() {
       case 'appearance': return <AppearanceSettings />;
       case 'projects': return <ProjectSettings />;
       case 'cli': return <CliSettings />;
-      case 'notifications': return <NotificationSettings />;
       case 'about': return <AboutSettings />;
       default: return <GeneralSettings />;
     }
@@ -35,7 +32,6 @@ export default function SettingsPage() {
 
   return (
     <div className="flex h-screen bg-paper">
-      {/* Sidebar */}
       <aside
         className="w-60 shrink-0 border-r border-muted flex flex-col"
         style={{ paddingTop: '48px' }}
@@ -68,7 +64,6 @@ export default function SettingsPage() {
         </nav>
       </aside>
 
-      {/* Content */}
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-xl mx-auto">
           {renderContent()}
