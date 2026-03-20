@@ -24,7 +24,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
 function ConditionalTitleBar() {
   const location = useLocation();
-  if (location.pathname === '/onboarding') return null;
+  if (location.pathname === '/onboarding' || location.pathname === '/projects') return null;
   return <TitleBar />;
 }
 
