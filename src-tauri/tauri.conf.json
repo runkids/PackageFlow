@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Skillshare App",
+  "productName": "skillshare",
   "version": "0.1.0",
   "identifier": "com.skillshare.app",
   "build": {

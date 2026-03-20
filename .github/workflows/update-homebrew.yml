@@ -26,7 +26,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
           GH_REPO: ${{ github.repository }}
         run: |
-          ASSET_NAME="skillshare-app_${VERSION}_aarch64.dmg"
+          ASSET_NAME="skillshare_${VERSION}_aarch64.dmg"
           MAX_ATTEMPTS=20
           ATTEMPT=0
 
@@ -70,7 +70,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
           GH_REPO: ${{ github.repository }}
         run: |
-          ASSET_URL="https://github.com/${GH_REPO}/releases/download/v${VERSION}/skillshare-app_${VERSION}_aarch64.dmg"
+          ASSET_URL="https://github.com/${GH_REPO}/releases/download/v${VERSION}/skillshare_${VERSION}_aarch64.dmg"
           MAX_RETRIES=5
           RETRY_DELAY=10
           ATTEMPT=0
@@ -81,15 +81,15 @@ jobs:
             ATTEMPT=$((ATTEMPT + 1))
             echo "Download attempt $ATTEMPT/$MAX_RETRIES..."
 
-            if curl -fSL --retry 3 --retry-delay 5 "$ASSET_URL" -o "skillshare-app.dmg"; then
-              ACTUAL_SIZE=$(stat -c%s "skillshare-app.dmg" 2>/dev/null || stat -f%z "skillshare-app.dmg" 2>/dev/null)
+            if curl -fSL --retry 3 --retry-delay 5 "$ASSET_URL" -o "skillshare.dmg"; then
+              ACTUAL_SIZE=$(stat -c%s "skillshare.dmg" 2>/dev/null || stat -f%z "skillshare.dmg" 2>/dev/null)
 
               if [ "$ACTUAL_SIZE" -eq "$EXPECTED_SIZE" ]; then
                 echo "Download successful, size verified: $ACTUAL_SIZE bytes"
-                SHA256=$(shasum -a 256 skillshare-app.dmg | cut -d ' ' -f 1)
+                SHA256=$(shasum -a 256 skillshare.dmg | cut -d ' ' -f 1)
                 echo "SHA256: $SHA256"
                 echo "SHA256_AARCH64=$SHA256" >> "$GITHUB_OUTPUT"
-                rm -f skillshare-app.dmg
+                rm -f skillshare.dmg
                 exit 0
               else
                 echo "Size mismatch: expected $EXPECTED_SIZE, got $ACTUAL_SIZE"
@@ -117,19 +117,19 @@ jobs:
           SHA256: ${{ steps.sha.outputs.SHA256_AARCH64 }}
           GH_REPO: ${{ github.repository }}
         run: |
-          cat > homebrew-tap/Casks/skillshare-app.rb << CASKEOF
-          cask "skillshare-app" do
+          cat > homebrew-tap/Casks/skillshare.rb << CASKEOF
+          cask "skillshare" do
             version "${VERSION}"
             sha256 "${SHA256}"
 
-            url "https://github.com/${GH_REPO}/releases/download/v#{version}/skillshare-app_#{version}_aarch64.dmg"
-            name "skillshare App"
-            desc "Desktop GUI for skillshare CLI"
+            url "https://github.com/${GH_REPO}/releases/download/v#{version}/skillshare_#{version}_aarch64.dmg"
+            name "Skillshare App"
+            desc "Desktop GUI for Skillshare CLI"
             homepage "https://github.com/${GH_REPO}"
 
             depends_on macos: ">= :catalina"
 
-            app "skillshare App.app"
+            app "skillshare.app"
 
             zap trash: [
               "~/Library/Application Support/com.skillshare.app",
@@ -146,6 +146,6 @@ jobs:
           cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/skillshare-app.rb
-          git commit -m "Update skillshare-app to ${VERSION}"
+          git add Casks/skillshare.rb
+          git commit -m "Update skillshare to ${VERSION}"
           git push
