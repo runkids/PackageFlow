@@ -12,7 +12,7 @@
   <a href="https://github.com/runkids/skillshare-app/releases">
     <img src="https://img.shields.io/github/v/release/runkids/skillshare-app?style=for-the-badge&color=blue" alt="Release">
   </a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey?style=for-the-badge" alt="Platform">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=for-the-badge" alt="Platform">
 </p>
 
 ---
@@ -27,14 +27,18 @@ Install [skillshare CLI](https://github.com/runkids/skillshare) first.
 
 ```bash
 brew tap runkids/tap
-brew install --cask skillshare-app
+brew install --cask skillshare
 ```
 
 ### Direct Download
 
-Download the latest release for your platform:
+| Platform | Download |
+|----------|----------|
+| macOS (Apple Silicon) | [.dmg](https://github.com/runkids/skillshare-app/releases/latest/download/skillshare_latest_aarch64.dmg) |
+| Windows | [.exe](https://github.com/runkids/skillshare-app/releases/latest) / [.msi](https://github.com/runkids/skillshare-app/releases/latest) |
+| Linux | [.deb](https://github.com/runkids/skillshare-app/releases/latest) / [.AppImage](https://github.com/runkids/skillshare-app/releases/latest) / [.rpm](https://github.com/runkids/skillshare-app/releases/latest) |
 
-**[GitHub Releases](https://github.com/runkids/skillshare-app/releases)**
+Or browse all releases: **[GitHub Releases](https://github.com/runkids/skillshare-app/releases)**
 
 ## License
 
