@@ -14,6 +14,7 @@ export default function TerminalPage() {
     killSession,
     switchSession,
     executeInSession,
+    focusActiveSession,
   } = useTerminal();
 
   const [showSearch, setShowSearch] = useState(false);
@@ -31,13 +32,15 @@ export default function TerminalPage() {
         const session = sessions.find((s) => s.id === activeSessionId);
         if (session?.status === 'running') {
           executeInSession(activeSessionId, command);
+          focusActiveSession();
           return;
         }
       }
       // No active session or session dead -- spawn new one with command
       await spawnSession(command);
+      focusActiveSession();
     },
-    [activeSessionId, sessions, executeInSession, spawnSession]
+    [activeSessionId, sessions, executeInSession, spawnSession, focusActiveSession]
   );
 
   // Keyboard shortcuts (only active when terminal view is shown)
@@ -78,7 +81,13 @@ export default function TerminalPage() {
       <TerminalContainer showSearch={showSearch} onCloseSearch={() => setShowSearch(false)} />
       <TerminalStatusBar session={activeSession} />
       {showPalette && (
-        <CommandPalette onExecute={handleExecuteCommand} onClose={() => setShowPalette(false)} />
+        <CommandPalette
+          onExecute={handleExecuteCommand}
+          onClose={() => {
+            setShowPalette(false);
+            focusActiveSession();
+          }}
+        />
       )}
     </div>
   );

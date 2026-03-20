@@ -59,6 +59,7 @@ interface TerminalContextValue {
   mountSession: (id: string, container: HTMLElement) => void;
   unmountSession: (id: string) => void;
   executeInSession: (id: string, command: string) => void;
+  focusActiveSession: () => void;
   hasUnreadAny: boolean;
   hasUnreadByProject: Map<string, boolean>;
   killProjectSessions: (projectId: string) => void;
@@ -67,6 +68,7 @@ interface TerminalContextValue {
 
 const TerminalContext = createContext<TerminalContextValue>(null!);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTerminal() {
   return useContext(TerminalContext);
 }
@@ -85,7 +87,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   // Refs to avoid stale closures in PTY callbacks
   const visibleSessionRef = useRef<string | null>(null);
   const sessionStoreRef = useRef(sessionStore);
-  sessionStoreRef.current = sessionStore;
+  useEffect(() => {
+    sessionStoreRef.current = sessionStore;
+  }, [sessionStore]);
   const prevProjectIdRef = useRef<string | null>(null);
 
   const currentProjectId = activeProject?.id ?? 'global';
@@ -151,12 +155,28 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       };
 
       // Create terminal instance
+      const blockedCmd = /^(skillshare|ss)\s+ui(\s|$)/i;
       const handle = createTerminalInstance({
         onData: (data) => {
           const live = liveStoreRef.current.get(id);
-          if (live?.pty) {
-            writeToPty(live.pty, data);
+          if (!live?.pty) return;
+
+          // Block `skillshare ui` / `ss ui` — the app IS the UI.
+          if (data === '\r') {
+            const { terminal } = handle;
+            const line = terminal.buffer.active
+              .getLine(terminal.buffer.active.cursorY)
+              ?.translateToString()
+              .trim()
+              .replace(/^[^\w]*/, ''); // strip prompt chars
+            if (line && blockedCmd.test(line)) {
+              terminal.write('\r\nAlready running in Skillshare App.\r\n');
+              writeToPty(live.pty, '\x03'); // cancel the line
+              return;
+            }
           }
+
+          writeToPty(live.pty, data);
         },
       });
 
@@ -193,8 +213,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       const live = liveStoreRef.current.get(id);
       if (!live?.handle) return;
 
-      // Mount xterm to DOM
+      // Mount xterm to DOM and auto-focus
       live.cleanupMount = mountTerminal(live.handle, container);
+      live.handle.terminal.focus();
 
       // Spawn PTY after terminal is mounted (need cols/rows)
       const { terminal } = live.handle;
@@ -290,6 +311,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   );
 
   const executeInSession = useCallback((id: string, command: string) => {
+    // Block `skillshare ui` / `ss ui` — the app IS the UI
+    if (/^(skillshare|ss)\s+ui(\s|$)/i.test(command.trim())) return;
+
     const live = liveStoreRef.current.get(id);
     if (live?.pty) {
       writeToPty(live.pty, command + '\r');
@@ -324,6 +348,12 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const getSessionLive = useCallback((id: string) => {
     return liveStoreRef.current.get(id);
   }, []);
+
+  const focusActiveSession = useCallback(() => {
+    if (!activeSessionId) return;
+    const live = liveStoreRef.current.get(activeSessionId);
+    live?.handle?.terminal.focus();
+  }, [activeSessionId]);
 
   // Kill all sessions for a project when it is removed
   useEffect(() => {
@@ -373,6 +403,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       // Normal click + running session → cd into it
       executeInSession(activeSession.id, `cd '${newProjectPath.replace(/'/g, "'\\''")}'`);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- activeSessionIds read via ref to avoid excessive re-runs
   }, [activeProject, activeView, lastSwitchOptionsRef, spawnSession, executeInSession]);
 
   return (
@@ -388,6 +419,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         mountSession,
         unmountSession,
         executeInSession,
+        focusActiveSession,
         hasUnreadAny,
         hasUnreadByProject,
         killProjectSessions,

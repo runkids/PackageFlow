@@ -16,7 +16,12 @@ const statusColors = {
   failed: 'bg-red-500',
 };
 
-export default memo(function TerminalTab({ session, isActive, onClick, onClose }: TerminalTabProps) {
+export default memo(function TerminalTab({
+  session,
+  isActive,
+  onClick,
+  onClose,
+}: TerminalTabProps) {
   return (
     <button
       type="button"
@@ -35,8 +40,16 @@ export default memo(function TerminalTab({ session, isActive, onClick, onClose }
       <span
         role="button"
         tabIndex={-1}
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onClose(); } }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.stopPropagation();
+            onClose();
+          }
+        }}
         className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted/50 transition-opacity shrink-0"
       >
         <X size={12} />
