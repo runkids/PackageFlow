@@ -14,7 +14,7 @@ export default function TitleBar() {
       <ProjectDropdown />
       <button
         type="button"
-        onClick={() => navigate('/projects')}
+        onClick={() => navigate('/settings')}
         className="p-1.5 rounded-[var(--radius-sm)] hover:bg-muted/50 transition-colors text-pencil-light hover:text-pencil"
         title="Settings"
       >

@@ -9,7 +9,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import TitleBar from './desktop/components/TitleBar';
 import CliWebView from './desktop/components/CliWebView';
 import OnboardingPage from './desktop/pages/OnboardingPage';
-import ProjectsPage from './desktop/pages/ProjectsPage';
+import SettingsPage from './desktop/pages/SettingsPage';
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const { appInfo, loading } = useTauri();
@@ -24,7 +24,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
 function ConditionalTitleBar() {
   const location = useLocation();
-  if (location.pathname === '/onboarding' || location.pathname === '/projects') return null;
+  if (location.pathname === '/onboarding' || location.pathname === '/settings') return null;
   return <TitleBar />;
 }
 
@@ -42,7 +42,7 @@ export default function App() {
                     <OnboardingGuard>
                       <Routes>
                         <Route path="/onboarding" element={<OnboardingPage />} />
-                        <Route path="/projects" element={<ProjectsPage />} />
+                        <Route path="/settings" element={<SettingsPage />} />
                         <Route path="/*" element={<CliWebView />} />
                       </Routes>
                     </OnboardingGuard>

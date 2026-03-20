@@ -80,7 +80,7 @@ export default function ProjectDropdown() {
             type="button"
             onClick={() => {
               setOpen(false);
-              navigate('/projects');
+              navigate('/settings?tab=projects');
             }}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-pencil-light hover:bg-muted/30 transition-colors"
           >

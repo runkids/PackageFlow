@@ -18,14 +18,27 @@ export default function CliWebView() {
   const [iframeKey, setIframeKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
+  const [resolvedTheme, setResolvedTheme] = useState('light');
   const failCount = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const startAttempted = useRef(false);
 
+  useEffect(() => {
+    tauriBridge.getPreferredTheme().then((theme) => {
+      const resolved =
+        theme === 'system'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+          : theme;
+      setResolvedTheme(resolved);
+    });
+  }, []);
+
   // Try to start server if no port available on mount
   useEffect(() => {
     if (appInfo?.serverPort) {
-      setIframeUrl(`http://localhost:${appInfo.serverPort}`);
+      setIframeUrl(`http://localhost:${appInfo.serverPort}?data-theme=${resolvedTheme}`);
       setStatus('ready');
       failCount.current = 0;
       startAttempted.current = false;
@@ -46,7 +59,7 @@ export default function CliWebView() {
         }
         const projectDir = activeProject?.path;
         const port = await tauriBridge.startServer(cliPath, projectDir);
-        setIframeUrl(`http://localhost:${port}`);
+        setIframeUrl(`http://localhost:${port}?data-theme=${resolvedTheme}`);
         setStatus('ready');
         await refreshAppInfo();
       } catch (err) {
@@ -55,7 +68,7 @@ export default function CliWebView() {
         setStatus('error');
       }
     })();
-  }, [appInfo?.serverPort, switching, activeProject, refreshAppInfo]);
+  }, [appInfo?.serverPort, switching, activeProject, refreshAppInfo, resolvedTheme]);
 
   // Health check polling when server is ready
   useEffect(() => {
@@ -98,7 +111,7 @@ export default function CliWebView() {
       if (!cliPath) throw new Error('CLI not found');
       const projectDir = activeProject?.path;
       const port = await tauriBridge.startServer(cliPath, projectDir);
-      setIframeUrl(`http://localhost:${port}`);
+      setIframeUrl(`http://localhost:${port}?data-theme=${resolvedTheme}`);
       setStatus('ready');
       failCount.current = 0;
       await refreshAppInfo();
@@ -109,7 +122,7 @@ export default function CliWebView() {
     } finally {
       setRestarting(false);
     }
-  }, [activeProject, refreshAppInfo]);
+  }, [activeProject, refreshAppInfo, resolvedTheme]);
 
   // Switching state
   if (switching) {
@@ -140,9 +153,7 @@ export default function CliWebView() {
         <p className="text-pencil font-medium">
           {status === 'error' ? 'Server failed to start' : 'Server disconnected'}
         </p>
-        {error && (
-          <p className="text-pencil-light text-sm max-w-md text-center">{error}</p>
-        )}
+        {error && <p className="text-pencil-light text-sm max-w-md text-center">{error}</p>}
         <Button onClick={handleRestart} loading={restarting}>
           {status === 'error' ? 'Retry' : 'Restart Server'}
         </Button>
