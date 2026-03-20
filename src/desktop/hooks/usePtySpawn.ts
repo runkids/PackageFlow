@@ -19,8 +19,11 @@ export async function spawnPty(options: SpawnOptions): Promise<IPty> {
   let args: string[];
 
   if (options.command) {
+    const fullCmd = options.args?.length
+      ? `exec ${options.command} ${options.args.join(' ')}`
+      : `exec ${options.command}`;
     file = shell;
-    args = ['-l', '-c', `exec ${options.command}`];
+    args = ['-l', '-c', fullCmd];
   } else {
     file = shell;
     args = ['-l'];

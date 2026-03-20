@@ -71,12 +71,22 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   // Ref store: live objects keyed by sessionId
   const liveStoreRef = useRef<Map<string, TerminalSessionLive>>(new Map());
 
+  // Refs to avoid stale closures in PTY callbacks
+  const visibleSessionRef = useRef<string | null>(null);
+  const sessionStoreRef = useRef(sessionStore);
+  sessionStoreRef.current = sessionStore;
+
   const currentProjectId = activeProject?.id ?? 'global';
   const currentProjectPath = activeProject?.path ?? '~';
 
   // Current project's sessions
   const sessions = sessionStore.get(currentProjectId) ?? [];
   const activeSessionId = activeSessionIds.get(currentProjectId) ?? null;
+
+  // Keep visibleSessionRef in sync with current view state
+  useEffect(() => {
+    visibleSessionRef.current = activeView === 'terminal' ? activeSessionId : null;
+  }, [activeView, activeSessionId]);
 
   // Unread tracking
   const hasUnreadByProject = new Map<string, boolean>();
@@ -105,13 +115,6 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       return prev;
     });
   }, []);
-
-  const isSessionVisible = useCallback(
-    (sessionId: string) => {
-      return activeView === 'terminal' && activeSessionId === sessionId;
-    },
-    [activeView, activeSessionId]
-  );
 
   // --- API ---
 
@@ -191,8 +194,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         rows,
         onData: (data) => {
           live.bufferedWriter?.write(data);
-          // Mark unread if not visible
-          if (!isSessionVisible(id)) {
+          // Mark unread if not visible (read from ref to avoid stale closure)
+          if (visibleSessionRef.current !== id) {
             updateSession(id, { hasUnread: true });
           }
         },
@@ -211,7 +214,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         });
       });
     },
-    [isSessionVisible, updateSession]
+    [updateSession]
   );
 
   const unmountSession = useCallback((id: string) => {
@@ -271,32 +274,30 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const killProjectSessions = useCallback(
-    (projectId: string) => {
-      const projectSessions = sessionStore.get(projectId) ?? [];
-      for (const s of projectSessions) {
-        const live = liveStoreRef.current.get(s.id);
-        if (live) {
-          live.bufferedWriter?.dispose();
-          if (live.pty) killPty(live.pty);
-          if (live.handle) disposeTerminalInstance(live.handle);
-          live.cleanupMount?.();
-          liveStoreRef.current.delete(s.id);
-        }
+  const killProjectSessions = useCallback((projectId: string) => {
+    // Read from ref to avoid stale closure and dependency churn
+    const projectSessions = sessionStoreRef.current.get(projectId) ?? [];
+    for (const s of projectSessions) {
+      const live = liveStoreRef.current.get(s.id);
+      if (live) {
+        live.bufferedWriter?.dispose();
+        if (live.pty) killPty(live.pty);
+        if (live.handle) disposeTerminalInstance(live.handle);
+        live.cleanupMount?.();
+        liveStoreRef.current.delete(s.id);
       }
-      setSessionStore((prev) => {
-        const next = new Map(prev);
-        next.delete(projectId);
-        return next;
-      });
-      setActiveSessionIds((prev) => {
-        const next = new Map(prev);
-        next.delete(projectId);
-        return next;
-      });
-    },
-    [sessionStore]
-  );
+    }
+    setSessionStore((prev) => {
+      const next = new Map(prev);
+      next.delete(projectId);
+      return next;
+    });
+    setActiveSessionIds((prev) => {
+      const next = new Map(prev);
+      next.delete(projectId);
+      return next;
+    });
+  }, []);
 
   const getSessionLive = useCallback((id: string) => {
     return liveStoreRef.current.get(id);

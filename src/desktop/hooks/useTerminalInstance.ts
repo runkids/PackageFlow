@@ -45,10 +45,7 @@ export function createTerminalInstance(options?: {
  * and sets up a ResizeObserver with 50ms debounce for auto-fit.
  * Returns a cleanup function.
  */
-export function mountTerminal(
-  handle: TerminalInstanceHandle,
-  container: HTMLElement,
-): () => void {
+export function mountTerminal(handle: TerminalInstanceHandle, container: HTMLElement): () => void {
   const { terminal, fitAddon } = handle;
 
   terminal.open(container);
@@ -100,27 +97,32 @@ export interface BufferedWriter {
  */
 export function createBufferedWriter(terminal: Terminal): BufferedWriter {
   let buffer = '';
-  let rafScheduled = false;
+  let rafId: number | null = null;
 
   function flush() {
     if (buffer.length > 0) {
       terminal.write(buffer);
       buffer = '';
     }
-    rafScheduled = false;
+    rafId = null;
   }
 
   function write(data: string) {
     buffer += data;
-    if (!rafScheduled) {
-      rafScheduled = true;
-      requestAnimationFrame(flush);
+    if (rafId === null) {
+      rafId = requestAnimationFrame(flush);
     }
   }
 
   function dispose() {
-    buffer = '';
-    rafScheduled = false;
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (buffer.length > 0) {
+      terminal.write(buffer);
+      buffer = '';
+    }
   }
 
   return { write, dispose };
