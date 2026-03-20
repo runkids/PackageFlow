@@ -82,8 +82,17 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                // Safety net: stop the CLI server on any exit path
+                let server = app.state::<ServerManager>().inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    let _ = server.stop().await;
+                });
+            }
+        });
 }
 
 // ── System Tray ─────────────────────────────────────────────────────
@@ -134,7 +143,13 @@ fn setup_system_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
             }
             "quit" => {
                 APP_QUITTING.store(true, Ordering::SeqCst);
-                app.exit(0);
+                // Stop the CLI server before exiting to avoid orphaned processes
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let server = app_handle.state::<ServerManager>();
+                    let _ = server.stop().await;
+                    app_handle.exit(0);
+                });
             }
             _ => {}
         })
