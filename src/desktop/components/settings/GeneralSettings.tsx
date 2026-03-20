@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../../components/Button';
 import Card from '../../../components/Card';
+import Input from '../../../components/Input';
 import { tauriBridge } from '../../api/tauri-bridge';
 
 export default function GeneralSettings() {
@@ -68,7 +69,7 @@ export default function GeneralSettings() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="number"
               min={1024}
               max={65535}
@@ -77,7 +78,7 @@ export default function GeneralSettings() {
                 setPort(e.target.value);
                 setSaved(false);
               }}
-              className="w-24 px-2 py-1 text-sm border border-muted rounded-[var(--radius-sm)] bg-paper text-pencil focus:outline-none focus:border-pencil"
+              className="!w-24 !py-1.5 text-sm"
             />
             <Button size="sm" onClick={handleSave}>
               {saved ? 'Saved' : 'Save'}

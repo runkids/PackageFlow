@@ -1,4 +1,5 @@
 import Card from '../../../components/Card';
+import SegmentedControl from '../../../components/SegmentedControl';
 import { useTheme, type Style, type ModePreference } from '../../../context/ThemeContext';
 import { tauriBridge } from '../../api/tauri-bridge';
 
@@ -13,35 +14,6 @@ const MODES: { id: ModePreference; label: string }[] = [
   { id: 'system', label: 'System' },
 ];
 
-function SegmentControl<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { id: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex rounded-[var(--radius-sm)] border border-muted overflow-hidden">
-      {options.map(({ id, label }) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => onChange(id)}
-          className={`px-3 py-1.5 text-sm transition-colors ${
-            value === id
-              ? 'bg-pencil text-paper font-medium'
-              : 'bg-paper text-pencil-light hover:text-pencil'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function AppearanceSettings() {
   const { style, setStyle, modePreference, setModePreference } = useTheme();
 
@@ -49,7 +21,7 @@ export default function AppearanceSettings() {
     setStyle(s);
     // Persist for iframe sync
     tauriBridge.setPreferredTheme(
-      s === 'playful' ? 'playful' : modePreference === 'dark' ? 'dark' : 'clean',
+      s === 'playful' ? 'playful' : modePreference === 'dark' ? 'dark' : 'clean'
     );
   };
 
@@ -83,7 +55,7 @@ export default function AppearanceSettings() {
             <p className="text-sm font-medium text-pencil">Style</p>
             <p className="text-xs text-pencil-light mt-0.5">Visual style of the interface</p>
           </div>
-          <SegmentControl options={STYLES} value={style} onChange={handleStyleChange} />
+          <SegmentedControl options={STYLES} value={style} onChange={handleStyleChange} />
         </div>
 
         <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
@@ -91,7 +63,7 @@ export default function AppearanceSettings() {
             <p className="text-sm font-medium text-pencil">Mode</p>
             <p className="text-xs text-pencil-light mt-0.5">Light or dark appearance</p>
           </div>
-          <SegmentControl options={MODES} value={modePreference} onChange={handleModeChange} />
+          <SegmentedControl options={MODES} value={modePreference} onChange={handleModeChange} />
         </div>
       </Card>
     </div>
