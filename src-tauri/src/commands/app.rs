@@ -39,3 +39,18 @@ pub fn get_onboarding_status() -> Result<OnboardingStatus, String> {
         first_sync_done: false,
     })
 }
+
+#[tauri::command]
+pub fn get_preferred_port() -> u16 {
+    cli_manager::load_meta().preferred_port.unwrap_or(19420)
+}
+
+#[tauri::command]
+pub fn set_preferred_port(port: u16) -> Result<(), String> {
+    if !(1024..=65535).contains(&port) {
+        return Err("Port must be between 1024 and 65535".to_string());
+    }
+    let mut meta = cli_manager::load_meta();
+    meta.preferred_port = Some(port);
+    cli_manager::save_meta(&meta)
+}

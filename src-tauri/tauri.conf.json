@@ -15,8 +15,8 @@
       {
         "hiddenTitle": true,
         "title": "Skillshare App",
-        "minWidth": 1100,
-        "minHeight": 700,
+        "minWidth": 800,
+        "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
         "transparent": false,

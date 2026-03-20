@@ -42,6 +42,8 @@ pub fn run() {
             // App commands
             commands::app::get_app_state,
             commands::app::get_onboarding_status,
+            commands::app::get_preferred_port,
+            commands::app::set_preferred_port,
         ])
         .setup(|app| {
             setup_system_tray(app)?;

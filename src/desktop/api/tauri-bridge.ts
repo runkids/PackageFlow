@@ -53,4 +53,6 @@ export const tauriBridge = {
   // App commands
   getAppState: () => invoke<AppInfo>('get_app_state'),
   getOnboardingStatus: () => invoke<OnboardingStatus>('get_onboarding_status'),
+  getPreferredPort: () => invoke<number>('get_preferred_port'),
+  setPreferredPort: (port: number) => invoke<void>('set_preferred_port', { port }),
 };

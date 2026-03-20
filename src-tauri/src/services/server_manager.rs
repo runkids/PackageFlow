@@ -3,7 +3,6 @@ use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
 const DEFAULT_PORT: u16 = 19420;
-const MAX_PORT: u16 = 19430;
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
 const HEALTH_POLL_MAX_RETRIES: u32 = 20;
 
@@ -39,16 +38,22 @@ impl ServerManager {
     ) -> Result<u16, String> {
         self.stop().await?;
 
-        let mut chosen_port = DEFAULT_PORT;
+        // Use preferred port from settings, or scan for an available one
+        let meta = crate::services::cli_manager::load_meta();
+        let base_port = meta.preferred_port.unwrap_or(DEFAULT_PORT);
+        let max_port = base_port + 10;
 
-        for port in DEFAULT_PORT..=MAX_PORT {
+        let mut chosen_port = base_port;
+
+        for port in base_port..=max_port {
             if !is_port_in_use(port).await {
                 chosen_port = port;
                 break;
             }
-            if port == MAX_PORT {
+            if port == max_port {
                 return Err(format!(
-                    "All ports {DEFAULT_PORT}-{MAX_PORT} are in use"
+                    "All ports {base_port}-{max_port} are in use. \
+                     Try changing the port in Settings or kill existing processes."
                 ));
             }
         }

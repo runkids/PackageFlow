@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Folder, Globe, Trash2, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -14,6 +14,27 @@ export default function ProjectsPage() {
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [port, setPort] = useState<string>('19420');
+  const [portSaved, setPortSaved] = useState(false);
+
+  useEffect(() => {
+    tauriBridge.getPreferredPort().then((p) => setPort(String(p)));
+  }, []);
+
+  const handlePortSave = async () => {
+    const num = parseInt(port, 10);
+    if (isNaN(num) || num < 1024 || num > 65535) {
+      setError('Port must be between 1024 and 65535');
+      return;
+    }
+    try {
+      await tauriBridge.setPreferredPort(num);
+      setPortSaved(true);
+      setTimeout(() => setPortSaved(false), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const globalProjects = projects.filter((p) => p.projectType === 'global');
   const localProjects = projects.filter((p) => p.projectType === 'project');
@@ -209,6 +230,42 @@ export default function ProjectsPage() {
           ) : (
             <div className="space-y-3">{localProjects.map(renderProjectRow)}</div>
           )}
+        </section>
+
+        {/* Settings section */}
+        <section className="space-y-3">
+          <h2
+            className="text-lg font-semibold text-pencil"
+            style={{ fontFamily: 'var(--font-heading)' }}
+          >
+            Settings
+          </h2>
+          <Card>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-pencil">Server Port</p>
+                <p className="text-xs text-pencil-light mt-0.5">
+                  CLI server will start on this port (restart required)
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  value={port}
+                  onChange={(e) => {
+                    setPort(e.target.value);
+                    setPortSaved(false);
+                  }}
+                  className="w-24 px-2 py-1 text-sm border border-muted rounded-[var(--radius-sm)] bg-paper text-pencil focus:outline-none focus:border-pencil"
+                />
+                <Button size="sm" onClick={handlePortSave}>
+                  {portSaved ? 'Saved' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          </Card>
         </section>
       </div>
     </div>

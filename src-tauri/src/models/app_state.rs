@@ -8,6 +8,7 @@ pub struct CliMeta {
     pub source: Option<String>,
     pub installed_at: Option<String>,
     pub last_update_check: Option<String>,
+    pub preferred_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
