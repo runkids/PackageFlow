@@ -19,28 +19,14 @@ export default function AppearanceSettings() {
 
   const handleStyleChange = (s: Style) => {
     setStyle(s);
-    // Persist for iframe sync
-    tauriBridge.setPreferredTheme(
-      s === 'playful' ? 'playful' : modePreference === 'dark' ? 'dark' : 'clean'
-    );
+    // Style is persisted in localStorage by ThemeContext;
+    // Tauri only stores mode preference — no need to call setPreferredTheme here.
   };
 
   const handleModeChange = (m: ModePreference) => {
     setModePreference(m);
-    // Persist for iframe sync — resolve CLI theme value
-    const resolved =
-      m === 'system'
-        ? window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : style === 'playful'
-            ? 'playful'
-            : 'clean'
-        : m === 'dark'
-          ? 'dark'
-          : style === 'playful'
-            ? 'playful'
-            : 'clean';
-    tauriBridge.setPreferredTheme(resolved);
+    // Persist mode preference for next launch (Tauri accepts light/dark/system)
+    tauriBridge.setPreferredTheme(m);
   };
 
   return (

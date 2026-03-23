@@ -9,14 +9,13 @@
       // Initialize theme before page renders to prevent flash
       // MUST match ThemeContext.tsx storage keys and logic
       (function() {
-        const THEME_MODE_KEY = 'theme-mode';
-        const LEGACY_THEME_KEY = 'theme';
+        const THEME_MODE_KEY = 'skillshare-theme-preference';
+        const LEGACY_THEME_KEY = 'skillshare-theme';
 
-        // Background colors matching styles.css CSS variables.
-        // IMPORTANT: These values MUST be kept in sync with --background in :root and .dark in styles.css.
-        // Failure to do so will result in incorrect initial background colors.
-        const DARK_BG = 'hsl(0, 0%, 12%)';   // --background in .dark
-        const LIGHT_BG = 'hsl(0, 0%, 100%)'; // --background in :root
+        // Background colors matching index.css CSS variables.
+        // IMPORTANT: These values MUST be kept in sync with --color-paper in :root and .dark in index.css.
+        const DARK_BG = '#111110';  // --color-paper in .dark
+        const LIGHT_BG = '#f7f6f3'; // --color-paper in :root
 
         // Determine theme mode (matches ThemeContext logic)
         let mode;

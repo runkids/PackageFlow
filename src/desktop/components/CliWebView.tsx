@@ -52,8 +52,12 @@ export default function CliWebView() {
         setStyle('clean');
         setModePreference('light');
       }
-      // Persist for next launch
-      tauriBridge.setPreferredTheme(theme);
+      // Persist mode for next launch (Tauri only accepts light/dark/system)
+      if (theme === 'dark') {
+        tauriBridge.setPreferredTheme('dark');
+      } else {
+        tauriBridge.setPreferredTheme('light');
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
@@ -66,8 +70,8 @@ export default function CliWebView() {
     if (!win) return;
     pushingThemeRef.current = true;
     win.postMessage({ type: 'theme-push', mode: resolvedMode, style }, '*');
-    // Also persist for next launch
-    tauriBridge.setPreferredTheme(cliTheme);
+    // Also persist mode for next launch (Tauri only accepts light/dark/system)
+    tauriBridge.setPreferredTheme(resolvedMode === 'dark' ? 'dark' : 'light');
     // Allow echoes to settle before accepting theme-change messages again
     const timer = setTimeout(() => {
       pushingThemeRef.current = false;

@@ -31,9 +31,9 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/runkids/skillshare/releases/latest/download/latest.json"
+        "https://github.com/runkids/skillshare-app/releases/latest/download/latest.json"
       ],
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1QjY3RUYyRkRGMTcwOTIKUldTU2NQSDk4bjYyNWZOZk1vUGRaVWZkWm94VTFMTjBXZURsR3VtVDJseW9Db1c3NGdwcm83MnAK"
     }
   },
   "bundle": {
