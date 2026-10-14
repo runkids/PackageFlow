@@ -152,11 +152,15 @@ async fn kill_orphaned_server() {
 }
 
 /// What `start()` was asked to run, kept so the supervisor can relaunch it.
+#[derive(Clone)]
 struct Launch {
     cli_path: String,
     project_dir: Option<String>,
     is_project_mode: bool,
 }
+
+/// A launch and its CLI binary's mtime at that moment.
+type LaunchedBinary = (Launch, Option<u64>);
 
 #[derive(Clone)]
 pub struct ServerManager {
@@ -170,6 +174,8 @@ pub struct ServerManager {
     /// Held across start, stop and each supervised restart, so `stop()` waits for a
     /// restart in progress and then kills it instead of missing the new process.
     lifecycle: Arc<Mutex<()>>,
+    /// The last launch and its CLI binary's mtime, to spot an upgrade made outside the app.
+    launched: Arc<Mutex<Option<LaunchedBinary>>>,
     app: Arc<OnceLock<tauri::AppHandle>>,
 }
 
@@ -181,6 +187,7 @@ impl ServerManager {
             generation: Arc::new(AtomicU64::new(0)),
             exits: Arc::new(Mutex::new(Vec::new())),
             lifecycle: Arc::new(Mutex::new(())),
+            launched: Arc::new(Mutex::new(None)),
             app: Arc::new(OnceLock::new()),
         }
     }
@@ -297,6 +304,10 @@ impl ServerManager {
         let child = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn server: {e}"))?;
+        *self.launched.lock().await = Some((
+            launch.clone(),
+            crate::services::cli_manager::binary_modified_ms(cli_path),
+        ));
 
         if let Some(pid) = child.id() {
             let record = format_pidfile(ServerPid {
@@ -322,6 +333,31 @@ impl ServerManager {
         self.wait_for_ready(chosen_port).await?;
 
         Ok(chosen_port)
+    }
+
+    /// Restart the server when its CLI binary changed since launch, as after `skillshare
+    /// upgrade` in a terminal. The upgrade deletes the old version's Web UI files, which the
+    /// running server keeps serving from, so its pages break until it restarts.
+    pub async fn restart_if_upgraded(&self) {
+        let Some((launch, modified)) = self.launched.lock().await.clone() else {
+            return;
+        };
+        if self.process.lock().await.is_none() || !binary_changed(&launch.cli_path, modified) {
+            return;
+        }
+        log::info!("CLI binary changed; restarting the skillshare server on it");
+        let Launch {
+            cli_path,
+            project_dir,
+            is_project_mode,
+        } = launch;
+        match self
+            .start(&cli_path, project_dir.as_deref(), is_project_mode)
+            .await
+        {
+            Ok(port) => self.emit(SERVER_RESTARTED_EVENT, port),
+            Err(e) => log::warn!("Failed to restart skillshare server after a CLI upgrade: {e}"),
+        }
     }
 
     /// Kill the running server process if any and end its supervision.
@@ -440,6 +476,11 @@ impl ServerManager {
             (HEALTH_POLL_INTERVAL_MS * HEALTH_POLL_MAX_RETRIES as u64) / 1000
         )))
     }
+}
+
+/// Whether the binary at `cli_path` no longer has the mtime it had at launch.
+fn binary_changed(cli_path: &str, launched_ms: Option<u64>) -> bool {
+    crate::services::cli_manager::binary_modified_ms(cli_path) != launched_ms
 }
 
 const SERVER_LOG_TAIL_LINES: usize = 20;
@@ -586,6 +627,22 @@ mod tests {
         );
 
         assert!(!server.is_running().await);
+        Ok(())
+    }
+
+    #[test]
+    fn a_replaced_binary_counts_as_changed() -> std::io::Result<()> {
+        let path = std::env::temp_dir().join(format!("skillshare-bin-{}", std::process::id()));
+        let file = std::fs::File::create(&path)?;
+        let cli_path = path.to_string_lossy().into_owned();
+        let launched = crate::services::cli_manager::binary_modified_ms(&cli_path);
+        let unchanged = binary_changed(&cli_path, launched);
+
+        file.set_modified(std::time::SystemTime::now() + Duration::from_secs(60))?;
+        let changed = binary_changed(&cli_path, launched);
+        std::fs::remove_file(&path)?;
+
+        assert_eq!((unchanged, changed), (false, true));
         Ok(())
     }
 

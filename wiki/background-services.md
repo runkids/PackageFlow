@@ -15,7 +15,7 @@ The app's long-running watchers and checks: auto-sync, update checks, the operat
   - The tray last-sync time is seeded from successful `sync`/`sync agents` entries at watcher startup and updated from appended entries; dry runs and non-`ok` results do not count. App syncs also record their completion, per project, in `CliMeta.last_successful_sync`.
   - Only appended complete lines are parsed. A log that shrank was trimmed by the CLI right after an append, so only its last line counts.
   - `is_mutating` is an allowlist (`MUTATING`, plus `plugin`/`mcp`/`hooks` with a `MUTATING_VERBS` verb); dry runs never count. The badge checks log `check`, `diff` and `status`, so reacting to those would loop.
-  - A successful `upgrade` (`is_upgrade`) first runs `update_watch::check(app, false)` to re-read the CLI version.
+  - A successful `upgrade` (`is_upgrade`) first calls `ServerManager::restart_if_upgraded`, then runs `update_watch::check(app, false)` to re-read the CLI version.
   - After 1.5s of quiet (`SETTLE`) it awaits `refresh_badges` (`update_watch::refresh_skills`, then `source_health::refresh(app, false)`) inline, so entries logged meanwhile coalesce into one follow-up.
   - The tray's Quick Sync calls `refresh_badges`, Update All is followed by `source_health::refresh`, and the tray source actions also call `refresh_skills`. The title bar status panel's Check now (`check_status_now`) runs `update_watch::check(app, false)`, `source_health::refresh(app, true)` and `audit::run` together.
 - `update_watch.rs`

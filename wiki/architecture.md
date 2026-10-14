@@ -58,6 +58,7 @@ How the Rust backend in `src-tauri/` fits together.
 - `supervise` polls `try_wait` every 1s. After an unexpected exit, it waits `RESTART_DELAYS` (1s, 2s, 5s), counting exits within `RESTART_WINDOW` (60s).
   - When exits outrun the delays, it emits `server-stopped` and gives up.
   - A restart emits `server-restarted` with the port, which may have changed.
+- `launch` records the CLI binary's mtime. `restart_if_upgraded` (called by the operation log watcher after an `upgrade`) restarts a running server whose binary changed since, and emits `server-restarted`. The upgrade deletes the old version's Web UI files, which the old server still serves, so its pages break after a terminal upgrade. `upgrade_cli` already restarted on the new binary, so it is skipped.
 - `server.pid` holds `"<pid> <port>"`. `kill_orphaned_server` deletes it, then sends `kill -TERM` only if `lsof -t -a -iTCP:<port> -sTCP:LISTEN -c /^skillshare$/` lists that pid and the pid is not the app's own. A user-started `skillshare ui` is never killed.
 
 ## Background services
