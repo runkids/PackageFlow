@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/runkids/skillshare-app/compare/v0.7.2...v0.7.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **server:** restart the server after a CLI upgrade made outside the app ([#80](https://github.com/runkids/skillshare-app/issues/80)) ([5d56b3a](https://github.com/runkids/skillshare-app/commit/5d56b3a127b2d1ab0aa3553b2b46b1764320d3f9))
+
 ## [0.7.2](https://github.com/runkids/skillshare-app/compare/v0.7.1...v0.7.2) (2026-10-04)
 
 
