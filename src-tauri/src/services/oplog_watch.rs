@@ -2,7 +2,7 @@
 //! changes made outside the app (the CLI web UI or a terminal). Every CLI command appends a
 //! JSONL entry; once a burst of state-changing entries settles, both badges are re-checked.
 
-use crate::services::{project_store, source_health, update_watch};
+use crate::services::{project_store, server_manager::ServerManager, source_health, update_watch};
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -152,6 +152,7 @@ async fn watch(app: AppHandle) {
                 // Awaited inline: entries logged meanwhile queue up and coalesce into one follow-up.
                 if debounce.take_due(Instant::now()) {
                     if std::mem::take(&mut upgraded) {
+                        app.state::<ServerManager>().restart_if_upgraded().await;
                         update_watch::check(&app, false).await;
                     }
                     refresh_badges(&app).await;
