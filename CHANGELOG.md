@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.4](https://github.com/runkids/skillshare-app/compare/v0.7.3...v0.7.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* **oplog:** catch an upgrade logged before the log directory was watched ([#83](https://github.com/runkids/skillshare-app/issues/83)) ([31b0754](https://github.com/runkids/skillshare-app/commit/31b0754e28f86603fd322d4141b417322de2d272))
+
 ## [0.7.3](https://github.com/runkids/skillshare-app/compare/v0.7.2...v0.7.3) (2026-10-14)
 
 
