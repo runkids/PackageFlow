@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=for-the-badge" alt="Platform">
 </p>
 
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="Skillshare App dashboard" width="800">
+</p>
+
 ---
 
 ## Prerequisites
