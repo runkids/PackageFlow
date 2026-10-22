@@ -14,7 +14,7 @@ use tokio::time::Instant;
 const SETTLE: Duration = Duration::from_millis(1500);
 
 /// How long to wait before looking again for a log directory the CLI has not created yet.
-const MISSING_RETRY: Duration = Duration::from_secs(60);
+const MISSING_RETRY: Duration = Duration::from_secs(5);
 
 const LOG_FILE: &str = "operations.log";
 
@@ -99,6 +99,7 @@ async fn watch(app: AppHandle) {
     };
     // The CLI creates the directory on its first logged command; creating it here would
     // skip the .gitignore entry the CLI adds for project logs.
+    let created_later = !logs.is_dir();
     while !logs.is_dir() {
         tokio::time::sleep(MISSING_RETRY).await;
     }
@@ -128,24 +129,30 @@ async fn watch(app: AppHandle) {
             crate::tray::record_sync(&app, store.active_project_id.as_deref(), time);
         }
     }
-    let mut tail = Tail::at_end(path);
     let mut debounce = Debounce::default();
     // A CLI upgrade changes the version the update check compares against.
     let mut upgraded = false;
+    let project = store.active_project_id.as_deref();
+    // A log that appeared after the app started holds only entries this watch missed.
+    let mut tail = if created_later {
+        let mut tail = Tail::at_start(path);
+        note_lines(
+            &app,
+            project,
+            &tail.read_new(),
+            &mut upgraded,
+            &mut debounce,
+        );
+        tail
+    } else {
+        Tail::at_end(path)
+    };
     loop {
         let wake = debounce.deadline();
         tokio::select! {
             Some(event) = events.recv() => {
                 if touches_log(&event) {
-                    let lines = tail.read_new();
-                    if let Some(time) = lines.iter().filter_map(|line| successful_sync_time(line)).max() {
-                        crate::tray::record_sync(&app, store.active_project_id.as_deref(), time);
-                    }
-                    let upgrade = lines.iter().any(|l| is_upgrade(l));
-                    upgraded |= upgrade;
-                    if upgrade || lines.iter().any(|l| is_mutating(l)) {
-                        debounce.changed(Instant::now());
-                    }
+                    note_lines(&app, project, &tail.read_new(), &mut upgraded, &mut debounce);
                 }
             }
             _ = tokio::time::sleep_until(wake.unwrap_or_else(Instant::now)), if wake.is_some() => {
@@ -160,6 +167,28 @@ async fn watch(app: AppHandle) {
             }
             else => break,
         }
+    }
+}
+
+/// Record syncs from new log lines, and schedule a refresh for state-changing ones.
+fn note_lines(
+    app: &AppHandle,
+    project: Option<&str>,
+    lines: &[String],
+    upgraded: &mut bool,
+    debounce: &mut Debounce,
+) {
+    if let Some(time) = lines
+        .iter()
+        .filter_map(|line| successful_sync_time(line))
+        .max()
+    {
+        crate::tray::record_sync(app, project, time);
+    }
+    let upgrade = lines.iter().any(|l| is_upgrade(l));
+    *upgraded |= upgrade;
+    if upgrade || lines.iter().any(|l| is_mutating(l)) {
+        debounce.changed(Instant::now());
     }
 }
 
@@ -276,6 +305,11 @@ impl Tail {
     fn at_end(path: PathBuf) -> Self {
         let offset = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         Self { path, offset }
+    }
+
+    /// Start at the first line, for a log created after the watch began.
+    fn at_start(path: PathBuf) -> Self {
+        Self { path, offset: 0 }
     }
 
     /// Complete lines appended since the last read; a partly written line waits for the next.
@@ -432,6 +466,14 @@ mod tests {
         let mut tail = Tail::at_end(path.clone());
         append(&path, &format!("{}\n", entry("check", "{}")));
         assert_eq!(tail.read_new(), vec![entry("check", "{}")]);
+    }
+
+    #[test]
+    fn a_log_created_after_the_watch_began_is_read_from_its_first_line() {
+        let path = temp_log("created-later");
+        append(&path, &format!("{}\n", entry("upgrade", "{}")));
+        let mut tail = Tail::at_start(path.clone());
+        assert_eq!(tail.read_new(), vec![entry("upgrade", "{}")]);
     }
 
     #[test]
